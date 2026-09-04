@@ -542,6 +542,103 @@
         1220,
         160
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F-008 — Build the email-draft prompt from the persisted lead + analysis.\nconst analysis = $('CRM: insert analysis').first().json;\nconst run = $('Score & classify').first().json;\nconst payload = run.payload;\nconst a = run.analysis;\n\nconst prompt = `You are an admissions counselor at a language school. Write a short, friendly first-touch email to a prospective student.\n\nStudent name: ${payload.name}\nCourse interest: ${payload.course_interest || 'not specified'}\nBudget: ${payload.budget || 'not specified'}\nTimeline: ${payload.timeline || 'not specified'}\nMessage from student: ${payload.message || 'none'}\n\nLead analysis:\n- Score: ${a.score}/100\n- Category: ${a.category}\n- Intent: ${a.intent}\n- Summary: ${a.summary}\n- Recommended action: ${a.recommended_action}\n\nReturn STRICT JSON (no markdown, no commentary) with exactly these keys:\n{\n  \"subject\": \"email subject line (max 60 chars)\",\n  \"body\": \"email body (2-4 short paragraphs, personalized)\"\n}`;\n\nreturn [{ json: { ...analysis, prompt } }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000030",
+      "name": "Prepare email prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.AI_MODEL || 'gemini-2.0-flash' }}:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 500, temperature: 0.7 } }) }}",
+        "options": {
+          "timeout": 30000,
+          "retryOnFail": true,
+          "response": {
+            "responseType": "json"
+          }
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000031",
+      "name": "Draft email (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F-008 — Validate the email draft JSON.\nconst ai = $('Draft email (AI)').first().json;\nconst prep = $('Prepare email prompt').first().json;\n\nconst text = (ai.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nconst trimmed = text.replace(/^```json\\s*/i, '').replace(/\\s*```$/i, '').trim();\nconst truncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');\n\nlet parsed;\ntry {\n  parsed = JSON.parse(trimmed);\n} catch (e) {\n  return [{ json: { ok: false, truncated, lead_id: prep.lead_id, error: 'Email draft was not valid JSON' + (truncated ? ' (truncated)' : '') + ': ' + e.message, email: null, dry_run: true } }];\n}\n\nif (typeof parsed.subject !== 'string' || !parsed.subject.trim()) {\n  return [{ json: { ok: false, truncated: false, lead_id: prep.lead_id, error: 'email subject is required', email: null, dry_run: true } }];\n}\nif (typeof parsed.body !== 'string' || !parsed.body.trim()) {\n  return [{ json: { ok: false, truncated: false, lead_id: prep.lead_id, error: 'email body is required', email: null, dry_run: true } }];\n}\n\nreturn [{ json: { ok: true, truncated: false, lead_id: prep.lead_id, email: { subject: parsed.subject.trim(), body: parsed.body.trim() }, dry_run: true } }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000032",
+      "name": "Email schema check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-email-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000033",
+      "name": "Email ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2540,
+        -40
+      ]
     }
   ],
   "connections": {
@@ -706,7 +803,7 @@
       "main": [
         [
           {
-            "node": "Log pipeline steps",
+            "node": "Prepare email prompt",
             "type": "main",
             "index": 0
           }
@@ -758,6 +855,57 @@
         [
           {
             "node": "Prepare AI prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare email prompt": {
+      "main": [
+        [
+          {
+            "node": "Draft email (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft email (AI)": {
+      "main": [
+        [
+          {
+            "node": "Email schema check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email schema check": {
+      "main": [
+        [
+          {
+            "node": "Email ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email ok?": {
+      "main": [
+        [
+          {
+            "node": "Log pipeline steps",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log pipeline steps",
             "type": "main",
             "index": 0
           }
