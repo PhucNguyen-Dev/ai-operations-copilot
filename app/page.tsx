@@ -60,7 +60,17 @@ export default async function Home() {
             <span className="inline-block rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs text-white">{role}</span>
           </p>
         </div>
-        <LogoutButton />
+        <div className="flex items-center gap-2">
+          {(role === 'admissions' || role === 'admin') && (
+            <a
+              href="/leads/new"
+              className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
+            >
+              + New Test Lead
+            </a>
+          )}
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="mb-8 grid grid-cols-3 gap-4">

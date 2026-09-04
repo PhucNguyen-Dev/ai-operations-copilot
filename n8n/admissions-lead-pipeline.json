@@ -1,0 +1,409 @@
+{
+  "name": "Admissions Lead Pipeline",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admissions-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000001",
+      "name": "Webhook: admissions lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-560, 0],
+      "webhookId": "admissions-lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "// F-003 — Lead validation (+ webhook secret check)\nconst item = $input.first().json;\nconst headers = Object.fromEntries(\n  Object.entries(item.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])\n);\nconst body = item.body || {};\n\nif (headers['x-webhook-secret'] !== $env.N8N_WEBHOOK_SECRET) {\n  return [{ json: { valid: false, status: 401, error: 'invalid webhook secret' } }];\n}\n\nconst name = String(body.name || '').trim();\nconst email = String(body.email || '').trim();\nconst errors = [];\nif (!name) errors.push('name is required');\nif (!email) errors.push('email is required');\nelse if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('email format is invalid');\nif (body.phone) {\n  const digits = String(body.phone).replace(/\\D/g, '');\n  if (digits.length < 7 || digits.length > 15) errors.push('phone format is invalid');\n}\nif (errors.length) {\n  return [{ json: { valid: false, status: 422, error: errors.join('; ') } }];\n}\n\nreturn [{ json: {\n  valid: true,\n  payload: {\n    name,\n    email,\n    phone: body.phone || null,\n    source: body.source || 'test',\n    course_interest: body.course_interest || null,\n    budget: body.budget || null,\n    timeline: body.timeline || null,\n    message: body.message || null\n  }\n} }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000002",
+      "name": "Validate & authorize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-340, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000003",
+      "name": "Valid lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_name: 'admissions-lead-pipeline', trigger_source: 'test-lead-ui', status: 'failed', error_summary: 'Validation failed: ' + $json.error, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000004",
+      "name": "Record validation failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [120, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, error: $('Validate & authorize').first().json.error || 'unauthorized' }) }}",
+        "options": {
+          "responseCode": "={{ $('Validate & authorize').first().json.status || 400 }}"
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000005",
+      "name": "Respond: rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [340, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Prefer", "value": "return=representation" },
+            { "name": "Accept", "value": "application/vnd.pgrst.object+json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_name: 'admissions-lead-pipeline', trigger_source: 'test-lead-ui', status: 'running', started_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000006",
+      "name": "Log run started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [120, -40]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare the OpenAI request (F-004) and carry run_id + payload through the pipeline\nconst payload = $('Validate & authorize').first().json.payload;\nconst raw = $('Log run started').first().json;\nconst run = Array.isArray(raw) ? raw[0] : raw;\n\nconst system = [\n  'You are the lead-qualification analyst for a mid-sized education and training company.',\n  'You qualify incoming student leads for admissions counselors.',\n  'Respond with ONLY a single JSON object with exactly these keys:',\n  '{ \"score\": <integer 0-100, likelihood of conversion>, \"category\": \"HOT\"|\"WARM\"|\"COLD\", \"intent\": \"HIGH\"|\"MEDIUM\"|\"LOW\", \"course\": <string or null>, \"timeline\": <string or null>, \"summary\": <one-sentence summary of the lead>, \"recommended_action\": <concrete next action for the counselor> }'\n].join('\\n');\n\nconst user = [\n  'New lead received from ' + (payload.source || 'unknown source') + ':',\n  '- name: ' + payload.name,\n  '- email: ' + payload.email,\n  '- phone: ' + (payload.phone || 'not provided'),\n  '- course of interest: ' + (payload.course_interest || 'not specified'),\n  '- budget: ' + (payload.budget || 'not specified'),\n  '- timeline: ' + (payload.timeline || 'not specified'),\n  '- message: ' + (payload.message || '(empty)')\n].join('\\n');\n\nreturn [{ json: {\n  run_id: run.id,\n  payload,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: user }\n  ]\n} }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000007",
+      "name": "Prepare AI prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OPENAI_MODEL || 'gpt-4o-mini', response_format: { type: 'json_object' }, messages: $json.messages }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "a1000000-0000-0000-0000-000000000008",
+      "name": "AI lead analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, -40],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Schema validation — a malformed AI response is a permanent failure, never persisted\nconst ai = $('AI lead analysis').first().json;\nconst prep = $('Prepare AI prompt').first().json;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(ai.choices[0].message.content);\n} catch (e) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, error: 'AI response was not valid JSON: ' + e.message } }];\n}\n\nconst errors = [];\nif (!Number.isInteger(parsed.score) || parsed.score < 0 || parsed.score > 100) errors.push('score must be an integer between 0 and 100');\nif (!['HIGH', 'MEDIUM', 'LOW'].includes(parsed.intent)) errors.push('intent must be HIGH, MEDIUM or LOW');\nif (typeof parsed.summary !== 'string' || !parsed.summary.trim()) errors.push('summary is required');\nif (typeof parsed.recommended_action !== 'string' || !parsed.recommended_action.trim()) errors.push('recommended_action is required');\nif (errors.length) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, raw: parsed, error: errors.join('; ') } }];\n}\n\nreturn [{ json: { ok: true, run_id: prep.run_id, payload: prep.payload, analysis: parsed } }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000009",
+      "name": "Schema check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, -40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000010",
+      "name": "Schema ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1000, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_run_steps",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $json.run_id, feature_id: 'F-004', step_name: 'AI lead analysis (schema validation)', status: 'failed', attempt_count: 3, error_detail: $json.error, payload_snapshot: $json.raw || null, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000011",
+      "name": "Record schema failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1220, 140]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs?id=eq.{{ $json.run_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_summary: 'AI output failed schema validation: ' + $('Schema check').first().json.error, finished_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000012",
+      "name": "Mark run schema-failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 140]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, error: 'AI output failed schema validation', detail: $('Schema check').first().json.error }) }}",
+        "options": { "responseCode": 422 }
+      },
+      "id": "a1000000-0000-0000-0000-000000000013",
+      "name": "Respond: invalid AI output",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1660, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F-005 / F-006 — deterministic scoring + classification thresholds.\n// The model proposes a score; the thresholds below are the auditable rule\n// that decides HOT/WARM/COLD and intent level.\nconst { run_id, payload, analysis } = $input.first().json;\nconst score = analysis.score;\nconst category = score >= 70 ? 'HOT' : score >= 40 ? 'WARM' : 'COLD';\nconst intent = score >= 70 ? 'HIGH' : score >= 40 ? 'MEDIUM' : 'LOW';\nreturn [{ json: { run_id, payload, analysis: { ...analysis, score, category, intent } } }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000014",
+      "name": "Score & classify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Prefer", "value": "return=representation" },
+            { "name": "Accept", "value": "application/vnd.pgrst.object+json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $json.payload.name, email: $json.payload.email, phone: $json.payload.phone, source: $json.payload.source, course_interest: $json.payload.course_interest, budget: $json.payload.budget, timeline: $json.payload.timeline, message: $json.payload.message, status: 'new' }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000015",
+      "name": "CRM: insert lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, -40],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/lead_analyses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $('CRM: insert lead').first().json.id, score: $('Score & classify').first().json.analysis.score, category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent, course: $('Score & classify').first().json.analysis.course || null, timeline: $('Score & classify').first().json.analysis.timeline || null, summary: $('Score & classify').first().json.analysis.summary, recommended_action: $('Score & classify').first().json.analysis.recommended_action, model: $('AI lead analysis').first().json.model || 'unknown', raw_response: $('AI lead analysis').first().json.choices[0].message.content, created_by: 'n8n-pipeline' }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000016",
+      "name": "CRM: insert analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, -40],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_run_steps",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, started_at: new Date(Date.now() - 15000).toISOString(), finished_at: new Date(Date.now() - 14000).toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: 1, payload_snapshot: { score: $('Score & classify').first().json.analysis.score, model: $('AI lead analysis').first().json.model }, started_at: new Date(Date.now() - 14000).toISOString(), finished_at: new Date().toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent } },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: $('CRM: insert lead').first().json.id } }\n]) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000017",
+      "name": "Log pipeline steps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1880, -40]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs?id=eq.{{ $('Score & classify').first().json.run_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'success', finished_at: new Date().toISOString(), lead_id: $('CRM: insert lead').first().json.id }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000018",
+      "name": "Finish run: success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2100, -40]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: true, run_id: $('Score & classify').first().json.run_id, lead_id: $('CRM: insert lead').first().json.id, score: $('Score & classify').first().json.analysis.score, category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent, summary: $('Score & classify').first().json.analysis.summary, recommended_action: $('Score & classify').first().json.analysis.recommended_action }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "a1000000-0000-0000-0000-000000000019",
+      "name": "Respond: accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2320, -40]
+    }
+  ],
+  "connections": {
+    "Webhook: admissions lead": {
+      "main": [[{ "node": "Validate & authorize", "type": "main", "index": 0 }]]
+    },
+    "Validate & authorize": {
+      "main": [[{ "node": "Valid lead?", "type": "main", "index": 0 }]]
+    },
+    "Valid lead?": {
+      "main": [
+        [{ "node": "Log run started", "type": "main", "index": 0 }],
+        [{ "node": "Record validation failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Record validation failure": {
+      "main": [[{ "node": "Respond: rejected", "type": "main", "index": 0 }]]
+    },
+    "Log run started": {
+      "main": [[{ "node": "Prepare AI prompt", "type": "main", "index": 0 }]]
+    },
+    "Prepare AI prompt": {
+      "main": [[{ "node": "AI lead analysis", "type": "main", "index": 0 }]]
+    },
+    "AI lead analysis": {
+      "main": [[{ "node": "Schema check", "type": "main", "index": 0 }]]
+    },
+    "Schema check": {
+      "main": [[{ "node": "Schema ok?", "type": "main", "index": 0 }]]
+    },
+    "Schema ok?": {
+      "main": [
+        [{ "node": "Score & classify", "type": "main", "index": 0 }],
+        [{ "node": "Record schema failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Record schema failure": {
+      "main": [[{ "node": "Mark run schema-failed", "type": "main", "index": 0 }]]
+    },
+    "Mark run schema-failed": {
+      "main": [[{ "node": "Respond: invalid AI output", "type": "main", "index": 0 }]]
+    },
+    "Score & classify": {
+      "main": [[{ "node": "CRM: insert lead", "type": "main", "index": 0 }]]
+    },
+    "CRM: insert lead": {
+      "main": [[{ "node": "CRM: insert analysis", "type": "main", "index": 0 }]]
+    },
+    "CRM: insert analysis": {
+      "main": [[{ "node": "Log pipeline steps", "type": "main", "index": 0 }]]
+    },
+    "Log pipeline steps": {
+      "main": [[{ "node": "Finish run: success", "type": "main", "index": 0 }]]
+    },
+    "Finish run: success": {
+      "main": [[{ "node": "Respond: accepted", "type": "main", "index": 0 }]]
+    }
+  }
+}

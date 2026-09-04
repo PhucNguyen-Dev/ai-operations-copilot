@@ -23,7 +23,7 @@ export async function GET() {
   return NextResponse.json({ count: data.length, leads: data })
 }
 
-/** POST /api/leads — Test Lead intake (F-001). Shape check only; in Phase 3 this forwards to n8n instead of inserting directly. */
+/** POST /api/leads — Test Lead intake (F-001). Auth + payload shape check, then forwards to the n8n webhook (F-002). The pipeline, not this route, persists the lead. */
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
@@ -51,26 +51,50 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { data, error } = await supabase
-    .from('leads')
-    .insert({
-      name: name.slice(0, 200),
-      email: email.slice(0, 320),
-      phone: body.phone?.slice(0, 40) ?? null,
-      source: body.source?.slice(0, 50) ?? 'test',
-      course_interest: body.course_interest?.slice(0, 100) ?? null,
-      budget: body.budget?.slice(0, 100) ?? null,
-      timeline: body.timeline?.slice(0, 100) ?? null,
-      message: body.message?.slice(0, 4000) ?? null,
-      status: 'new',
-      submitted_by: user.id,
-    })
-    .select('id, name, email, status')
-    .single()
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+  const webhookUrl = process.env.N8N_WEBHOOK_URL
+  const webhookSecret = process.env.N8N_WEBHOOK_SECRET
+  if (!webhookUrl || !webhookSecret) {
+    return NextResponse.json(
+      { error: 'Pipeline not configured (missing N8N_WEBHOOK_URL / N8N_WEBHOOK_SECRET)' },
+      { status: 500 }
+    )
   }
 
-  return NextResponse.json({ lead: data }, { status: 201 })
+  let upstream: Response
+  try {
+    upstream = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-webhook-secret': webhookSecret,
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        phone: body.phone ?? null,
+        source: body.source ?? 'test',
+        course_interest: body.course_interest ?? null,
+        budget: body.budget ?? null,
+        timeline: body.timeline ?? null,
+        message: body.message ?? null,
+      }),
+      cache: 'no-store',
+    })
+  } catch {
+    return NextResponse.json(
+      { accepted: false, error: 'Pipeline unreachable — is n8n running? (npm run n8n)' },
+      { status: 502 }
+    )
+  }
+
+  const data = await upstream.json().catch(() => ({}))
+
+  if (!upstream.ok) {
+    return NextResponse.json(
+      { ...data, error: data?.error ?? `Pipeline rejected the lead (HTTP ${upstream.status})` },
+      { status: upstream.status }
+    )
+  }
+
+  return NextResponse.json(data, { status: 200 })
 }

@@ -16,9 +16,9 @@ for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').spl
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
 }
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!URL || !KEY) {
+if (!SUPABASE_URL || !KEY) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env')
   process.exit(1)
 }
@@ -33,7 +33,7 @@ const USERS = [
   { email: 'operations@demo.dev', full_name: 'Omar Operations',  role: 'operations' },
 ]
 
-const supabase = createClient(URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+const supabase = createClient(SUPABASE_URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } })
 
 async function findUserIdByEmail(email) {
   let page = 1
@@ -60,16 +60,27 @@ for (const { email, full_name, role } of USERS) {
 
   if (error?.message?.includes('already')) {
     const id = await findUserIdByEmail(email)
+    if (!id) { console.log(`✗ ${email}: reported as existing but not found`); continue }
     const { error: updErr } = await supabase.auth.admin.updateUserById(id, {
       user_metadata: { full_name },
       app_metadata: { role },
     })
-    console.log(updErr ? `✗ ${email}: update failed — ${updErr.message}` : `↻ ${email}: already existed, role set to ${role}`)
+    if (updErr) { console.log(`✗ ${email}: update failed — ${updErr.message}`); continue }
+    await upsertProfile(id, email, full_name, role)
+    console.log(`↻ ${email}: already existed, role set to ${role}`)
   } else if (error) {
     console.log(`✗ ${email}: ${error.message}`)
   } else {
-    console.log(`✓ ${email} created with role "${role}" (profile auto-created)`)
+    await upsertProfile(data.user.id, email, full_name, role)
+    console.log(`✓ ${email} created with role "${role}"`)
   }
+}
+
+async function upsertProfile(id, email, fullName, role) {
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({ id, email, full_name: fullName, role }, { onConflict: 'id' })
+  if (error) console.log(`  ⚠ profile row for ${email} failed: ${error.message}`)
 }
 
 console.log(`\nAll demo passwords: ${PASSWORD}`)
