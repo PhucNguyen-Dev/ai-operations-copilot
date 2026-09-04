@@ -639,6 +639,186 @@
         2540,
         -40
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-dry",
+              "leftValue": "={{ $env.GMAIL_DRY_RUN !== 'false' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-0000-0000-000000000040",
+      "name": "Dry run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2760,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sent_emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $json.lead_id, to_address: $('Score & classify').first().json.payload.email, subject: $json.email.subject, body: $json.email.body, status: 'dry_run', created_by: 'n8n-pipeline' }) }}",
+        "options": {
+          "timeout": 15000,
+          "retryOnFail": true
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000041",
+      "name": "Record email: dry-run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2980,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ client_id: $env.GOOGLE_CLIENT_ID, client_secret: $env.GOOGLE_CLIENT_SECRET, refresh_token: $env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000042",
+      "name": "Gmail: get token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2980,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ raw: require('buffer').Buffer.from('To: ' + $('Score & classify').first().json.payload.email + '\\r\\nSubject: ' + $('Email schema check').first().json.email.subject + '\\r\\nContent-Type: text/plain; charset=utf-8\\r\\n\\r\\n' + $('Email schema check').first().json.email.body).toString('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '') }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000043",
+      "name": "Gmail: send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3200,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sent_emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $('Email schema check').first().json.lead_id, to_address: $('Score & classify').first().json.payload.email, subject: $('Email schema check').first().json.email.subject, body: $('Email schema check').first().json.email.body, status: 'sent', sent_at: new Date().toISOString(), provider_message_id: $json.id, created_by: 'n8n-pipeline' }) }}",
+        "options": {
+          "timeout": 15000,
+          "retryOnFail": true
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000044",
+      "name": "Record email: sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3420,
+        40
+      ]
     }
   ],
   "connections": {
@@ -898,11 +1078,73 @@
       "main": [
         [
           {
-            "node": "Log pipeline steps",
+            "node": "Dry run?",
             "type": "main",
             "index": 0
           }
         ],
+        [
+          {
+            "node": "Log pipeline steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry run?": {
+      "main": [
+        [
+          {
+            "node": "Record email: dry-run",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail: get token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record email: dry-run": {
+      "main": [
+        [
+          {
+            "node": "Log pipeline steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: get token": {
+      "main": [
+        [
+          {
+            "node": "Gmail: send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: send": {
+      "main": [
+        [
+          {
+            "node": "Record email: sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record email: sent": {
+      "main": [
         [
           {
             "node": "Log pipeline steps",
