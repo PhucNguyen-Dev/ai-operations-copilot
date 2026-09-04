@@ -440,7 +440,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify([\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, started_at: new Date(Date.now() - 15000).toISOString(), finished_at: new Date(Date.now() - 14000).toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: 1, payload_snapshot: { score: $('Score & classify').first().json.analysis.score, model: ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', '') }, started_at: new Date(Date.now() - 14000).toISOString(), finished_at: new Date().toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent } },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: $('CRM: insert lead').first().json.id } }\n]) }}",
+        "jsonBody": "={{ JSON.stringify($json.rows) }}",
         "options": {}
       },
       "id": "a1000000-0000-0000-0000-000000000017",
@@ -993,6 +993,19 @@
         2760,
         200
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build all step rows in plain JS (avoids giant JSON template expressions).\nconst run = $('Score & classify').first().json;\nconst email = $('Email schema check').first().json;\nconst task = $('Assign lead').first().json;\nconst runId = run.run_id;\nconst now = Date.now();\nconst a = run.analysis;\nconst model = ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', '');\n\nconst rows = [\n  { run_id: runId, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, payload_snapshot: { required_fields: true, email_format: 'valid' }, started_at: new Date(now - 15000).toISOString(), finished_at: new Date(now - 14000).toISOString() },\n  { run_id: runId, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: run._retryCount || 1, payload_snapshot: { score: a.score, model }, started_at: new Date(now - 14000).toISOString(), finished_at: new Date(now - 8000).toISOString() },\n  { run_id: runId, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: a.category, intent: a.intent }, started_at: new Date(now - 8000).toISOString(), finished_at: new Date(now - 7000).toISOString() },\n  { run_id: runId, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: $('CRM: insert lead').first().json.id }, started_at: new Date(now - 7000).toISOString(), finished_at: new Date(now - 6000).toISOString() },\n  { run_id: runId, feature_id: 'F-008', step_name: 'AI email draft', status: email.ok ? 'success' : 'failed', attempt_count: 1, payload_snapshot: email.ok ? { subject: email.email?.subject } : null, error_detail: email.ok ? null : email.error, started_at: new Date(now - 6000).toISOString(), finished_at: new Date(now - 4000).toISOString() },\n  { run_id: runId, feature_id: 'F-009', step_name: 'Email delivery', status: email.ok ? ($env.GMAIL_DRY_RUN !== 'false' ? 'success' : 'success') : 'skipped', attempt_count: 1, payload_snapshot: email.ok ? { delivery: $env.GMAIL_DRY_RUN !== 'false' ? 'dry_run' : 'sent' } : null, error_detail: email.ok ? null : 'skipped (email draft failed)', started_at: new Date(now - 4000).toISOString(), finished_at: new Date(now - 3000).toISOString() },\n  { run_id: runId, feature_id: 'F-010', step_name: 'Follow-up task', status: 'success', attempt_count: 1, payload_snapshot: { assigned_to: task.assigned_counselor?.email || null, task_priority: a.category === 'HOT' ? 'high' : (a.category === 'WARM' ? 'medium' : 'low') }, started_at: new Date(now - 3000).toISOString(), finished_at: new Date(now - 2000).toISOString() },\n  { run_id: runId, feature_id: 'F-011', step_name: 'Counselor notification', status: 'success', attempt_count: 1, payload_snapshot: { notified: task.assigned_counselor?.email || null, type: 'new_lead' }, started_at: new Date(now - 2000).toISOString(), finished_at: new Date(now - 1000).toISOString() }\n];\n\nreturn [{ json: { rows } }];"
+      },
+      "id": "a1000000-0000-0000-0000-000000000070",
+      "name": "Build step log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        -40
+      ]
     }
   ],
   "connections": {
@@ -1373,6 +1386,17 @@
       ]
     },
     "Create notification": {
+      "main": [
+        [
+          {
+            "node": "Build step log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build step log": {
       "main": [
         [
           {
