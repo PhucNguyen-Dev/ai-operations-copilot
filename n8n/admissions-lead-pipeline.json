@@ -947,6 +947,48 @@
         2540,
         200
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient_id: $json.assigned_counselor?.id || null, lead_id: $json.lead_id, type: 'new_lead', title: 'New lead assigned: ' + $('Score & classify').first().json.payload.name, body: 'A new ' + $('Score & classify').first().json.analysis.category + ' lead (' + $('Score & classify').first().json.analysis.score + '/100) has been assigned to you. ' + $('Score & classify').first().json.analysis.summary }) }}",
+        "options": {
+          "timeout": 15000,
+          "retryOnFail": true
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000060",
+      "name": "Create notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2760,
+        200
+      ]
     }
   ],
   "connections": {
@@ -1316,6 +1358,17 @@
       ]
     },
     "Create follow-up task": {
+      "main": [
+        [
+          {
+            "node": "Create notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create notification": {
       "main": [
         [
           {
