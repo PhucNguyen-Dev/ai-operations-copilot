@@ -3,7 +3,11 @@
   "name": "Admissions Lead Pipeline",
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": {
+      "id": "errf013000000001",
+      "name": "Admissions Error Handler (F-013)"
+    }
   },
   "nodes": [
     {

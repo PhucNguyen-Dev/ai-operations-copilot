@@ -1,0 +1,68 @@
+{
+  "id": "errf013000000001",
+  "name": "Admissions Error Handler (F-013)",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b1000000-0000-0000-0000-000000000001",
+      "name": "On pipeline error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F-013 — Extract error info from the crashed pipeline execution.
+const item = $input.first().json;
+const workflowName = item?.workflow?.name || 'unknown';
+const lastNode = item?.execution?.lastNodeExecuted || 'unknown';
+const errorMessage = item?.execution?.error?.message || 'unknown';
+return [{ json: {
+  workflow_name: workflowName,
+  trigger_source: 'error-workflow',
+  status: 'failed',
+  error_summary: 'Unhandled error at ' + lastNode + ': ' + errorMessage
+} }];"
+      },
+      "id": "b1000000-0000-0000-0000-000000000002",
+      "name": "Build error payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_name: $json.workflow_name, trigger_source: $json.trigger_source, status: $json.status, error_summary: $json.error_summary, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
+        "options": { "timeout": 15000, "retryOnFail": true }
+      },
+      "id": "b1000000-0000-0000-0000-000000000003",
+      "name": "Record crashed run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "On pipeline error": {
+      "main": [[{ "node": "Build error payload", "type": "main", "index": 0 }]]
+    },
+    "Build error payload": {
+      "main": [[{ "node": "Record crashed run", "type": "main", "index": 0 }]]
+    }
+  }
+}
