@@ -112,7 +112,7 @@ export default function TestLeadForm() {
           disabled={loading}
           className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
         >
-          {loading ? 'Pipeline running… (OpenAI call takes a few seconds)' : 'Submit Test Lead'}
+          {loading ? 'Pipeline running… (AI call takes a few seconds)' : 'Submit Test Lead'}
         </button>
       </form>
 
@@ -155,7 +155,7 @@ export default function TestLeadForm() {
           <ol className="list-decimal space-y-1 pl-5">
             <li>Next.js checks your session + role, then forwards the payload to the n8n webhook with a shared-secret header</li>
             <li>n8n validates the fields (bad input → rejected + failed run logged)</li>
-            <li>OpenAI analyzes the lead and returns strict JSON</li>
+            <li>The AI model (Gemini) analyzes the lead and returns strict JSON</li>
             <li>A schema check gate-keeps the AI output (malformed → run fails, nothing persisted)</li>
             <li>Deterministic thresholds turn the score into HOT / WARM / COLD</li>
             <li>Lead + analysis are written to Supabase; every step is logged to automation_runs</li>

@@ -4,13 +4,17 @@ The n8n workflow, intake form, and API forwarding are **already built and import
 
 ## Your steps
 
-### 1. Add your OpenAI API key (~2 min)
-Get a key at https://platform.openai.com/api-keys (requires billing; a test run costs a fraction of a cent with `gpt-4o-mini`).
-Then open `.env` in the project root and fill in the two Phase 3 lines:
+### 1. Add your Gemini API key (~2 min, free)
+Go to https://aistudio.google.com → sign in with a Google account → **Get API key** → copy it.
+Then open `.env` in the project root and fill in:
 ```
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=...
+AI_MODEL=gemini-2.0-flash
 ```
+No credit card needed — the free tier's daily quota is far more than testing requires.
+
+> **Provider note (spec deviation, deliberate):** PRODUCT_SPEC.md listed "OpenAI API" in the stack. We use **Google Gemini** instead because OpenAI has no free API tier and requires a card for even a demo volume. The swap touched exactly one HTTP node plus response parsing — confirming the architecture's claim that the single-provider choice is isolated and swappable. Everything else (JSON mode, schema gate, retries, logging) is unchanged.
+
 (`N8N_WEBHOOK_URL` and `N8N_WEBHOOK_SECRET` are already filled in.)
 
 ### 2. Start n8n
@@ -48,7 +52,7 @@ Webhook (POST /webhook/admissions-lead, shared-secret header)
   → Valid lead?            [IF] — false → log failed run → respond 401/422
   → Log run started        [Supabase REST] — automation_runs row, status=running
   → Prepare AI prompt      [Code] — builds messages, carries run_id
-  → AI lead analysis       [OpenAI HTTP] — JSON mode, retry ×3 @ 2s backoff (F-014)
+  → AI lead analysis       [Gemini HTTP] — JSON mode, retry ×3 @ 2s backoff (F-014)
   → Schema check           [Code] — malformed/incomplete AI output = permanent failure
   → Schema ok?             [IF] — false → log failed step → mark run failed → respond 422
   → Score & classify       [Code] — deterministic thresholds: ≥70 HOT/HIGH, ≥40 WARM/MEDIUM, else COLD/LOW
@@ -60,7 +64,7 @@ Webhook (POST /webhook/admissions-lead, shared-secret header)
 ```
 
 Design decisions worth knowing (these mirror ARCHITECTURE.md):
-- **Secrets via env, not n8n credentials** — the workflow reads `$env.SUPABASE_*` / `$env.OPENAI_API_KEY`, all provided by `scripts/start-n8n.mjs` from the project `.env`. Nothing to configure twice.
+- **Secrets via env, not n8n credentials** — the workflow reads `$env.SUPABASE_*` / `$env.GEMINI_API_KEY`, all provided by `scripts/start-n8n.mjs` from the project `.env`. Nothing to configure twice.
 - **Two OpenAI call paths** (AD-2): this pipeline is the automated path; the interactive tools in Phase 6 will call OpenAI from Next.js directly.
 - **The dashboard never reads n8n's execution store** (AD-5/AD-10): everything you see comes from `automation_runs`/`automation_run_steps` written by the pipeline itself.
 - **Scoring is auditable**: the model proposes the 0–100 score, but the HOT/WARM/COLD thresholds are fixed code — change them in the "Score & classify" node.
@@ -70,5 +74,5 @@ Design decisions worth knowing (these mirror ARCHITECTURE.md):
 
 - **"Pipeline unreachable"** → n8n not running (`npm run n8n`) or workflow not Active.
 - **401 "invalid webhook secret"** → `.env` changed after n8n started; restart both.
-- **OpenAI 401/quota** → check the key and billing in `.env`; the run will show as failed with the API error in the n8n execution view.
-- **Import already done?** The workflow is imported (id `CoOq9XXhs7qag3N6`). To re-import after edits to `n8n/admissions-lead-pipeline.json`: delete the old one in the UI (or `npx n8n import:workflow --input=... --separate`), then re-activate.
+- **OpenAI 401/quota** → n/a (Gemini). For Gemini 429 quota errors, the free-tier daily limit was hit — wait or switch `AI_MODEL` (e.g. `gemini-2.0-flash-lite`); the run shows as failed in the n8n execution view.
+- **Import already done?** The workflow is imported (id `CoOq9XXhs7qag3N6`). To re-import after edits to `n8n/admissions-lead-pipeline.json`: re-running the import updates the workflow in place (same id) — deactivate/reactivate the toggle in the editor afterwards.

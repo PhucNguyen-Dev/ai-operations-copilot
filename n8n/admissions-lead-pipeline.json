@@ -1,4 +1,5 @@
 {
+  "id": "CoOq9XXhs7qag3N6",
   "name": "Admissions Lead Pipeline",
   "active": false,
   "settings": { "executionOrder": "v1" },
@@ -111,7 +112,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepare the OpenAI request (F-004) and carry run_id + payload through the pipeline\nconst payload = $('Validate & authorize').first().json.payload;\nconst raw = $('Log run started').first().json;\nconst run = Array.isArray(raw) ? raw[0] : raw;\n\nconst system = [\n  'You are the lead-qualification analyst for a mid-sized education and training company.',\n  'You qualify incoming student leads for admissions counselors.',\n  'Respond with ONLY a single JSON object with exactly these keys:',\n  '{ \"score\": <integer 0-100, likelihood of conversion>, \"category\": \"HOT\"|\"WARM\"|\"COLD\", \"intent\": \"HIGH\"|\"MEDIUM\"|\"LOW\", \"course\": <string or null>, \"timeline\": <string or null>, \"summary\": <one-sentence summary of the lead>, \"recommended_action\": <concrete next action for the counselor> }'\n].join('\\n');\n\nconst user = [\n  'New lead received from ' + (payload.source || 'unknown source') + ':',\n  '- name: ' + payload.name,\n  '- email: ' + payload.email,\n  '- phone: ' + (payload.phone || 'not provided'),\n  '- course of interest: ' + (payload.course_interest || 'not specified'),\n  '- budget: ' + (payload.budget || 'not specified'),\n  '- timeline: ' + (payload.timeline || 'not specified'),\n  '- message: ' + (payload.message || '(empty)')\n].join('\\n');\n\nreturn [{ json: {\n  run_id: run.id,\n  payload,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: user }\n  ]\n} }];"
+        "jsCode": "// Prepare the OpenAI request (F-004) and carry run_id + payload through the pipeline\nconst payload = $('Validate & authorize').first().json.payload;\nconst raw = $('Log run started').first().json;\nconst run = Array.isArray(raw) ? raw[0] : raw;\n\nconst system = [\n  'You are the lead-qualification analyst for a mid-sized education and training company.',\n  'You qualify incoming student leads for admissions counselors.',\n  'Respond with ONLY a single JSON object with exactly these keys:',\n  '{ \"score\": <integer 0-100, likelihood of conversion>, \"category\": \"HOT\"|\"WARM\"|\"COLD\", \"intent\": \"HIGH\"|\"MEDIUM\"|\"LOW\", \"course\": <string or null>, \"timeline\": <string or null>, \"summary\": <one-sentence summary of the lead>, \"recommended_action\": <concrete next action for the counselor> }'\n].join('\\n');\n\nconst user = [\n  'New lead received from ' + (payload.source || 'unknown source') + ':',\n  '- name: ' + payload.name,\n  '- email: ' + payload.email,\n  '- phone: ' + (payload.phone || 'not provided'),\n  '- course of interest: ' + (payload.course_interest || 'not specified'),\n  '- budget: ' + (payload.budget || 'not specified'),\n  '- timeline: ' + (payload.timeline || 'not specified'),\n  '- message: ' + (payload.message || '(empty)')\n].join('\\n');\n\nreturn [{ json: { run_id: run.id, payload, system, user } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000007",
       "name": "Prepare AI prompt",
@@ -122,16 +123,16 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.AI_MODEL || 'gemini-2.0-flash' }}:generateContent",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }
+            { "name": "x-goog-api-key", "value": "={{ $env.GEMINI_API_KEY }}" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: $env.OPENAI_MODEL || 'gpt-4o-mini', response_format: { type: 'json_object' }, messages: $json.messages }) }}",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: $json.system }] }, contents: [{ role: 'user', parts: [{ text: $json.user }] }], generationConfig: { responseMimeType: 'application/json' } }) }}",
         "options": { "timeout": 30000 }
       },
       "id": "a1000000-0000-0000-0000-000000000008",
@@ -145,7 +146,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Schema validation — a malformed AI response is a permanent failure, never persisted\nconst ai = $('AI lead analysis').first().json;\nconst prep = $('Prepare AI prompt').first().json;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(ai.choices[0].message.content);\n} catch (e) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, error: 'AI response was not valid JSON: ' + e.message } }];\n}\n\nconst errors = [];\nif (!Number.isInteger(parsed.score) || parsed.score < 0 || parsed.score > 100) errors.push('score must be an integer between 0 and 100');\nif (!['HIGH', 'MEDIUM', 'LOW'].includes(parsed.intent)) errors.push('intent must be HIGH, MEDIUM or LOW');\nif (typeof parsed.summary !== 'string' || !parsed.summary.trim()) errors.push('summary is required');\nif (typeof parsed.recommended_action !== 'string' || !parsed.recommended_action.trim()) errors.push('recommended_action is required');\nif (errors.length) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, raw: parsed, error: errors.join('; ') } }];\n}\n\nreturn [{ json: { ok: true, run_id: prep.run_id, payload: prep.payload, analysis: parsed } }];"
+        "jsCode": "// Schema validation — a malformed AI response is a permanent failure, never persisted\nconst ai = $('AI lead analysis').first().json;\nconst prep = $('Prepare AI prompt').first().json;\n\nconst text = (ai.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, error: 'AI response was not valid JSON: ' + e.message } }];\n}\n\nconst errors = [];\nif (!Number.isInteger(parsed.score) || parsed.score < 0 || parsed.score > 100) errors.push('score must be an integer between 0 and 100');\nif (!['HIGH', 'MEDIUM', 'LOW'].includes(parsed.intent)) errors.push('intent must be HIGH, MEDIUM or LOW');\nif (typeof parsed.summary !== 'string' || !parsed.summary.trim()) errors.push('summary is required');\nif (typeof parsed.recommended_action !== 'string' || !parsed.recommended_action.trim()) errors.push('recommended_action is required');\nif (errors.length) {\n  return [{ json: { ok: false, run_id: prep.run_id, payload: prep.payload, raw: parsed, error: errors.join('; ') } }];\n}\n\nreturn [{ json: { ok: true, run_id: prep.run_id, payload: prep.payload, analysis: parsed } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000009",
       "name": "Schema check",
@@ -281,7 +282,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_id: $('CRM: insert lead').first().json.id, score: $('Score & classify').first().json.analysis.score, category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent, course: $('Score & classify').first().json.analysis.course || null, timeline: $('Score & classify').first().json.analysis.timeline || null, summary: $('Score & classify').first().json.analysis.summary, recommended_action: $('Score & classify').first().json.analysis.recommended_action, model: $('AI lead analysis').first().json.model || 'unknown', raw_response: $('AI lead analysis').first().json.choices[0].message.content, created_by: 'n8n-pipeline' }) }}",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $('CRM: insert lead').first().json.id, score: $('Score & classify').first().json.analysis.score, category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent, course: $('Score & classify').first().json.analysis.course || null, timeline: $('Score & classify').first().json.analysis.timeline || null, summary: $('Score & classify').first().json.analysis.summary, recommended_action: $('Score & classify').first().json.analysis.recommended_action, model: ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', ''), raw_response: ($('AI lead analysis').first().json.candidates[0].content.parts || []).map((p) => p.text || '').join(''), created_by: 'n8n-pipeline' }) }}",
         "options": {}
       },
       "id": "a1000000-0000-0000-0000-000000000016",
@@ -306,7 +307,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify([\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, started_at: new Date(Date.now() - 15000).toISOString(), finished_at: new Date(Date.now() - 14000).toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: 1, payload_snapshot: { score: $('Score & classify').first().json.analysis.score, model: $('AI lead analysis').first().json.model }, started_at: new Date(Date.now() - 14000).toISOString(), finished_at: new Date().toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent } },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: $('CRM: insert lead').first().json.id } }\n]) }}",
+        "jsonBody": "={{ JSON.stringify([\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, started_at: new Date(Date.now() - 15000).toISOString(), finished_at: new Date(Date.now() - 14000).toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: 1, payload_snapshot: { score: $('Score & classify').first().json.analysis.score, model: ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', '') }, started_at: new Date(Date.now() - 14000).toISOString(), finished_at: new Date().toISOString() },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: $('Score & classify').first().json.analysis.category, intent: $('Score & classify').first().json.analysis.intent } },\n  { run_id: $('Score & classify').first().json.run_id, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: $('CRM: insert lead').first().json.id } }\n]) }}",
         "options": {}
       },
       "id": "a1000000-0000-0000-0000-000000000017",
