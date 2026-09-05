@@ -168,7 +168,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepare the OpenAI request (F-004) and carry run_id + payload through the pipeline\nconst payload = $('Validate & authorize').first().json.payload;\nconst raw = $('Log run started').first().json;\nconst body = typeof raw.data === 'string' ? JSON.parse(raw.data) : raw;\nconst run = Array.isArray(body) ? body[0] : body;\n\nconst system = [\n  'You are the lead-qualification analyst for a mid-sized education and training company.',\n  'You qualify incoming student leads for admissions counselors.',\n  'Respond with ONLY a single JSON object with exactly these keys:',\n  '{ \"score\": <integer 0-100, likelihood of conversion>, \"category\": \"HOT\"|\"WARM\"|\"COLD\", \"intent\": \"HIGH\"|\"MEDIUM\"|\"LOW\", \"course\": <string or null>, \"timeline\": <string or null>, \"summary\": <one-sentence summary of the lead>, \"recommended_action\": <concrete next action for the counselor> }'\n].join('\\n');\n\nconst user = [\n  'New lead received from ' + (payload.source || 'unknown source') + ':',\n  '- name: ' + payload.name,\n  '- email: ' + payload.email,\n  '- phone: ' + (payload.phone || 'not provided'),\n  '- course of interest: ' + (payload.course_interest || 'not specified'),\n  '- budget: ' + (payload.budget || 'not specified'),\n  '- timeline: ' + (payload.timeline || 'not specified'),\n  '- message: ' + (payload.message || '(empty)')\n].join('\\n');\n\nreturn [{ json: { run_id: run.id, payload, system, user } }];"
+        "jsCode": "// Prepare the OpenAI request (F-004) and carry run_id + payload through the pipeline\nconst payload = $('Validate & authorize').first().json.payload;\nconst raw = $('Log run started').first().json;\nconst body = typeof raw.data === 'string' ? JSON.parse(raw.data) : raw;\nconst run = Array.isArray(body) ? body[0] : body;\n\nconst system = [\n  'You are the lead-qualification analyst for a mid-sized education and training company.',\n  'You qualify incoming student leads for admissions counselors.',\n  'Respond with ONLY a single JSON object with exactly these keys:',\n  '{ \"score\": <integer 0-100, likelihood of conversion>, \"category\": \"HOT\"|\"WARM\"|\"COLD\", \"intent\": \"HIGH\"|\"MEDIUM\"|\"LOW\", \"course\": <string or null>, \"timeline\": <string or null>, \"summary\": <one-sentence summary of the lead>, \"recommended_action\": <concrete next action for the counselor> }'\n].join('\\n');\n\nconst user = [\n  'New lead received from ' + (payload.source || 'unknown source') + ':',\n  '- name: ' + payload.name,\n  '- email: ' + payload.email,\n  '- phone: ' + (payload.phone || 'not provided'),\n  '- course of interest: ' + (payload.course_interest || 'not specified'),\n  '- budget: ' + (payload.budget || 'not specified'),\n  '- timeline: ' + (payload.timeline || 'not specified'),\n  '- message: ' + (payload.message || '(empty)')\n].join('\\n');\n\nreturn [{ json: { run_id: run.id, payload, system, user, _retryCount: $input.first().json._retryCount || 0 } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000007",
       "name": "Prepare AI prompt",
@@ -347,7 +347,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F-005 / F-006 — deterministic scoring + classification thresholds.\n// The model proposes a score; the thresholds below are the auditable rule\n// that decides HOT/WARM/COLD and intent level.\nconst { run_id, payload, analysis } = $input.first().json;\nconst score = analysis.score;\nconst category = score >= 70 ? 'HOT' : score >= 40 ? 'WARM' : 'COLD';\nconst intent = score >= 70 ? 'HIGH' : score >= 40 ? 'MEDIUM' : 'LOW';\nreturn [{ json: { run_id, payload, analysis: { ...analysis, score, category, intent } } }];"
+        "jsCode": "// F-005 / F-006 — deterministic scoring + classification thresholds.\n// The model proposes a score; the thresholds below are the auditable rule\n// that decides HOT/WARM/COLD and intent level.\nconst { run_id, payload, analysis, _retryCount } = $input.first().json;\nconst score = analysis.score;\nconst category = score >= 70 ? 'HOT' : score >= 40 ? 'WARM' : 'COLD';\nconst intent = score >= 70 ? 'HIGH' : score >= 40 ? 'MEDIUM' : 'LOW';\nreturn [{ json: { run_id, payload, analysis: { ...analysis, score, category, intent }, _retryCount: _retryCount || 0 } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000014",
       "name": "Score & classify",
@@ -607,7 +607,6 @@
         "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 500, temperature: 0.7 } }) }}",
         "options": {
           "timeout": 30000,
-          "retryOnFail": true,
           "response": {
             "responseType": "json"
           }
@@ -735,8 +734,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ lead_id: $json.lead_id, to_address: $('Score & classify').first().json.payload.email, subject: $json.email.subject, body: $json.email.body, status: 'dry_run', created_by: 'n8n-pipeline' }) }}",
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000041",
@@ -746,7 +744,10 @@
       "position": [
         2980,
         -120
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -762,10 +763,30 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ client_id: $env.GOOGLE_CLIENT_ID, client_secret: $env.GOOGLE_CLIENT_SECRET, refresh_token: $env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token' }) }}",
         "options": {
           "timeout": 15000
+        },
+        "contentType": "form-urlencoded",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "={{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $env.GOOGLE_CLIENT_SECRET }}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $env.GOOGLE_REFRESH_TOKEN }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            }
+          ]
         }
       },
       "id": "a1000000-0000-0000-0000-000000000042",
@@ -842,8 +863,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ lead_id: $('Email schema check').first().json.lead_id, to_address: $('Score & classify').first().json.payload.email, subject: $('Email schema check').first().json.email.subject, body: $('Email schema check').first().json.email.body, status: 'sent', sent_at: new Date().toISOString(), provider_message_id: $json.id, created_by: 'n8n-pipeline' }) }}",
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000044",
@@ -853,7 +873,10 @@
       "position": [
         3420,
         40
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -873,8 +896,7 @@
           ]
         },
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000050",
@@ -884,7 +906,10 @@
       "position": [
         1880,
         200
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -928,8 +953,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ assigned_counselor_id: $json.assigned_counselor?.id || null, status: 'contacted' }) }}",
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000052",
@@ -939,7 +963,10 @@
       "position": [
         2320,
         200
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -970,8 +997,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ lead_id: $('CRM: insert lead').first().json.id || JSON.parse($('CRM: insert lead').first().json.data).id, assigned_counselor_id: $('Assign counselor').first().json.assigned_counselor?.id || null, title: 'Follow up with ' + $('Score & classify').first().json.payload.name, details: $('Score & classify').first().json.analysis.recommended_action, priority: $('Score & classify').first().json.analysis.category === 'HOT' ? 'high' : ($('Score & classify').first().json.analysis.category === 'WARM' ? 'medium' : 'low'), due_at: new Date(Date.now() + ($('Score & classify').first().json.analysis.category === 'HOT' ? 1 : 3) * 24 * 60 * 60 * 1000).toISOString(), status: 'pending', created_by: 'n8n-pipeline' }) }}",
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000053",
@@ -981,7 +1007,10 @@
       "position": [
         2540,
         200
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -1012,8 +1041,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ recipient_id: $('Assign counselor').first().json.assigned_counselor?.id || null, lead_id: $('CRM: insert lead').first().json.id || JSON.parse($('CRM: insert lead').first().json.data).id, type: 'new_lead', title: 'New lead assigned: ' + $('Score & classify').first().json.payload.name, body: 'A new ' + $('Score & classify').first().json.analysis.category + ' lead (' + $('Score & classify').first().json.analysis.score + '/100) has been assigned to you. ' + $('Score & classify').first().json.analysis.summary }) }}",
         "options": {
-          "timeout": 15000,
-          "retryOnFail": true
+          "timeout": 15000
         }
       },
       "id": "a1000000-0000-0000-0000-000000000060",
@@ -1023,11 +1051,14 @@
       "position": [
         2760,
         200
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
-        "jsCode": "// Build all step rows in plain JS (avoids giant JSON template expressions).\nconst run = $('Score & classify').first().json;\nconst email = $('Email schema check').first().json;\nconst assignment = $('Assign counselor').first().json;\nconst lead = $('CRM: insert lead').first().json;\nconst leadId = lead.id || JSON.parse(lead.data).id;\nconst runId = run.run_id;\nconst now = Date.now();\nconst a = run.analysis;\nconst model = ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', '');\n\nconst rows = [\n  { run_id: runId, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, payload_snapshot: { required_fields: true, email_format: 'valid' }, started_at: new Date(now - 15000).toISOString(), finished_at: new Date(now - 14000).toISOString() },\n  { run_id: runId, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: run._retryCount || 1, payload_snapshot: { score: a.score, model }, started_at: new Date(now - 14000).toISOString(), finished_at: new Date(now - 8000).toISOString() },\n  { run_id: runId, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: a.category, intent: a.intent }, started_at: new Date(now - 8000).toISOString(), finished_at: new Date(now - 7000).toISOString() },\n  { run_id: runId, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: leadId }, started_at: new Date(now - 7000).toISOString(), finished_at: new Date(now - 6000).toISOString() },\n  { run_id: runId, feature_id: 'F-008', step_name: 'AI email draft', status: email.ok ? 'success' : 'failed', attempt_count: 1, payload_snapshot: email.ok ? { subject: email.email?.subject } : null, error_detail: email.ok ? null : email.error, started_at: new Date(now - 6000).toISOString(), finished_at: new Date(now - 4000).toISOString() },\n  { run_id: runId, feature_id: 'F-009', step_name: 'Email delivery', status: email.ok ? ($env.GMAIL_DRY_RUN !== 'false' ? 'success' : 'success') : 'skipped', attempt_count: 1, payload_snapshot: email.ok ? { delivery: $env.GMAIL_DRY_RUN !== 'false' ? 'dry_run' : 'sent' } : null, error_detail: email.ok ? null : 'skipped (email draft failed)', started_at: new Date(now - 4000).toISOString(), finished_at: new Date(now - 3000).toISOString() },\n  { run_id: runId, feature_id: 'F-010', step_name: 'Follow-up task', status: 'success', attempt_count: 1, payload_snapshot: { assigned_to: assignment.assigned_counselor?.email || null, task_priority: a.category === 'HOT' ? 'high' : (a.category === 'WARM' ? 'medium' : 'low') }, started_at: new Date(now - 3000).toISOString(), finished_at: new Date(now - 2000).toISOString() },\n  { run_id: runId, feature_id: 'F-011', step_name: 'Counselor notification', status: 'success', attempt_count: 1, payload_snapshot: { notified: assignment.assigned_counselor?.email || null, type: 'new_lead' }, started_at: new Date(now - 2000).toISOString(), finished_at: new Date(now - 1000).toISOString() }\n];\n\nreturn [{ json: { rows } }];"
+        "jsCode": "// Build all step rows in plain JS (avoids giant JSON template expressions).\n// PostgREST bulk insert requires every row to have an IDENTICAL key set -\n// absent fields must be explicit nulls (else: \"All object keys must match\").\nconst run = $('Score & classify').first().json;\nconst email = $('Email schema check').first().json;\nconst assignment = $('Assign counselor').first().json;\nconst lead = $('CRM: insert lead').first().json;\nconst leadId = lead.id || JSON.parse(lead.data).id;\nconst runId = run.run_id;\nconst now = Date.now();\nconst a = run.analysis;\nconst model = ($('AI lead analysis').first().json.modelVersion || 'unknown').replace('models/', '');\nconst dryRun = $env.GMAIL_DRY_RUN !== 'false';\n\nconst rows = [\n  { run_id: runId, feature_id: 'F-003', step_name: 'Lead validation', status: 'success', attempt_count: 1, payload_snapshot: { required_fields: true, email_format: 'valid' }, error_detail: null, started_at: new Date(now - 15000).toISOString(), finished_at: new Date(now - 14000).toISOString() },\n  { run_id: runId, feature_id: 'F-004', step_name: 'AI lead analysis', status: 'success', attempt_count: run._retryCount || 1, payload_snapshot: { score: a.score, model }, error_detail: null, started_at: new Date(now - 14000).toISOString(), finished_at: new Date(now - 8000).toISOString() },\n  { run_id: runId, feature_id: 'F-005/F-006', step_name: 'Scoring & classification', status: 'success', attempt_count: 1, payload_snapshot: { category: a.category, intent: a.intent }, error_detail: null, started_at: new Date(now - 8000).toISOString(), finished_at: new Date(now - 7000).toISOString() },\n  { run_id: runId, feature_id: 'F-007', step_name: 'CRM storage', status: 'success', attempt_count: 1, payload_snapshot: { lead_id: leadId }, error_detail: null, started_at: new Date(now - 7000).toISOString(), finished_at: new Date(now - 6000).toISOString() },\n  { run_id: runId, feature_id: 'F-008', step_name: 'AI email draft', status: email.ok ? 'success' : 'failed', attempt_count: 1, payload_snapshot: email.ok ? { subject: email.email?.subject } : null, error_detail: email.ok ? null : email.error, started_at: new Date(now - 6000).toISOString(), finished_at: new Date(now - 4000).toISOString() },\n  { run_id: runId, feature_id: 'F-009', step_name: 'Email delivery', status: email.ok ? 'success' : 'skipped', attempt_count: 1, payload_snapshot: email.ok ? { delivery: dryRun ? 'dry_run' : 'sent' } : null, error_detail: email.ok ? null : 'skipped (email draft failed)', started_at: new Date(now - 4000).toISOString(), finished_at: new Date(now - 3000).toISOString() },\n  { run_id: runId, feature_id: 'F-010', step_name: 'Follow-up task', status: 'success', attempt_count: 1, payload_snapshot: { assigned_to: assignment.assigned_counselor?.email || null, task_priority: a.category === 'HOT' ? 'high' : (a.category === 'WARM' ? 'medium' : 'low') }, error_detail: null, started_at: new Date(now - 3000).toISOString(), finished_at: new Date(now - 2000).toISOString() },\n  { run_id: runId, feature_id: 'F-011', step_name: 'Counselor notification', status: 'success', attempt_count: 1, payload_snapshot: { notified: assignment.assigned_counselor?.email || null, type: 'new_lead' }, error_detail: null, started_at: new Date(now - 2000).toISOString(), finished_at: new Date(now - 1000).toISOString() }\n];\n\nreturn [{ json: { rows } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000070",
       "name": "Build step log",

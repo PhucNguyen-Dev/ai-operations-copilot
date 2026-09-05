@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `AI Operations Copilot — Phase 1 System A.md`.
 
-**Current status: Phase 4 done ✅ — the P0 admissions pipeline (F-001–F-016) is complete end-to-end. Phase 5 (dashboards) is next.**
+**Current status: Phase 4 done ✅ — the P0 admissions pipeline (F-001–F-016) is complete end-to-end and verified live (HOT + COLD leads, validation rejection, all 8 step rows logged, zero zombie runs). Phase 5 (dashboards) is next.**
 
 ---
 
@@ -26,7 +26,7 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 
 Extends the existing workflow after `CRM: insert analysis`:
 
-1. **Counselor assignment** — picks the least-loaded admissions counselor (simple round-robin, spec Assumption 4) and PATCHes the lead.
+1. **Counselor assignment** — picks an admissions counselor deterministically (hash of the lead id over the sorted counselor list — stable per lead, spreads across counselors) and PATCHes the lead.
 2. **F-010 Follow-up task** — a `tasks` row (priority: HOT→high / WARM→medium / COLD→low, due in 24h/72h) assigned to that counselor.
 3. **F-011 Counselor notification** — a `notifications` row (`type: new_lead`) for the counselor.
 4. **F-008 AI email draft** — Gemini drafts the first-touch email from the analysis; a schema gate rejects malformed drafts (the run still succeeds — F-008 is logged failed, F-009 skipped).
@@ -40,6 +40,11 @@ Extends the existing workflow after `CRM: insert analysis`:
 - **Closing a terminal does not kill n8n on Windows** — the spawned `n8n start` node process survives as an orphan holding port 5678. Use `Ctrl+C`, or `npm run push:n8n -- --kill` to clean up automatically.
 - **n8n must be started via `npm run n8n`** — starting it any other way skips the `.env` secrets, and every webhook call fails with `401 invalid webhook secret`.
 - **n8n's HTTP Request node does NOT auto-set `Content-Type: application/json`** even when `specifyBody: "json"` is used — PostgREST rejects array bodies (e.g. the `Log pipeline steps` batch insert) with a generic 400 unless the header is added explicitly. See [`fix-pipeline-content-type.md`](fix-pipeline-content-type.md) for the full post-mortem.
+- **PostgREST bulk insert requires every row in the array to have an IDENTICAL key set** — absent fields must be explicit `null`s, not omitted keys (else: `All object keys must match`, 400). This bit us twice: once in Phase 3's `Log pipeline steps`, then again when the Phase 4 `Build step log` rewrite reintroduced it. If you add a column-like field to any row, add it to **all** rows.
+- **Match identifiers exactly across systems** — the F-013 error handler originally filtered `automation_runs` by n8n's display name (`Admissions Lead Pipeline`), but the column stores the hardcoded value `admissions-lead-pipeline`. Zero matches, no error. When a filter matches nothing, suspect an identifier mismatch first.
+- **Fix `_retryCount` propagation end-to-end or the AI retry loop never terminates** — `Count retry` increments it, but any Code node that rebuilds its output from scratch (like `Prepare AI prompt`) silently drops it. `Retry AI?` then always sees `0` and loops forever. Rule: when a node's output is built by hand, carry the loop state through explicitly.
+- **`retryOnFail` is a node-level property, not an `options` key** — inside `parameters.options` it is silently ignored. Put `retryOnFail`/`maxTries`/`waitBetweenTries` at the node level.
+- **PowerShell pitfalls when editing workflow JSON**: `-replace` is regex (a failed match succeeds silently — verify the diff), nested arrays unroll (build `main: [[…]]` branch arrays carefully), and `ConvertTo-Json` round-trips n8n files cleanly only with `-Depth 100`.
 
 ### To apply & verify
 

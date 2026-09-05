@@ -2,7 +2,9 @@
   "id": "errf013000000001",
   "name": "Admissions Error Handler (F-013)",
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "nodes": [
     {
       "parameters": {},
@@ -10,17 +12,23 @@
       "name": "On pipeline error",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// F-013 - Extract error info from the crashed pipeline execution.\nconst item = $input.first().json;\nconst workflowName = item?.workflow?.name || \"unknown\";\nconst lastNode = item?.execution?.lastNodeExecuted || \"unknown\";\nconst errorMessage = item?.execution?.error?.message || \"unknown\";\nreturn [{ json: {\n  workflow_name: workflowName,\n  trigger_source: \"error-workflow\",\n  status: \"failed\",\n  error_summary: \"Unhandled error at \" + lastNode + \": \" + errorMessage\n} }];"
+        "jsCode": "// F-013 - Extract error info from the crashed pipeline execution.\nconst item = $input.first().json;\nconst workflowName = item?.workflow?.name || \"unknown\";\nconst lastNode = item?.execution?.lastNodeExecuted || \"unknown\";\nconst errorMessage = item?.execution?.error?.message || \"unknown\";\nreturn [{ json: {\n  workflow_name: workflowName,\n  last_node: lastNode,\n  error_message: errorMessage\n} }];"
       },
       "id": "b1000000-0000-0000-0000-000000000002",
       "name": "Build error payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -29,30 +37,162 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow_name: $json.workflow_name, trigger_source: $json.trigger_source, status: $json.status, error_summary: $json.error_summary, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
-        "options": { "timeout": 15000, "retryOnFail": true }
+        "jsonBody": "={{ JSON.stringify({ workflow_name: $('Build error payload').first().json.workflow_name, trigger_source: 'error-workflow', status: 'failed', error_summary: 'Unhandled error at ' + $('Build error payload').first().json.last_node + ': ' + $('Build error payload').first().json.error_message, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
+        "options": {
+          "timeout": 15000,
+          "retryOnFail": true
+        }
       },
       "id": "b1000000-0000-0000-0000-000000000003",
       "name": "Record crashed run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0]
+      "position": [
+        880,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs?workflow_name=eq.admissions-lead-pipeline&status=eq.running",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_summary: 'Closed by F-013: unhandled error at ' + $json.last_node + ': ' + $json.error_message, finished_at: new Date().toISOString() }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b1000000-0000-0000-0000-000000000004",
+      "name": "Close zombie run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-closed",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1000000-0000-0000-0000-000000000005",
+      "name": "Zombie closed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ]
     }
   ],
   "connections": {
     "On pipeline error": {
-      "main": [[{ "node": "Build error payload", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "index": 0,
+            "type": "main",
+            "node": "Build error payload"
+          }
+        ]
+      ]
     },
     "Build error payload": {
-      "main": [[{ "node": "Record crashed run", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "index": 0,
+            "type": "main",
+            "node": "Close zombie run"
+          }
+        ]
+      ]
+    },
+    "Close zombie run": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "type": "main",
+            "node": "Zombie closed?"
+          }
+        ]
+      ]
+    },
+    "Zombie closed?": {
+      "main": [
+        [],
+        [
+          {
+            "index": 0,
+            "type": "main",
+            "node": "Record crashed run"
+          }
+        ]
+      ]
     }
   }
 }
