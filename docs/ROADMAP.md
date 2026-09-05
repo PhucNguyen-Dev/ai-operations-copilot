@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `AI Operations Copilot — Phase 1 System A.md`.
 
-**Current status: Phase 4 done ✅ — the P0 admissions pipeline (F-001–F-016) is complete end-to-end and verified live (HOT + COLD leads, validation rejection, all 8 step rows logged, zero zombie runs). Phase 5 (dashboards) — in progress.**
+**Current status: Phase 5 done ✅ — the P0 pipeline (F-001–F-016) is complete and verified live, and the dashboards (F-017–F-019, F-025) are built with the role verification matrix below. Phase 6 (department AI tools) is next.**
 
 ---
 
@@ -16,7 +16,7 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 | 2 — Database / CRM | Supabase schema, RLS policies, seed data, minimal verification app | F-015, F-016 | ✅ Done |
 | 3 — Core admissions automation | n8n pipeline end-to-end: intake → validate → Gemini analysis → score/classify → CRM write, with per-step logging and retries | F-001–F-014 | ✅ Done (verified) |
 | 4 — Finish the P0 pipeline | AI email draft + Gmail send (dry-run), counselor assignment + follow-up task, notification, dedicated error workflow | F-008–F-011, F-013 | ✅ Done (verified) |
-| 5 — Dashboards | Lead Dashboard, Lead Detail view, Automation Logs Viewer, Ops/Admin overview | F-017–F-019, F-025 | 🔨 In progress |
+| 5 — Dashboards | Lead Dashboard, Lead Detail view, Automation Logs Viewer, Ops/Admin overview | F-017–F-019, F-025 | ✅ Done (verified) |
 | 6 — Department AI tools | Marketing (content generator, campaign analyzer), Academic (lesson planner, quiz generator), Operations (report generator) — Gemini called from Next.js directly | F-020–F-024 | Planned |
 | 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | Planned |
 
@@ -55,43 +55,30 @@ Extends the existing workflow after `CRM: insert analysis`:
 
 ---
 
-## Phase 5 (in progress 🔨) — Dashboards
+## Phase 5 (done ✅) — Dashboards
 
-Goal: turn the Phase 2 verification app into the real role-scoped UI — **F-017** Lead Dashboard, **F-018** Lead Detail, **F-019** Automation Logs Viewer, **F-025** Ops/Admin overview.
+**F-017** Lead Dashboard, **F-018** Lead Detail, **F-019** Automation Logs Viewer, **F-025** Ops/Admin overview — built and verified (matrix below).
 
-Quality bar (agreed with the project owner): **correctness, robustness, verified behavior, clean code, proper error handling, smooth running, easy for non-tech users. Function-only styling — no visualizations, no visual polish pass.** Senior-standard engineering: every Supabase `error` checked, every URL param sanitized server-side, `notFound()` for RLS-hidden resources, shared role/filter helpers instead of copy-paste, `npm run typecheck` after every stage, one commit per stage.
+Quality bar (agreed with the project owner): **correctness, robustness, verified behavior, clean code, proper error handling, smooth running, easy for non-tech users. Function-only styling — no visualizations.** Delivered: every Supabase `error` checked with readable messages, every URL param whitelisted server-side (unknown values fall back to defaults), `notFound()` for RLS-hidden resources (no existence leak), shared helpers (`lib/auth.ts`, `lib/format.ts`) instead of copy-paste, typecheck after every stage, one commit per stage.
 
-Decisions locked: plain Tailwind (consistent with Phases 2–4; shadcn remains a documented deviation) · routes `/runs` + `/admin` · notifications stay a counter (list + mark-read is not a numbered feature) · all reads via the RLS client (AD-10 holds) · no schema / n8n / env changes.
+Decisions kept: plain Tailwind (shadcn remains a documented deviation) · routes `/runs` + `/admin` · notifications stay a counter · all reads via the RLS client (AD-10 holds) · no schema / n8n / env changes.
 
-### Stages
+### Future enhancements (documented, deliberately not built)
 
-| # | Delivers | Verify |
-|---|---|---|
-| 0 | This plan (done) | — |
-| Gate | 4 browser tests from Phase 4 verification (admin / counselor / operations / marketing) | below |
-| 1 | `SiteHeader` — role-aware shared nav (Dashboard all · Logs + Overview ops/admin · + New Test Lead admissions/admin), replaces per-page headers | typecheck; pages unchanged |
-| 2 | **F-017** Lead Dashboard: category + date filters (spec minimum) as shareable GET links, rows link to detail | filters → correct rows; counselor sees only assigned |
-| 3 | **F-018** Lead Detail `/leads/[id]`: analysis, task history, sent email, ops/admin run link; `notFound()` when RLS hides the lead | counselor 404s on unassigned lead; admin sees all |
-| 4 | **F-019** Logs Viewer `/runs` (status + date filters, clamped prev/next pagination) + `/runs/[id]` (step rows, collapsible payload snapshots); ops/admin gate | ops/admin OK; counselor/marketing gated |
-| 5 | **F-025** Overview `/admin`: lead volume (total, by category, 7d/30d) + automation health (success rate, failed 7d, last failure); honest "arrives with Phase 6" placeholder for dept tool activity | ops/admin OK; others gated |
-| 6 | Close-out: FEATURES.md → Done (F-017–F-019, F-025), this section trimmed to a done-note, typecheck + build, full verification matrix | below |
-
-### Future enhancements (documented, deliberately not built now)
-
-- Lead Dashboard **status filter** (new/contacted/converted/lost) and **score sort** — spec-minimum filters ship first
+- Lead Dashboard **status filter** (new/contacted/converted/lost) and **score sort** — spec-minimum filters shipped
 - In-app **notifications list + mark-read** UI (F-011 is satisfied by the counter + pipeline rows)
 - **shadcn/ui** migration if the UI ever grows beyond prototype scope
 
-### Verification matrix (Stage 6 exit criteria)
+### Verification matrix (exit criteria — walk this as admin, counselor, operations, marketing)
 
 | Role | `/` Dashboard | `/leads/[id]` | `/runs` | `/admin` |
 |---|---|---|---|---|
-| admin | all leads, runs visible | opens any lead | access | access |
+| admin | all leads, runs visible, filter pills work | opens any lead | access, pagination works | access |
 | counselor (admissions) | assigned leads only, runs blocked (RLS "−"), notifications counter > 0 | assigned → opens; unassigned → 404 | gated page | gated page |
 | operations | all leads, runs visible | opens any lead | access | access |
 | marketing / teacher | empty leads table (by-design RLS message), runs blocked | 404 | gated page | gated page |
 
-Plus live-data spot checks: the HOT run (`Fix Verification`, 95) and COLD run (`Test User`, 25) from the Phase 4 verification appear with correct categories; `/runs/[id]` shows **8** step rows for each.
+Live-data spot checks: `/runs/[id]` for a verified run shows **8** step rows with collapsible payload snapshots; the Phase 4 verification leads (`Fix Verification` HOT 95, `Test User` COLD 25) appear with correct categories.
 
 ---
 
