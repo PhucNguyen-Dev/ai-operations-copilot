@@ -82,6 +82,35 @@ Live-data spot checks: `/runs/[id]` for a verified run shows **8** step rows wit
 
 ---
 
+## Hardening (Phase 5.5 — before Phase 6)
+
+Resolves the open High/Medium risks from [`WEAK_POINTS_AND_RISKS.md`](WEAK_POINTS_AND_RISKS.md). Order is deliberate: R-02 first, then R-01, then features.
+
+### The AI convention (R-02 — closes first)
+
+**Every Gemini call in this app goes through `lib/gemini.ts`. No feature may `fetch()` Gemini directly.** The module owns:
+
+1. **JSON mode** — `responseMimeType: 'application/json'` always on.
+2. **Truncation-aware retry** — a response not ending in `}`/`]` is retried (up to 3 attempts, 2s/4s backoff); HTTP 429/5xx and network errors are transient; 4xx, empty candidates, unparseable JSON and schema mismatches are **permanent** (retrying garbage returns garbage — same policy as the n8n Schema-check node).
+3. **Per-tool schema validation** — pure validator functions in `lib/ai/schemas.ts`, unit-tested without network. `validateLeadAnalysis` is the reference implementation.
+4. **Uniform error normalization** — failures map to `{ code, message, retryable }` where `message` is client-safe (R-03); full detail goes to server logs only.
+5. **Generation logging** — every call writes one `ai_generations` row (migration 004) with tool id, department, model, status, duration, sanitized inputs. Best-effort: logging never breaks a tool response.
+
+Test policy (R-01): Vitest unit tests for all pure logic (validators, filters, helpers, rate limiter) run via `npm test`; a small `npm run test:integration` path exercises the real Gemini API end-to-end (explicit invocation only — quota-aware). Playwright (login + RLS matrix) lands once the Phase 6 foundation is stable.
+
+### Stages
+
+| # | Delivers | Closes |
+|---|---|---|
+| H1 | `lib/gemini.ts` + `lib/ai/schemas.ts` + migration 004 + this convention | R-02 |
+| H2 | Error hygiene: server-side `console.error` + generic client messages + correct status codes on `/api/leads` and all Phase 5 error blocks | R-03 |
+| H3 | Vitest setup, pure-module extraction (`lib/roles.ts`, `lib/filters.ts`), unit tests, `npm run test:integration` path | R-01 |
+| H4 | In-memory per-user rate limiting on `POST /api/leads` and `/api/ai/*` | R-05 |
+
+Known accepted tradeoff: rate limiting is in-memory (resets on restart, per-instance) — demo-adequate per the risk doc.
+
+---
+
 ## Key commands
 
 | Command | What it does |
