@@ -139,11 +139,15 @@ export default function TestLeadForm() {
               </>
             ) : (
               <>
-                <p className="mb-2 font-medium text-red-800">✗ Rejected by the pipeline</p>
+                <p className="mb-2 font-medium text-red-800">✗ {result.error?.includes?.('unreachable') ? 'Pipeline unreachable' : 'Rejected by the pipeline'}</p>
                 <p className="text-sm text-red-700">{result.error}</p>
                 {result.detail && <p className="mt-1 text-xs text-red-500">{result.detail}</p>}
                 <p className="mt-3 text-xs text-gray-500">
-                  The failed run was recorded in automation_runs — check the dashboard as admin.
+                  {result.error?.includes?.('unreachable')
+                    ? 'Nothing was persisted — the pipeline was not reachable.'
+                    : result.error?.includes?.('schema validation')
+                      ? 'The AI returned unusable output — this run was recorded as failed and no lead was saved.'
+                      : 'The failed run was recorded in automation_runs — check the dashboard as admin.'}
                 </p>
               </>
             )}

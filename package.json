@@ -8,7 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "seed:users": "node scripts/seed-users.mjs",
-    "n8n": "node scripts/start-n8n.mjs"
+    "n8n": "node scripts/start-n8n.mjs",
+    "push:n8n": "node scripts/push-workflow.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

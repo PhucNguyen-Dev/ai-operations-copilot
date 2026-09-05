@@ -19,3 +19,9 @@ next-env.d.ts
 *.pem
 npm-debug.log*
 *.tsbuildinfo
+
+# screenshots for debugging (safe to delete)
+/tmp/
+
+# other AI tool worktrees
+/.kilo/

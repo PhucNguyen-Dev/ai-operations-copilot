@@ -29,7 +29,6 @@ const child = spawn('npx', ['n8n', 'start'], {
     N8N_PERSONALIZATION_ENABLED: 'false',
     N8N_VERSION_NOTIFICATIONS_ENABLED: 'false',
     N8N_BLOCK_ENV_ACCESS_IN_NODE: 'false',
-    N8N_RUNNERS_ENABLED: 'true',
     GENERIC_TIMEZONE: 'Asia/Ho_Chi_Minh',
   },
 })

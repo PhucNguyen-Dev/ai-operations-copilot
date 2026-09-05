@@ -14,17 +14,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F-013 — Extract error info from the crashed pipeline execution.
-const item = $input.first().json;
-const workflowName = item?.workflow?.name || 'unknown';
-const lastNode = item?.execution?.lastNodeExecuted || 'unknown';
-const errorMessage = item?.execution?.error?.message || 'unknown';
-return [{ json: {
-  workflow_name: workflowName,
-  trigger_source: 'error-workflow',
-  status: 'failed',
-  error_summary: 'Unhandled error at ' + lastNode + ': ' + errorMessage
-} }];"
+        "jsCode": "// F-013 - Extract error info from the crashed pipeline execution.\nconst item = $input.first().json;\nconst workflowName = item?.workflow?.name || \"unknown\";\nconst lastNode = item?.execution?.lastNodeExecuted || \"unknown\";\nconst errorMessage = item?.execution?.error?.message || \"unknown\";\nreturn [{ json: {\n  workflow_name: workflowName,\n  trigger_source: \"error-workflow\",\n  status: \"failed\",\n  error_summary: \"Unhandled error at \" + lastNode + \": \" + errorMessage\n} }];"
       },
       "id": "b1000000-0000-0000-0000-000000000002",
       "name": "Build error payload",
