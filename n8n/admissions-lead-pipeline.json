@@ -200,8 +200,8 @@
         -40
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000
+      "maxTries": 4,
+      "waitBetweenTries": 10000
     },
     {
       "parameters": {
@@ -546,7 +546,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F-008 - Build the email-draft prompt from the persisted lead + analysis.\nconst rawAnalysis = $('CRM: insert analysis').first().json;\nconst body = typeof rawAnalysis.data === 'string' ? JSON.parse(rawAnalysis.data) : rawAnalysis;\nconst analysis = Array.isArray(body) ? body[0] : body;\nconst run = $('Score & classify').first().json;\nconst payload = run.payload;\nconst a = run.analysis;\n\nconst prompt = `You are an admissions counselor at a language school. Write a short, friendly first-touch email to a prospective student.\n\nStudent name: ${payload.name}\nCourse interest: ${payload.course_interest || 'not specified'}\nBudget: ${payload.budget || 'not specified'}\nTimeline: ${payload.timeline || 'not specified'}\nMessage from student: ${payload.message || 'none'}\n\nLead analysis:\n- Score: ${a.score}/100\n- Category: ${a.category}\n- Intent: ${a.intent}\n- Summary: ${a.summary}\n- Recommended action: ${a.recommended_action}\n\nReturn STRICT JSON (no markdown, no commentary) with exactly these keys:\n{\n  \"subject\": \"email subject line (max 60 chars)\",\n  \"body\": \"email body (2-4 short paragraphs, personalized)\"\n}`;\n\nreturn [{ json: { ...analysis, prompt } }];"
+        "jsCode": "// F-008 - Build the email-draft prompt from the persisted lead + analysis.\nconst rawAnalysis = $('CRM: insert analysis').first().json;\nconst body = typeof rawAnalysis.data === 'string' ? JSON.parse(rawAnalysis.data) : rawAnalysis;\nconst analysis = Array.isArray(body) ? body[0] : body;\nconst rawLead = $('CRM: insert lead').first().json;\nconst lead = typeof rawLead.data === 'string' ? JSON.parse(rawLead.data) : rawLead;\nconst run = $('Score & classify').first().json;\nconst payload = run.payload;\nconst a = run.analysis;\n\nconst prompt = `You are an admissions counselor at a language school. Write a short, friendly first-touch email to a prospective student.\n\nStudent name: ${payload.name}\nCourse interest: ${payload.course_interest || 'not specified'}\nBudget: ${payload.budget || 'not specified'}\nTimeline: ${payload.timeline || 'not specified'}\nMessage from student: ${payload.message || 'none'}\n\nLead analysis:\n- Score: ${a.score}/100\n- Category: ${a.category}\n- Intent: ${a.intent}\n- Summary: ${a.summary}\n- Recommended action: ${a.recommended_action}\n\nReturn STRICT JSON (no markdown, no commentary) with exactly these keys:\n{\n  \"subject\": \"email subject line (max 60 chars)\",\n  \"body\": \"email body (2-4 short paragraphs, personalized)\"\n}`;\n\nreturn [{ json: { ...analysis, lead_id: lead.id, prompt } }];"
       },
       "id": "a1000000-0000-0000-0000-000000000030",
       "name": "Prepare email prompt",
@@ -592,7 +592,10 @@
       "position": [
         2100,
         -40
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 10000
     },
     {
       "parameters": {
@@ -777,7 +780,10 @@
       "position": [
         3200,
         40
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 10000
     },
     {
       "parameters": {

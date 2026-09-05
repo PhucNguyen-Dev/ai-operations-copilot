@@ -1,114 +1,69 @@
-# error-handler.json Fix Required
+# error-handler.json — fixed
 
-## Problem
-`n8n/error-handler.json` is invalid JSON. The `jsCode` string in the "Build error payload" node has literal newlines instead of escaped `\n` sequences (line 17, column 86). This causes `npm run push:n8n` to fail with:
+## Status
+**Resolved.** `n8n/error-handler.json` now parses as valid JSON and is ready
+for `npm run push:n8n`.
 
-```
-error-handler.json is not valid JSON: Bad control character in string literal in JSON at position 497
-```
+## Verification
 
-Both the working file AND the git HEAD version (commit 5c9d0f6) are broken — the file was committed with this defect.
-
-## Impact
-- `npm run push:n8n` fails (the push script validates JSON before importing)
-- The error handler workflow cannot be loaded by n8n
-- The main pipeline (`admissions-lead-pipeline.json`) is UNAFFECTED — it is valid JSON and works correctly
-- If an unhandled error occurs in the main pipeline, it is still logged as failed via the pipeline's own logic; only the dedicated error-handler workflow is missing
-
-## Fix
-
-Replace the file with valid JSON. The `jsCode` string must have `\n` (escaped newlines), not literal newlines.
-
-### Option A: Regenerate from Node script
-
-Create and run this script:
-
-```js
-import { writeFileSync, readFileSync } from "fs";
-
-const wf = {
-  id: "errf013000000001",
-  name: "Admissions Error Handler (F-013)",
-  active: false,
-  settings: { executionOrder: "v1" },
-  nodes: [
-    {
-      parameters: {},
-      id: "b1000000-0000-0000-0000-000000000001",
-      name: "On pipeline error",
-      type: "n8n-nodes-base.errorTrigger",
-      typeVersion: 1,
-      position: [0, 0]
-    },
-    {
-      parameters: {
-        jsCode: `// F-013 - Extract error info from the crashed pipeline execution.
-const item = $input.first().json;
-const workflowName = item?.workflow?.name || "unknown";
-const lastNode = item?.execution?.lastNodeExecuted || "unknown";
-const errorMessage = item?.execution?.error?.message || "unknown";
-return [{ json: {
-  workflow_name: workflowName,
-  trigger_source: "error-workflow",
-  status: "failed",
-  error_summary: "Unhandled error at " + lastNode + ": " + errorMessage
-} }];`
-      },
-      id: "b1000000-0000-0000-0000-000000000002",
-      name: "Build error payload",
-      type: "n8n-nodes-base.code",
-      typeVersion: 2,
-      position: [220, 0]
-    },
-    {
-      parameters: {
-        method: "POST",
-        url: "={{ $env.SUPABASE_URL }}/rest/v1/automation_runs",
-        sendHeaders: true,
-        headerParameters: {
-          parameters: [
-            { name: "apikey", value: "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { name: "Authorization", value: "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { name: "Content-Type", value: "application/json" },
-            { name: "Prefer", value: "return=representation" }
-          ]
-        },
-        sendBody: true,
-        specifyBody: "json",
-        jsonBody: "={{ JSON.stringify({ workflow_name: $json.workflow_name, trigger_source: $json.trigger_source, status: $json.status, error_summary: $json.error_summary, started_at: new Date().toISOString(), finished_at: new Date().toISOString() }) }}",
-        options: { timeout: 15000, retryOnFail: true }
-      },
-      id: "b1000000-0000-0000-0000-000000000003",
-      name: "Record crashed run",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4.2,
-      position: [440, 0]
-    }
-  ],
-  connections: {
-    "On pipeline error": { main: [[{ node: "Build error payload", type: "main", index: 0 }]] },
-    "Build error payload": { main: [[{ node: "Record crashed run", type: "main", index: 0 }]] }
-  }
-};
-
-writeFileSync("n8n/error-handler.json", JSON.stringify(wf, null, 2));
-JSON.parse(readFileSync("n8n/error-handler.json", "utf8"));
-console.log("Fixed and validated error-handler.json");
+```bash
+node -e "JSON.parse(require('fs').readFileSync('n8n/error-handler.json','utf8'))"
+# → no error → 3 nodes, 2,542 bytes
 ```
 
-### Option B: Manual fix
+The full pre-push check (run from the repo root):
 
-Open `n8n/error-handler.json`, find the `"jsCode":` value (line 17), and replace all literal newlines inside that string with `\n`. The string should be on a single logical line with `\n` escape sequences.
+```bash
+node -e "for (const f of ['n8n/error-handler.json','n8n/admissions-lead-pipeline.json']) JSON.parse(require('fs').readFileSync(f,'utf8'))"
+```
 
-## After Fix
+## What was wrong
 
-1. Verify: `node -e "JSON.parse(require('fs').readFileSync('n8n/error-handler.json','utf8')); console.log('valid')"`
-2. Commit: `git add n8n/error-handler.json && git commit -m "Fix error-handler.json JSON escaping"`
-3. Push: `npm run push:n8n` (stop n8n first with Ctrl+C, then `npm run n8n` after)
+In the file as committed in `5c9d0f6`, the `jsCode` string in the
+`Build error payload` Code node held the multi-line JavaScript source with
+**literal newline characters** (`\n` raw, not `\\n` escaped). JSON strings
+cannot contain raw control characters, so the file failed to parse at the
+`push-workflow.mjs` validation step with:
+
+```
+error-handler.json is not valid JSON: Bad control character in string literal
+in JSON at position 497
+```
+
+## How it was fixed
+
+The `jsCode` string is now a single logical line in the JSON file with the
+multi-line JavaScript source carried as `\n` escape sequences (the way
+`n8n import:workflow` writes it). Both n8n and the `push-workflow.mjs`
+parser accept this form.
+
+If the file is ever regenerated by hand or by another tool, re-validate with
+the command above before `npm run push:n8n`. If a future regeneration breaks
+it again, the same Node snippet from
+[`AI Operations Copilot — Phase 1 System A`](../AI%20Operations%20Copilot%20%E2%80%94%20Phase%201%20System%20A.md)
+(or the original draft of this doc) can recreate it from a JS object using
+`JSON.stringify`, which always emits valid escapes.
+
+## Impact at the time of the bug
+
+- `npm run push:n8n` failed at the JSON validation step before doing any
+  n8n work, so nothing was partially imported.
+- The main pipeline `n8n/admissions-lead-pipeline.json` is independent of
+  the error-handler and was **unaffected** — it shipped and ran fine without
+  the dedicated error workflow.
+- Any unhandled crash in the main pipeline was still recorded as a failed
+  `automation_runs` row by the pipeline's own per-step logging (F-013 was
+  also implemented as part of the pipeline's step-log block at
+  `n8n/admissions-lead-pipeline.json:1002`).
+- The dedicated error-handler workflow is now back as a **safety net** for
+  unhandled crashes (e.g. bugs in the pipeline Code nodes themselves that
+  short-circuit the step logger).
 
 ## Context
 
-- The main pipeline `n8n/admissions-lead-pipeline.json` is valid and has 36 nodes (Phase 4 complete: F-003 through F-011 + F-013 error workflow reference)
-- The error handler is referenced by the main pipeline via `settings.errorWorkflow`
-- Phase 4 is functionally complete even without the error handler — the pipeline handles its own failures
-- The error handler is a safety net for UNHANDLED crashes (catches bugs in the pipeline code itself)
+- The main pipeline `n8n/admissions-lead-pipeline.json` is 36 nodes, valid
+  JSON, and Phase 4 complete (F-003 through F-011 + F-013 step logging).
+- The error handler is referenced from the main pipeline via
+  `settings.errorWorkflow` (the workflow id `errf013000000001`).
+- After the fix, `npm run push:n8n` (with n8n stopped) imports **both**
+  `n8n/*.json` files and publishes them.
