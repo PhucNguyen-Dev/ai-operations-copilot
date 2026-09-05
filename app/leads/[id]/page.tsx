@@ -3,11 +3,18 @@ import { createClient } from '@/lib/supabase/server'
 import { requireUser, canViewAutomation } from '@/lib/auth'
 import { isUuid, timeAgo } from '@/lib/format'
 import SiteHeader from '@/components/site-header'
+import ScoreBar from '@/components/score-bar'
 
 const CATEGORY_STYLES: Record<string, string> = {
   HOT: 'bg-red-100 text-red-700',
   WARM: 'bg-amber-100 text-amber-700',
   COLD: 'bg-sky-100 text-sky-700',
+}
+
+const CATEGORY_BORDER: Record<string, string> = {
+  HOT: 'border-l-red-500',
+  WARM: 'border-l-amber-400',
+  COLD: 'border-l-sky-500',
 }
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -110,16 +117,19 @@ export default async function LeadDetailPage({
         </section>
 
         {/* AI analysis */}
-        <section className="rounded-lg border bg-white p-6">
+        <section className={`rounded-lg border bg-white border-l-4 p-6 ${analysis ? CATEGORY_BORDER[analysis.category] ?? 'border-l-gray-300' : ''}`}>
           <h2 className="mb-4 font-semibold">AI analysis</h2>
           {analysis ? (
             <>
-              <div className="mb-4 flex items-center gap-3">
+              <div className="mb-3 flex items-center gap-3">
                 <span className={`rounded px-2 py-0.5 text-xs font-semibold ${CATEGORY_STYLES[analysis.category] ?? 'bg-gray-100'}`}>
                   {analysis.category}
                 </span>
-                <span className="text-3xl font-semibold">{analysis.score}</span>
-                <span className="text-sm text-gray-500">/ 100 · intent {analysis.intent}</span>
+                <span className="text-sm text-gray-500">intent {analysis.intent}</span>
+              </div>
+              <div className="mb-4">
+                <ScoreBar score={analysis.score} category={analysis.category} />
+                <p className="mt-1 text-xs text-gray-400">conversion likelihood, out of 100</p>
               </div>
               <p className="text-sm text-gray-700">{analysis.summary}</p>
               <p className="mt-3 text-sm">

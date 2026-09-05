@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import SiteHeader from '@/components/site-header'
+import CategoryBar from '@/components/category-bar'
 
 type LeadRow = {
   id: string
@@ -79,6 +80,11 @@ export default async function Home({
 
   const rows: LeadRow[] = data ?? []
   const active = { category, periodKey: period.key }
+  const byCategory = { HOT: 0, WARM: 0, COLD: 0 }
+  for (const row of rows) {
+    const c = row.lead_analyses?.[0]?.category
+    if (c && c in byCategory) byCategory[c as keyof typeof byCategory] += 1
+  }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -107,19 +113,24 @@ export default async function Home({
         </div>
       </div>
 
-      <div className="mb-8 grid grid-cols-3 gap-4">
+      <div className="mb-4 grid grid-cols-3 gap-4">
+        <div className={`rounded-lg border bg-white p-4 ${byCategory.HOT > 0 ? 'border-red-300 bg-red-50' : ''}`}>
+          <p className={`text-2xl font-semibold ${byCategory.HOT > 0 ? 'text-red-700' : ''}`}>{byCategory.HOT}</p>
+          <p className="text-sm text-gray-500">hot (in current view)</p>
+        </div>
         <div className="rounded-lg border bg-white p-4">
           <p className="text-2xl font-semibold">{rows.length}</p>
           <p className="text-sm text-gray-500">leads visible to you</p>
         </div>
         <div className="rounded-lg border bg-white p-4">
-          <p className="text-2xl font-semibold">{rows.filter((r) => r.lead_analyses?.[0]?.category === 'HOT').length}</p>
-          <p className="text-sm text-gray-500">hot (in current view)</p>
-        </div>
-        <div className="rounded-lg border bg-white p-4">
           <p className="text-2xl font-semibold">{rows.filter((r) => r.status === 'new').length}</p>
           <p className="text-sm text-gray-500">still untouched (status: new)</p>
         </div>
+      </div>
+
+      <div className="mb-8 rounded-lg border bg-white p-4">
+        <p className="mb-3 text-sm font-medium text-gray-700">Category mix (in current view)</p>
+        <CategoryBar counts={byCategory} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">

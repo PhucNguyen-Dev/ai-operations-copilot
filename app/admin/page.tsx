@@ -3,18 +3,59 @@ import { requireUser, canViewAutomation } from '@/lib/auth'
 import { timeAgo } from '@/lib/format'
 import SiteHeader from '@/components/site-header'
 import NotAllowed from '@/components/not-allowed'
+import CategoryBar from '@/components/category-bar'
 
-const CATEGORY_STYLES: Record<string, string> = {
-  HOT: 'bg-red-100 text-red-700',
-  WARM: 'bg-amber-100 text-amber-700',
-  COLD: 'bg-sky-100 text-sky-700',
+function Stat({
+  value,
+  label,
+  accent,
+}: {
+  value: string | number
+  label: string
+  accent?: 'red' | 'green'
+}) {
+  const ring =
+    accent === 'red' ? 'border-red-300 bg-red-50' : accent === 'green' ? 'border-green-300 bg-green-50' : ''
+  return (
+    <div className={`rounded-lg border bg-white p-4 ${ring}`}>
+      <p className={`text-2xl font-semibold ${accent === 'red' ? 'text-red-700' : accent === 'green' ? 'text-green-700' : ''}`}>
+        {value}
+      </p>
+      <p className="text-sm text-gray-500">{label}</p>
+    </div>
+  )
 }
 
-function Stat({ value, label }: { value: string | number; label: string }) {
+/** Colored progress bar for the success rate (green >= 90, amber 70-89, red < 70). */
+function RateBar({ rate }: { rate: number }) {
+  const color = rate >= 90 ? 'bg-green-500' : rate >= 70 ? 'bg-amber-400' : 'bg-red-500'
+  const textColor = rate >= 90 ? 'text-green-700' : rate >= 70 ? 'text-amber-700' : 'text-red-700'
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <p className="text-2xl font-semibold">{value}</p>
-      <p className="text-sm text-gray-500">{label}</p>
+    <div className="flex items-center gap-3">
+      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100" role="img" aria-label={`Success rate ${rate} percent`}>
+        <div className={`h-full ${color}`} style={{ width: `${rate}%` }} />
+      </div>
+      <span className={`text-2xl font-semibold tabular-nums ${textColor}`}>{rate}%</span>
+    </div>
+  )
+}
+
+/** Last-7-days lead volume as pure-CSS bars (one column per day, height = share of max). */
+function VolumeBars({ perDay }: { perDay: { label: string; count: number }[] }) {
+  const max = Math.max(1, ...perDay.map((d) => d.count))
+  return (
+    <div className="flex h-24 items-end gap-2" role="img" aria-label={`Leads per day, last ${perDay.length} days, peak ${max}`}>
+      {perDay.map((d) => (
+        <div key={d.label} className="flex flex-1 flex-col items-center gap-1">
+          <span className="text-xs font-medium tabular-nums text-gray-700">{d.count}</span>
+          <div
+            className={`w-full rounded-t ${d.count > 0 ? 'bg-gray-900' : 'bg-gray-200'}`}
+            style={{ height: `${Math.max(4, (d.count / max) * 72)}px` }}
+            title={`${d.label}: ${d.count} leads`}
+          />
+          <span className="text-[10px] uppercase tracking-wide text-gray-400">{d.label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -72,6 +113,20 @@ export default async function AdminPage() {
     }
   }
 
+  // Per-day buckets for the last 7 days (oldest -> today).
+  const perDay = Array.from({ length: 7 }, (_, i) => {
+    const dayStart = new Date()
+    dayStart.setHours(0, 0, 0, 0)
+    dayStart.setDate(dayStart.getDate() - (6 - i))
+    const dayEnd = new Date(dayStart)
+    dayEnd.setDate(dayEnd.getDate() + 1)
+    const count = leadRows.filter((l) => {
+      const t = new Date(l.created_at).getTime()
+      return t >= dayStart.getTime() && t < dayEnd.getTime()
+    }).length
+    return { label: dayStart.toLocaleDateString(undefined, { weekday: 'short' }), count }
+  })
+
   const leads7d = leadRows.filter((l) => new Date(l.created_at).getTime() >= sevenDaysAgo).length
   const completed = runRows.filter((r) => r.status !== 'running')
   const failed7d = runRows.filter(
@@ -97,27 +152,34 @@ export default async function AdminPage() {
       />
 
       <h2 className="mb-3 font-semibold">Lead volume</h2>
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat value={leadRows.length} label={`leads (recent${leadsCapped ? ', capped' : ''})`} />
         <Stat value={leads7d} label="new in the last 7 days" />
         <Stat value={scored ? `${Math.round(scoreSum / scored)}` : '—'} label="avg score (recent)" />
+        <Stat value={failed7d.length} label="failed runs, 7 days" accent={failed7d.length > 0 ? 'red' : 'green'} />
+      </div>
+
+      <div className="mb-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border bg-white p-4">
-          <p className="mb-2 flex gap-2 text-sm">
-            {(['HOT', 'WARM', 'COLD'] as const).map((c) => (
-              <span key={c} className={`rounded px-2 py-0.5 text-xs font-semibold ${CATEGORY_STYLES[c]}`}>
-                {c} {byCategory[c]}
-              </span>
-            ))}
-          </p>
-          <p className="text-sm text-gray-500">category mix (recent)</p>
+          <p className="mb-3 text-sm font-medium text-gray-700">Category mix (recent)</p>
+          <CategoryBar counts={byCategory} />
+        </div>
+        <div className="rounded-lg border bg-white p-4">
+          <p className="mb-3 text-sm font-medium text-gray-700">Leads per day (last 7 days)</p>
+          <VolumeBars perDay={perDay} />
         </div>
       </div>
 
       <h2 className="mb-3 font-semibold">Automation health</h2>
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat value={runRows.length} label={`runs (recent${runsCapped ? ', capped' : ''})`} />
-        <Stat value={successRate === null ? '—' : `${successRate}%`} label="success rate (recent, completed)" />
-        <Stat value={failed7d.length} label="failed in the last 7 days" />
+      <div className="mb-4 grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border bg-white p-4">
+          <p className="mb-3 text-sm font-medium text-gray-700">Success rate (recent, completed runs)</p>
+          {successRate === null ? (
+            <p className="text-sm text-gray-500">No completed runs yet.</p>
+          ) : (
+            <RateBar rate={successRate} />
+          )}
+        </div>
         <Stat value={avgDuration} label="avg run duration" />
       </div>
       {lastFailed && (
