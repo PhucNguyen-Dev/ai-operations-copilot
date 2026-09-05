@@ -16,26 +16,69 @@ const CATEGORY_STYLES: Record<string, string> = {
   COLD: 'bg-sky-100 text-sky-700',
 }
 
-export default async function Home() {
-  const supabase = await createClient()
+const CATEGORIES = ['HOT', 'WARM', 'COLD'] as const
+const PERIODS: { key: string; label: string; days: number | null }[] = [
+  { key: 'all', label: 'All time', days: null },
+  { key: '7', label: '7 days', days: 7 },
+  { key: '30', label: '30 days', days: 30 },
+]
 
-  const { data: leads } = await supabase
+/** Only known values survive; anything else falls back to "no filter". */
+function parseFilters(params: Record<string, string | string[] | undefined>) {
+  const rawCategory = typeof params.category === 'string' ? params.category.toUpperCase() : ''
+  const category = (CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : null
+  const rawPeriod = typeof params.days === 'string' ? params.days : 'all'
+  const period = PERIODS.find((p) => p.key === rawPeriod) ?? PERIODS[0]
+  return { category, period }
+}
+
+function filterHref(active: { category: string | null; periodKey: string }, category: string | null, periodKey: string) {
+  const qs = new URLSearchParams()
+  if (category) qs.set('category', category)
+  if (periodKey !== 'all') qs.set('days', periodKey)
+  const s = qs.toString()
+  return s ? `/?${s}` : '/'
+}
+
+const PILL = 'rounded-full border px-3 py-1 text-xs font-medium'
+const PILL_ON = 'border-gray-900 bg-gray-900 text-white'
+const PILL_OFF = 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const supabase = await createClient()
+  const params = await searchParams
+  const { category, period } = parseFilters(params)
+
+  let query = supabase
     .from('leads')
     .select('id, name, email, status, created_at, lead_analyses(score, category, intent)')
     .order('created_at', { ascending: false })
     .limit(50)
 
-  // Ops/Admin-only table: this query FAILS silently for other roles —
-  // which is exactly the RLS behavior this page exists to demonstrate.
-  const { count: runCount } = await supabase
-    .from('automation_runs')
-    .select('id', { count: 'exact', head: true })
+  if (category) query = query.filter('lead_analyses.category', 'eq', category)
+  if (period.days !== null) {
+    query = query.gte('created_at', new Date(Date.now() - period.days * 86_400_000).toISOString())
+  }
 
-  const { count: notificationCount } = await supabase
-    .from('notifications')
-    .select('id', { count: 'exact', head: true })
+  const { data, error } = await query
 
-  const rows: LeadRow[] = leads ?? []
+  if (error) {
+    return (
+      <main className="mx-auto max-w-5xl px-6 py-10">
+        <SiteHeader title="Lead Dashboard" />
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+          Could not load leads: {error.message}
+        </div>
+      </main>
+    )
+  }
+
+  const rows: LeadRow[] = data ?? []
+  const active = { category, periodKey: period.key }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -44,20 +87,38 @@ export default async function Home() {
         subtitle="Every lead that is visible to your role (RLS-enforced by Supabase)."
       />
 
+      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-white p-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Category</span>
+          <a href={filterHref(active, null, period.key)} className={`${PILL} ${category === null ? PILL_ON : PILL_OFF}`}>All</a>
+          {CATEGORIES.map((c) => (
+            <a key={c} href={filterHref(active, c, period.key)} className={`${PILL} ${category === c ? PILL_ON : PILL_OFF}`}>
+              {c}
+            </a>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Created</span>
+          {PERIODS.map((p) => (
+            <a key={p.key} href={filterHref(active, category, p.key)} className={`${PILL} ${period.key === p.key ? PILL_ON : PILL_OFF}`}>
+              {p.label}
+            </a>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-8 grid grid-cols-3 gap-4">
         <div className="rounded-lg border bg-white p-4">
           <p className="text-2xl font-semibold">{rows.length}</p>
           <p className="text-sm text-gray-500">leads visible to you</p>
         </div>
         <div className="rounded-lg border bg-white p-4">
-          <p className="text-2xl font-semibold">{runCount ?? '—'}</p>
-          <p className="text-sm text-gray-500">
-            automation runs {runCount === null ? '(blocked by RLS)' : '(visible)'}
-          </p>
+          <p className="text-2xl font-semibold">{rows.filter((r) => r.lead_analyses?.[0]?.category === 'HOT').length}</p>
+          <p className="text-sm text-gray-500">hot (in current view)</p>
         </div>
         <div className="rounded-lg border bg-white p-4">
-          <p className="text-2xl font-semibold">{notificationCount ?? 0}</p>
-          <p className="text-sm text-gray-500">notifications for you</p>
+          <p className="text-2xl font-semibold">{rows.filter((r) => r.status === 'new').length}</p>
+          <p className="text-sm text-gray-500">still untouched (status: new)</p>
         </div>
       </div>
 
@@ -78,15 +139,19 @@ export default async function Home() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  No leads visible — this is correct for marketing/teacher roles (RLS).
+                  {category || period.days !== null
+                    ? 'No leads match these filters.'
+                    : 'No leads visible — this is correct for marketing/teacher roles (RLS).'}
                 </td>
               </tr>
             )}
             {rows.map((lead) => {
               const analysis = lead.lead_analyses?.[0]
               return (
-                <tr key={lead.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{lead.name}</td>
+                <tr key={lead.id} className="border-b last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium">
+                    <a href={`/leads/${lead.id}`} className="hover:underline">{lead.name}</a>
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{lead.email}</td>
                   <td className="px-4 py-3">
                     {analysis ? (
