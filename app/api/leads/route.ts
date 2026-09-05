@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 /** GET /api/leads — list leads under the caller's RLS scope. */
 export async function GET() {
@@ -59,6 +60,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: 'Pipeline not configured (missing N8N_WEBHOOK_URL / N8N_WEBHOOK_SECRET)' },
       { status: 500 }
+    )
+  }
+
+  // R-05: each submission triggers a paid AI call — cap per user.
+  const limit = checkRateLimit(`lead:${user.id}`, 10, 60_000)
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: `Too many leads submitted — try again in ${limit.retryAfterSec}s.` },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } }
     )
   }
 
