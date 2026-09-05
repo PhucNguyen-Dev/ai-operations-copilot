@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import LogoutButton from '@/components/logout-button'
+import SiteHeader from '@/components/site-header'
 
 type LeadRow = {
   id: string
@@ -19,17 +18,6 @@ const CATEGORY_STYLES: Record<string, string> = {
 
 export default async function Home() {
   const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const role = (user.app_metadata as Record<string, string> | undefined)?.role ?? 'unknown'
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, role')
-    .eq('id', user.id)
-    .single()
 
   const { data: leads } = await supabase
     .from('leads')
@@ -51,27 +39,10 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Lead Dashboard (Phase 2 verification)</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Signed in as <span className="font-medium text-gray-900">{profile?.full_name ?? user.email}</span>
-            {' · role: '}
-            <span className="inline-block rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs text-white">{role}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {(role === 'admissions' || role === 'admin') && (
-            <a
-              href="/leads/new"
-              className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-            >
-              + New Test Lead
-            </a>
-          )}
-          <LogoutButton />
-        </div>
-      </div>
+      <SiteHeader
+        title="Lead Dashboard"
+        subtitle="Every lead that is visible to your role (RLS-enforced by Supabase)."
+      />
 
       <div className="mb-8 grid grid-cols-3 gap-4">
         <div className="rounded-lg border bg-white p-4">
@@ -140,8 +111,8 @@ export default async function Home() {
       </div>
 
       <p className="mt-4 text-xs text-gray-400">
-        Expected: counselor → 5 assigned leads; admin/operations → all 8 + runs visible;
-        marketing/teacher → 0 leads, runs blocked. Full dashboard UI arrives in Phase 5.
+        Expected: counselor → assigned leads only; admin/operations → all leads + runs visible;
+        marketing/teacher → 0 leads, runs blocked.
       </p>
     </main>
   )
