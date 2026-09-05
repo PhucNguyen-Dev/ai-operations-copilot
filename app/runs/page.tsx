@@ -67,6 +67,7 @@ export default async function RunsPage({
   }
 
   const { data: runs, count, error } = await query
+  if (error) console.error('[runs] query failed:', error.message)
 
   const totalPages = count !== null ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1
   const active = { status, periodKey: period.key, page }
@@ -95,8 +96,8 @@ export default async function RunsPage({
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-          Could not load runs: {error.message}
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700" role="alert">
+          Could not load runs — please try again. The issue has been logged.
         </div>
       ) : (
         <>

@@ -55,11 +55,12 @@ export default async function LeadDetailPage({
     .maybeSingle()
 
   if (error) {
+    console.error('[lead-detail] query failed:', error.message)
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <SiteHeader title="Lead Detail" />
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-          Could not load this lead: {error.message}
+          Could not load this lead — please try again. The issue has been logged.
         </div>
       </main>
     )

@@ -17,7 +17,9 @@ export async function GET() {
     .limit(50)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    // R-03: full detail in server logs only; the client gets a generic 500.
+    console.error('[api/leads] GET query failed:', error.message)
+    return NextResponse.json({ error: 'Could not load leads' }, { status: 500 })
   }
 
   return NextResponse.json({ count: data.length, leads: data })
@@ -90,9 +92,19 @@ export async function POST(request: NextRequest) {
   const data = await upstream.json().catch(() => ({}))
 
   if (!upstream.ok) {
+    // The n8n webhook's own validation errors (401/422) are intentional and
+    // user-relevant — pass the pipeline's message through. Anything else
+    // (500s from upstream infrastructure) is logged, not leaked.
+    if (upstream.status === 401 || upstream.status === 422) {
+      return NextResponse.json(
+        { ...data, error: data?.error ?? `Pipeline rejected the lead (HTTP ${upstream.status})` },
+        { status: upstream.status }
+      )
+    }
+    console.error(`[api/leads] webhook returned HTTP ${upstream.status}:`, data)
     return NextResponse.json(
-      { ...data, error: data?.error ?? `Pipeline rejected the lead (HTTP ${upstream.status})` },
-      { status: upstream.status }
+      { accepted: false, error: 'The pipeline failed unexpectedly — the run was logged. Try again.' },
+      { status: 502 }
     )
   }
 

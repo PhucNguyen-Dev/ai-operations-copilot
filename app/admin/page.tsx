@@ -84,11 +84,12 @@ export default async function AdminPage() {
   ])
 
   if (leadsError || runsError) {
+    console.error('[admin] overview query failed:', leadsError?.message ?? runsError?.message)
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <SiteHeader title="Operations Overview" />
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-          Could not load overview data: {leadsError?.message ?? runsError?.message}
+          Could not load overview data — please try again. The issue has been logged.
         </div>
       </main>
     )
