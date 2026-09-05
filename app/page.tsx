@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import SiteHeader from '@/components/site-header'
 import CategoryBar from '@/components/category-bar'
+import { parseLeadFilters, LEAD_CATEGORIES, LEAD_PERIODS } from '@/lib/filters'
 
 type LeadRow = {
   id: string
@@ -15,22 +16,6 @@ const CATEGORY_STYLES: Record<string, string> = {
   HOT: 'bg-red-100 text-red-700',
   WARM: 'bg-amber-100 text-amber-700',
   COLD: 'bg-sky-100 text-sky-700',
-}
-
-const CATEGORIES = ['HOT', 'WARM', 'COLD'] as const
-const PERIODS: { key: string; label: string; days: number | null }[] = [
-  { key: 'all', label: 'All time', days: null },
-  { key: '7', label: '7 days', days: 7 },
-  { key: '30', label: '30 days', days: 30 },
-]
-
-/** Only known values survive; anything else falls back to "no filter". */
-function parseFilters(params: Record<string, string | string[] | undefined>) {
-  const rawCategory = typeof params.category === 'string' ? params.category.toUpperCase() : ''
-  const category = (CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : null
-  const rawPeriod = typeof params.days === 'string' ? params.days : 'all'
-  const period = PERIODS.find((p) => p.key === rawPeriod) ?? PERIODS[0]
-  return { category, period }
 }
 
 function filterHref(active: { category: string | null; periodKey: string }, category: string | null, periodKey: string) {
@@ -52,7 +37,7 @@ export default async function Home({
 }) {
   const supabase = await createClient()
   const params = await searchParams
-  const { category, period } = parseFilters(params)
+  const { category, period } = parseLeadFilters(params)
 
   let query = supabase
     .from('leads')
@@ -98,7 +83,7 @@ export default async function Home({
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Category</span>
           <a href={filterHref(active, null, period.key)} className={`${PILL} ${category === null ? PILL_ON : PILL_OFF}`}>All</a>
-          {CATEGORIES.map((c) => (
+          {LEAD_CATEGORIES.map((c) => (
             <a key={c} href={filterHref(active, c, period.key)} className={`${PILL} ${category === c ? PILL_ON : PILL_OFF}`}>
               {c}
             </a>
@@ -106,7 +91,7 @@ export default async function Home({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Created</span>
-          {PERIODS.map((p) => (
+          {LEAD_PERIODS.map((p) => (
             <a key={p.key} href={filterHref(active, category, p.key)} className={`${PILL} ${period.key === p.key ? PILL_ON : PILL_OFF}`}>
               {p.label}
             </a>

@@ -19,6 +19,9 @@ export type LeadAnalysis = {
  * contract the n8n "Schema check" node enforces for F-004.
  */
 export function validateLeadAnalysis(parsed: unknown): ValidationResult<LeadAnalysis> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
   const p = parsed as Partial<LeadAnalysis>
   const errors: string[] = []
 

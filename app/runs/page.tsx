@@ -1,32 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireUser, canViewAutomation } from '@/lib/auth'
 import { timeAgo } from '@/lib/format'
+import { parseRunFilters, RUN_STATUSES, RUN_PERIODS, RUNS_PAGE_SIZE } from '@/lib/filters'
 import SiteHeader from '@/components/site-header'
 import NotAllowed from '@/components/not-allowed'
-
-const PAGE_SIZE = 20
-const STATUSES = ['running', 'success', 'failed'] as const
-const PERIODS: { key: string; label: string; days: number | null }[] = [
-  { key: 'all', label: 'All time', days: null },
-  { key: '1', label: '24 hours', days: 1 },
-  { key: '7', label: '7 days', days: 7 },
-]
 
 const STATUS_STYLE: Record<string, string> = {
   running: 'bg-blue-100 text-blue-700',
   success: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
-}
-
-function parseFilters(params: Record<string, string | string[] | undefined>) {
-  const rawStatus = typeof params.status === 'string' ? params.status : ''
-  const status = (STATUSES as readonly string[]).includes(rawStatus) ? rawStatus : null
-  const rawPeriod = typeof params.days === 'string' ? params.days : 'all'
-  const period = PERIODS.find((p) => p.key === rawPeriod) ?? PERIODS[0]
-  const rawPage = Number.parseInt(typeof params.page === 'string' ? params.page : '1', 10)
-  // Clamp: page 0 / -5 / "abc" / 99e9 all land on a sane page.
-  const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1
-  return { status, period, page }
 }
 
 function href(active: { status: string | null; periodKey: string; page: number }, patch: Partial<{ status: string | null; periodKey: string; page: number }>) {
@@ -53,7 +35,8 @@ export default async function RunsPage({
 
   const supabase = await createClient()
   const params = await searchParams
-  const { status, period, page } = parseFilters(params)
+  const { status, period, page } = parseRunFilters(params)
+  const PAGE_SIZE = RUNS_PAGE_SIZE
 
   let query = supabase
     .from('automation_runs')
@@ -83,13 +66,13 @@ export default async function RunsPage({
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</span>
           <a href={href(active, { status: null, page: 1 })} className={`${PILL} ${status === null ? PILL_ON : PILL_OFF}`}>All</a>
-          {STATUSES.map((s) => (
+          {RUN_STATUSES.map((s) => (
             <a key={s} href={href(active, { status: s, page: 1 })} className={`${PILL} ${status === s ? PILL_ON : PILL_OFF}`}>{s}</a>
           ))}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Started</span>
-          {PERIODS.map((p) => (
+          {RUN_PERIODS.map((p) => (
             <a key={p.key} href={href(active, { periodKey: p.key, page: 1 })} className={`${PILL} ${period.key === p.key ? PILL_ON : PILL_OFF}`}>{p.label}</a>
           ))}
         </div>
