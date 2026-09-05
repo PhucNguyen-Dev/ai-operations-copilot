@@ -85,6 +85,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -141,6 +145,10 @@
             {
               "name": "Accept",
               "value": "application/vnd.pgrst.object+json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -181,6 +189,10 @@
             {
               "name": "x-goog-api-key",
               "value": "={{ $env.GEMINI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -264,6 +276,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -364,6 +380,10 @@
             {
               "name": "Accept",
               "value": "application/vnd.pgrst.object+json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -398,6 +418,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
@@ -432,6 +456,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
