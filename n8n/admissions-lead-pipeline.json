@@ -85,10 +85,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -145,10 +141,6 @@
             {
               "name": "Accept",
               "value": "application/vnd.pgrst.object+json"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -189,10 +181,6 @@
             {
               "name": "x-goog-api-key",
               "value": "={{ $env.GEMINI_API_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -276,10 +264,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -380,10 +364,6 @@
             {
               "name": "Accept",
               "value": "application/vnd.pgrst.object+json"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -418,10 +398,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -456,10 +432,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -593,10 +565,6 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "x-goog-api-key",
               "value": "={{ $env.GEMINI_API_KEY }}"
             }
@@ -721,10 +689,6 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "Prefer",
               "value": "return=representation"
             }
@@ -755,12 +719,7 @@
         "url": "https://oauth2.googleapis.com/token",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/x-www-form-urlencoded"
-            }
-          ]
+          "parameters": []
         },
         "sendBody": true,
         "options": {
@@ -808,10 +767,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $json.access_token }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             }
           ]
         },
@@ -848,10 +803,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             },
             {
               "name": "Prefer",
@@ -940,10 +891,6 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "Prefer",
               "value": "return=representation"
             }
@@ -984,10 +931,6 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "Prefer",
               "value": "return=representation"
             }
@@ -1026,10 +969,6 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
             },
             {
               "name": "Prefer",

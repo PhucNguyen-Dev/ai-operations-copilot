@@ -46,10 +46,6 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "Prefer",
               "value": "return=representation"
             }
