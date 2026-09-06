@@ -150,3 +150,140 @@ export function validateCampaignInsights(parsed: unknown): ValidationResult<Camp
     },
   }
 }
+
+// -------------------------------------------------------------
+// F-022 — Lesson Planner (academic)
+// -------------------------------------------------------------
+
+export type LessonPlanSection = { title: string; minutes: number; description: string }
+
+export type LessonPlan = {
+  title: string
+  objectives: string[]
+  sections: LessonPlanSection[]
+  materials: string[]
+  homework: string
+}
+
+export function validateLessonPlan(parsed: unknown): ValidationResult<LessonPlan> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
+  const p = parsed as Partial<LessonPlan>
+  const errors: string[] = []
+
+  if (typeof p.title !== 'string' || !p.title.trim()) errors.push('title is required')
+  if (!isNonEmptyStringArray(p.objectives, 1, 6)) errors.push('objectives must be 1-6 non-empty strings')
+
+  // sections: 2-8, each with title + positive minutes + description
+  const sections = p.sections
+  if (
+    !Array.isArray(sections) ||
+    sections.length < 2 ||
+    sections.length > 8 ||
+    !sections.every(
+      (s) =>
+        s !== null &&
+        typeof s === 'object' &&
+        !Array.isArray(s) &&
+        typeof (s as LessonPlanSection).title === 'string' &&
+        (s as LessonPlanSection).title.trim().length > 0 &&
+        Number.isInteger((s as LessonPlanSection).minutes) &&
+        (s as LessonPlanSection).minutes > 0 &&
+        (s as LessonPlanSection).minutes <= 180 &&
+        typeof (s as LessonPlanSection).description === 'string' &&
+        (s as LessonPlanSection).description.trim().length > 0
+    )
+  ) {
+    errors.push('sections must be 2-8 items, each with title, positive minutes (max 180) and description')
+  }
+
+  if (!isNonEmptyStringArray(p.materials, 0, 10)) errors.push('materials must be an array of at most 10 strings')
+  if (typeof p.homework !== 'string' || !p.homework.trim()) errors.push('homework is required')
+
+  if (errors.length) return { ok: false, errors }
+  return {
+    ok: true,
+    data: {
+      title: (p.title as string).trim(),
+      objectives: (p.objectives as string[]).map((s) => s.trim()),
+      sections: (sections as LessonPlanSection[]).map((s) => ({
+        title: s.title.trim(),
+        minutes: s.minutes,
+        description: s.description.trim(),
+      })),
+      materials: ((p.materials ?? []) as string[]).map((s) => s.trim()),
+      homework: (p.homework as string).trim(),
+    },
+  }
+}
+
+// -------------------------------------------------------------
+// F-023 — Quiz Generator (academic)
+// -------------------------------------------------------------
+
+export type QuizQuestion = {
+  question: string
+  options: string[]
+  answer_index: number
+  explanation: string
+}
+
+export type Quiz = {
+  title: string
+  questions: QuizQuestion[]
+}
+
+export function validateQuiz(parsed: unknown): ValidationResult<Quiz> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
+  const p = parsed as Partial<Quiz>
+  const errors: string[] = []
+
+  if (typeof p.title !== 'string' || !p.title.trim()) errors.push('title is required')
+
+  const questions = p.questions
+  if (!Array.isArray(questions) || questions.length < 1 || questions.length > 20) {
+    errors.push('questions must be an array of 1-20 items')
+  } else {
+    questions.forEach((q, i) => {
+      const label = `questions[${i}]`
+      if (q === null || typeof q !== 'object' || Array.isArray(q)) {
+        errors.push(`${label} must be an object`)
+        return
+      }
+      const item = q as Partial<QuizQuestion>
+      if (typeof item.question !== 'string' || !item.question.trim()) {
+        errors.push(`${label}.question is required`)
+      }
+      if (!isNonEmptyStringArray(item.options, 2, 6)) {
+        errors.push(`${label}.options must be 2-6 non-empty strings`)
+      }
+      if (
+        !Number.isInteger(item.answer_index) ||
+        (item.answer_index as number) < 0 ||
+        (item.options ? (item.answer_index as number) >= item.options.length : true)
+      ) {
+        errors.push(`${label}.answer_index must point at one of the options`)
+      }
+      if (typeof item.explanation !== 'string' || !item.explanation.trim()) {
+        errors.push(`${label}.explanation is required`)
+      }
+    })
+  }
+
+  if (errors.length) return { ok: false, errors }
+  return {
+    ok: true,
+    data: {
+      title: (p.title as string).trim(),
+      questions: (questions as QuizQuestion[]).map((q) => ({
+        question: q.question.trim(),
+        options: (q.options as string[]).map((s) => s.trim()),
+        answer_index: q.answer_index,
+        explanation: q.explanation.trim(),
+      })),
+    },
+  }
+}
