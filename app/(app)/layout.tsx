@@ -10,24 +10,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { fullName, role } = await requireUser()
 
   const groups: SidebarGroup[] = [
-    { label: 'Workspace', items: [{ href: '/', label: 'Dashboard', icon: '▦' }] },
+    { label: 'Workspace', items: [{ href: '/', label: 'Dashboard', icon: 'grid' }] },
   ]
 
   const toolGroup: SidebarGroup = { label: 'My AI tools', items: [] }
   if (canUseTool(role, 'F-020')) {
     toolGroup.items.push(
-      { href: '/tools/content-generator', label: 'Content Generator', icon: '✎' },
-      { href: '/tools/campaign-analyzer', label: 'Campaign Analyzer', icon: '◔' },
+      { href: '/tools/content-generator', label: 'Content Generator', icon: 'pencil' },
+      { href: '/tools/campaign-analyzer', label: 'Campaign Analyzer', icon: 'chart' },
     )
   }
   if (canUseTool(role, 'F-022')) {
     toolGroup.items.push(
-      { href: '/tools/lesson-planner', label: 'Lesson Planner', icon: '☰' },
-      { href: '/tools/quiz-generator', label: 'Quiz Generator', icon: '?' },
+      { href: '/tools/lesson-planner', label: 'Lesson Planner', icon: 'book' },
+      { href: '/tools/quiz-generator', label: 'Quiz Generator', icon: 'quiz' },
     )
   }
   if (canUseTool(role, 'F-024')) {
-    toolGroup.items.push({ href: '/tools/report-generator', label: 'Report Generator', icon: '▤' })
+    toolGroup.items.push({ href: '/tools/report-generator', label: 'Report Generator', icon: 'doc' })
   }
   if (toolGroup.items.length > 0) groups.push(toolGroup)
 
@@ -37,7 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       items: [{
         href: '/leads/new',
         label: role === 'admin' ? 'Simulate incoming lead' : 'New Test Lead',
-        icon: '＋',
+        icon: 'plus',
       }],
     })
   }
@@ -46,8 +46,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     groups.push({
       label: 'Automation',
       items: [
-        { href: '/runs', label: 'Automation Logs', icon: '⧉' },
-        { href: '/admin', label: 'Overview', icon: '◈' },
+        { href: '/runs', label: 'Automation Logs', icon: 'layers' },
+        { href: '/admin', label: 'Overview', icon: 'gauge' },
       ],
     })
   }
@@ -57,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items: [{
       href: role === 'admin' || role === 'operations' ? '/governance' : '/guidelines',
       label: role === 'admin' || role === 'operations' ? 'Governance' : 'AI Guidelines',
-      icon: '§',
+      icon: 'shield',
     }],
   })
 
