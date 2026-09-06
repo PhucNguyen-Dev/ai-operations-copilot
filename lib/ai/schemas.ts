@@ -287,3 +287,49 @@ export function validateQuiz(parsed: unknown): ValidationResult<Quiz> {
     },
   }
 }
+
+// -------------------------------------------------------------
+// F-024 — Report Generator (operations)
+// -------------------------------------------------------------
+
+export type OpsReport = {
+  executive_summary: string
+  key_metrics: string[]
+  problems: string[]
+  trends: string[]
+  recommendations: string[]
+}
+
+export function validateOpsReport(parsed: unknown): ValidationResult<OpsReport> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
+  const p = parsed as Partial<OpsReport>
+  const errors: string[] = []
+
+  if (typeof p.executive_summary !== 'string' || !p.executive_summary.trim()) {
+    errors.push('executive_summary is required')
+  }
+  for (const [key, min] of [
+    ['key_metrics', 1],
+    ['problems', 1],
+    ['trends', 1],
+    ['recommendations', 1],
+  ] as const) {
+    if (!isNonEmptyStringArray(p[key], min, 6)) {
+      errors.push(`${key} must be an array of ${min}-6 non-empty strings`)
+    }
+  }
+
+  if (errors.length) return { ok: false, errors }
+  return {
+    ok: true,
+    data: {
+      executive_summary: (p.executive_summary as string).trim(),
+      key_metrics: (p.key_metrics as string[]).map((s) => s.trim()),
+      problems: (p.problems as string[]).map((s) => s.trim()),
+      trends: (p.trends as string[]).map((s) => s.trim()),
+      recommendations: (p.recommendations as string[]).map((s) => s.trim()),
+    },
+  }
+}

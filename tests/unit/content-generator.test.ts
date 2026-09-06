@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { validateContentDraft, validateCampaignInsights, validateLessonPlan, validateQuiz } from '@/lib/ai/schemas'
+import {
+  validateContentDraft,
+  validateCampaignInsights,
+  validateLessonPlan,
+  validateQuiz,
+  validateOpsReport,
+} from '@/lib/ai/schemas'
 import { canUseTool, AI_TOOLS } from '@/lib/roles'
 
 describe('validateContentDraft (F-020)', () => {
@@ -194,6 +200,42 @@ describe('validateQuiz (F-023)', () => {
     for (const garbage of [null, undefined, 9, 'x', [], true]) {
       expect(() => validateQuiz(garbage)).not.toThrow()
       expect(validateQuiz(garbage).ok).toBe(false)
+    }
+  })
+})
+
+describe('validateOpsReport (F-024)', () => {
+  const valid = {
+    executive_summary: 'Lead flow steady; automation healthy.',
+    key_metrics: ['42 leads created', '93% run success rate'],
+    problems: ['Weekend lead response latency'],
+    trends: ['HOT share rising week over week'],
+    recommendations: ['Add counselor coverage on weekends'],
+  }
+
+  it('accepts a valid report', () => {
+    expect(validateOpsReport(valid).ok).toBe(true)
+  })
+
+  it('requires all list fields as 1-6 item arrays', () => {
+    for (const key of ['key_metrics', 'problems', 'trends', 'recommendations'] as const) {
+      const r = validateOpsReport({ ...valid, [key]: [] })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.errors.join(' ')).toMatch(new RegExp(key))
+    }
+  })
+
+  it('requires the executive summary', () => {
+    for (const executive_summary of [undefined, '', '   ']) {
+      const r = validateOpsReport({ ...valid, executive_summary: executive_summary as never })
+      expect(r.ok).toBe(false)
+    }
+  })
+
+  it('rejects non-object payloads without throwing', () => {
+    for (const garbage of [null, undefined, 5, 'x', [], true]) {
+      expect(() => validateOpsReport(garbage)).not.toThrow()
+      expect(validateOpsReport(garbage).ok).toBe(false)
     }
   })
 })

@@ -47,6 +47,9 @@ export default async function SiteHeader({
             <a href="/tools/quiz-generator" className={NAV_LINK}>Quiz Generator</a>
           </>
         )}
+        {canUseTool(role, 'F-024') && (
+          <a href="/tools/report-generator" className={NAV_LINK}>Report Generator</a>
+        )}
         {canViewAutomation(role) && (
           <>
             <a href="/runs" className={NAV_LINK}>Automation Logs</a>
