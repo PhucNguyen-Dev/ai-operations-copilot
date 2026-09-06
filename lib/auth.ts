@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { canViewAutomation, canSubmitLeads, type Role } from '@/lib/roles'
+import { canViewAutomation, canSubmitLeads, canUseTool, type Role } from '@/lib/roles'
 
 export type { Role }
-export { canViewAutomation, canSubmitLeads }
+export { canViewAutomation, canSubmitLeads, canUseTool }
 
 /**
  * Session data shared by every page: the authed user, their app_metadata

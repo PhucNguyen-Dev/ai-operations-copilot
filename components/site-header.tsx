@@ -1,4 +1,4 @@
-import { requireUser, canViewAutomation, canSubmitLeads } from '@/lib/auth'
+import { requireUser, canViewAutomation, canSubmitLeads, canUseTool } from '@/lib/auth'
 import LogoutButton from '@/components/logout-button'
 
 const NAV_LINK = 'rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100'
@@ -35,6 +35,9 @@ export default async function SiteHeader({
 
       <nav className="mt-4 flex flex-wrap items-center gap-1 border-b pb-3">
         <a href="/" className={NAV_LINK}>Dashboard</a>
+        {canUseTool(role, 'F-020') && (
+          <a href="/tools/content-generator" className={NAV_LINK}>Content Generator</a>
+        )}
         {canViewAutomation(role) && (
           <>
             <a href="/runs" className={NAV_LINK}>Automation Logs</a>

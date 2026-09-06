@@ -55,3 +55,50 @@ export function validateLeadAnalysis(parsed: unknown): ValidationResult<LeadAnal
     },
   }
 }
+
+// -------------------------------------------------------------
+// F-020 — Content Generator (marketing)
+// -------------------------------------------------------------
+
+export type ContentDraft = {
+  headlines: string[]
+  ad_copy: string
+  ctas: string[]
+}
+
+function isNonEmptyStringArray(v: unknown, min: number, max: number): v is string[] {
+  return (
+    Array.isArray(v) &&
+    v.length >= min &&
+    v.length <= max &&
+    v.every((s) => typeof s === 'string' && s.trim().length > 0)
+  )
+}
+
+export function validateContentDraft(parsed: unknown): ValidationResult<ContentDraft> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
+  const p = parsed as Partial<ContentDraft>
+  const errors: string[] = []
+
+  if (!isNonEmptyStringArray(p.headlines, 3, 5)) {
+    errors.push('headlines must be an array of 3-5 non-empty strings')
+  }
+  if (typeof p.ad_copy !== 'string' || !p.ad_copy.trim()) {
+    errors.push('ad_copy is required')
+  }
+  if (!isNonEmptyStringArray(p.ctas, 2, 4)) {
+    errors.push('ctas must be an array of 2-4 non-empty strings')
+  }
+
+  if (errors.length) return { ok: false, errors }
+  return {
+    ok: true,
+    data: {
+      headlines: (p.headlines as string[]).map((s) => s.trim()),
+      ad_copy: (p.ad_copy as string).trim(),
+      ctas: (p.ctas as string[]).map((s) => s.trim()),
+    },
+  }
+}
