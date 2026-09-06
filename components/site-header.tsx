@@ -41,6 +41,12 @@ export default async function SiteHeader({
             <a href="/tools/campaign-analyzer" className={NAV_LINK}>Campaign Analyzer</a>
           </>
         )}
+        {canUseTool(role, 'F-022') && (
+          <>
+            <a href="/tools/lesson-planner" className={NAV_LINK}>Lesson Planner</a>
+            <a href="/tools/quiz-generator" className={NAV_LINK}>Quiz Generator</a>
+          </>
+        )}
         {canViewAutomation(role) && (
           <>
             <a href="/runs" className={NAV_LINK}>Automation Logs</a>
