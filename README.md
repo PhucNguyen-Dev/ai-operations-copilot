@@ -1,44 +1,139 @@
 # AI Operations Copilot
 
-Internal operations platform for a simulated education/training company — a portfolio
-prototype demonstrating AI + workflow automation across Admissions, Marketing,
-Academic, and Operations.
+An internal operations platform for a (simulated) education company: an **AI receptionist that handles
+student leads end-to-end**, five **AI assistants** for the staff, role-scoped dashboards, and a working
+**AI governance** practice — built as a portfolio demonstration of the AI Automation Specialist skill set.
 
-- **Docs:** [Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) · Architecture: `docs/AI Operations Copilot — Phase 1 System A.md`
-- **Current status:** Phase 7 complete — all 30 features (P0+P1+P2) built. Roadmap finished.
+**Status:** all 30 roadmap features complete (Phases 0–7) · Phase 8 polish & docs in progress.
 
-## Quick start
+![Dashboard](docs/screenshots/01-dashboard-admin.png)
+
+## The business problem
+
+Education companies live on incoming leads ("I need IELTS 7.5 in 6 weeks!"). Handled manually, response is
+slow and inconsistent, hot leads go cold, and every department repeats the same drudgery: marketers write
+every ad from scratch, teachers build every quiz by hand, managers assemble reports from scattered data.
+There's also no process for *adopting* AI safely — so it either doesn't get used or gets used carelessly.
+
+## The solution
+
+One system with four parts:
+
+1. **The automatic receptionist** — a lead arrives (internal test form or the Telegram parent chatbot) and
+   is validated, AI-analyzed (score 0–100, HOT/WARM/COLD), stored, answered with a personalized email,
+   given a follow-up task, and assigned to a counselor — with a counselor notification. Every step is
+   logged; failures are classified (transient → retried with backoff; permanent → structured failure
+   record). Nothing is silently dropped.
+2. **Role-scoped dashboards** — counselors see their assigned leads and tasks; operations sees automation
+   health and full logs; the *database* enforces every boundary (Row-Level Security), not just the UI.
+3. **Department AI assistants** — Content Generator & Campaign Analyzer (Marketing), Lesson Planner &
+   Quiz Generator (Academic), Report Generator (Operations). All AI output is draft material with human
+   review built in.
+4. **Governance** — real tool experiments (a measured head-to-head that chose the production model), a
+   scored adoption decision, per-department training designs, a workshop, and SOPs. Employees get an
+   **AI Guidelines** portal; the specialist gets a **Governance** back office.
+
+![Lead detail](docs/screenshots/02-lead-detail.png)
+
+## Features
+
+- **P0 — the automated pipeline (F-001–F-016):** test-lead intake, webhook trigger, validation, AI analysis,
+  scoring, HOT/WARM/COLD classification, CRM storage, AI email draft, automated send (dry-run locally),
+  follow-up task, counselor notification, step-level logging, error handling, retries, auth, RBAC.
+- **P1 — observability + department tools (F-017–F-025):** lead dashboard with search/filters, lead detail,
+  automation log viewer + run detail timelines, five AI tools, admin overview.
+- **P2 — governance (F-026–F-030):** AI Tool Lab, AI Tool Evaluation, Employee AI Training, Internal AI
+  Workshop, SOP collection. Full inventory: [docs/FEATURES.md](docs/FEATURES.md).
+
+## Architecture
+
+Four layers, each with one job — **n8n orchestrates, Next.js serves humans, Supabase persists, Gemini
+thinks, Gmail transports.** The dashboard reads exclusively from Supabase under RLS. AI output is
+schema-validated before anything is persisted; transient failures retry with backoff, permanent failures
+halt into structured records. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · workflow diagrams:
+[docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+## Automation workflow
+
+The Admissions pipeline (F-002–F-014), node by node: [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+```
+Lead in (test form / Telegram chatbot) → webhook → validate → AI analyze (JSON-mode + schema gate)
+→ score & classify (deterministic thresholds) → CRM write → AI email draft → send (dry-run locally)
+→ follow-up task → counselor notification → per-step log → dashboard
+```
+
+A dedicated error-handler workflow catches unhandled crashes into the same log.
+
+## AI implementation
+
+One AI convention (`lib/gemini.ts` + mirrored n8n nodes): pinned Gemini model (chosen by experiment),
+JSON mode everywhere, per-use-case schema gates, transient-retry/permanent-fail classification, usage
+logging. Prompts, contracts, and the failure philosophy: [docs/AI_DESIGN.md](docs/AI_DESIGN.md).
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Lead detail](docs/screenshots/02-lead-detail.png) | ![Automation logs](docs/screenshots/03-automation-logs.png) |
+| ![Tool evaluation](docs/screenshots/06-tool-evaluation.png) | ![Content generator](docs/screenshots/05-content-generator.png) |
+
+More in `docs/screenshots/`.
+
+## Demo video
+
+_Placeholder — see `docs/screenshots/` for stills. Video: submit a test lead in the dashboard, watch the
+n8n pipeline execute node by node, show the run log, then the same lead landing via the Telegram chatbot._
+
+## Tech stack
+
+Next.js 15 (App Router, TypeScript, Tailwind v4) · Supabase (Postgres + Auth + RLS) · n8n · Google Gemini
+· Gmail API · Vitest.
+
+## Setup
 
 ```bash
 npm install
-cp .env.example .env        # fill in Supabase + Gemini keys (see docs/ROADMAP.md)
-npm run seed:users          # one-time: create the 5 demo logins (password: demo1234)
-npm run dev                 # app: http://localhost:3000
-npm run n8n                 # n8n: http://localhost:5678 (loads .env secrets — always start n8n this way)
-
-npm test                    # unit tests (deterministic, no network)
-npm run typecheck           # TypeScript strict check
+cp .env.example .env    # fill: Supabase URL/keys, GEMINI_API_KEY (free at aistudio.google.com)
+# Supabase SQL editor: run supabase/migrations/001..005, then seed.sql (+ seed_governance.sql)
+npm run seed:users      # 5 demo logins (password demo1234)
+npm run n8n             # n8n at :5678 with .env secrets loaded
+npm run push:n8n        # import workflows (n8n stopped), then Activate in the UI
+npm run dev             # app at :3000
 ```
 
-## App routes
+Demo logins: `admin@ / operations@ / counselor@ / marketing@ / teacher@ demo.dev` — password `demo1234`.
+Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-| Route | Access | What it is |
-|---|---|---|
-| `/login` | public | Supabase Auth login |
-| `/` | all roles | Lead Dashboard (RLS-scoped, filterable) |
-| `/leads/new` | admissions/admin | Test Lead intake — triggers the n8n pipeline |
-| `/leads/[id]` | RLS-scoped | Lead detail: AI analysis, tasks, emails |
-| `/runs` · `/runs/[id]` | operations/admin | Automation Logs Viewer (F-019) |
-| `/admin` | operations/admin | Operations overview (F-025) |
+## Testing
 
-## Demo logins
+- **61 unit tests** (`npm test`): AI helpers, tool schemas, app logic, rate limiting.
+- **E2E failure-case suite** (`node scripts/e2e-tests.mjs`): valid lead, invalid phone, missing fields,
+  malformed email, wrong secret, duplicate leads, oversized fields, unreachable pipeline — verified against
+  live Supabase. Latest results: [docs/e2e-results.md](docs/e2e-results.md) (8/8).
+- Integration test for the Gemini client (`npm run test:integration`).
 
-| Email | Role | Sees |
-|---|---|---|
-| admin@demo.dev | admin | everything |
-| operations@demo.dev | operations | leads + automation logs + overview |
-| counselor@demo.dev | admissions | only assigned leads |
-| marketing@demo.dev | marketing | Phase 6 marketing tools |
-| teacher@demo.dev | teacher | Phase 6 academic tools |
+## Limitations
 
-Password for all: `demo1234` (synthetic demo data only).
+- Email is **dry-run by default** (deliberate: no real sends from a prototype); real sending needs Gmail
+  OAuth credentials and `GMAIL_DRY_RUN=false`.
+- Free-tier Gemini quota is per-model per-day; sustained volume needs a paid tier or provider fallback.
+- No duplicate-lead dedupe yet (documented); chatbot demo runs on Telegram (Messenger/Zalo = same pattern,
+  business-account gated).
+- Single environment, no multi-region/HA — deliberate non-goals for a prototype.
+
+## Future improvements
+
+- Live Facebook Lead Ads / Zalo webhook replacing the test-lead simulation (§25; one mapping branch).
+- Registry-driven access: governance decisions granting/revoking tool access per role, with training gates
+  and n8n alerting to employees (PHASE7-SUMMARY §10).
+- Duplicate-lead detection, prompt versioning with accuracy tracking, multi-language lead handling.
+- Deployment: Vercel + hosted n8n; HMAC webhook signing.
+
+## Document index
+
+[Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [AI Design](docs/AI_DESIGN.md) · [Workflows](docs/WORKFLOW.md) ·
+[Tool Lab](docs/AI_TOOL_LAB.md) · [Tool Evaluation](docs/AI_TOOL_EVALUATION.md) · [Training](docs/TRAINING.md) ·
+[Phase 7 Summary](docs/PHASE7-SUMMARY.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) ·
+[Bug log](docs/dev-fix-log.md) · [Interview objections](docs/interview-objections.md) · [UX direction](docs/UX-DIRECTION.md)

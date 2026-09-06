@@ -73,7 +73,7 @@ export default async function Home({
       />
 
       <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-white p-4">
-        <form method="get" action="/" className="mr-2 flex min-w-[220px] flex-1 items-center gap-2">
+        <form method="get" action="/" className="mr-2 flex min-w-[220px] flex-1 items-center gap-2" role="search">
           {category && <input type="hidden" name="category" value={category} />}
           {period.key !== 'all' && <input type="hidden" name="days" value={period.key} />}
           <input
@@ -81,6 +81,7 @@ export default async function Home({
             name="q"
             defaultValue={q}
             placeholder="Search name or email…"
+            aria-label="Search leads by name or email"
             className="field max-w-[280px]"
           />
           <button type="submit" className="btn btn-secondary">Search</button>
@@ -129,13 +130,13 @@ export default async function Home({
         <table className="w-full text-sm">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Category</th>
-              <th>Score</th>
-              <th>Intent</th>
-              <th>Status</th>
-              <th>Created</th>
+              <th scope="col">Name</th>
+              <th scope="col">Email</th>
+              <th scope="col">Category</th>
+              <th scope="col">Score</th>
+              <th scope="col">Intent</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
             </tr>
           </thead>
           <tbody>

@@ -136,12 +136,13 @@ export default function Sidebar({
           className="ml-auto rounded p-1 text-[var(--ink-4)] hover:bg-slate-100 hover:text-[var(--ink-2)]"
           title={collapsed ? 'Expand menu' : 'Collapse menu'}
           aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+          aria-expanded={!collapsed}
         >
           {collapsed ? '»' : '«'}
         </button>
       </div>
 
-      <nav className="flex-1 pb-3">
+      <nav className="flex-1 pb-3" aria-label="Main navigation">
         {groups.map((group) => (
           <div key={group.label}>
             <div className="sidebar-group-label">{group.label}</div>
