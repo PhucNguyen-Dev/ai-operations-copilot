@@ -1,0 +1,166 @@
+{
+  "id": "tgch000000000001",
+  "name": "Parent Inquiry Chatbot (Telegram)",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-520, 0],
+      "credentials": {
+        "telegramApi": { "name": "Telegram bot" }
+      },
+      "webhookId": "tg-parent-chatbot"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Per-conversation memory (survives between messages via workflow static data).\nconst msg = $input.first().json.message;\nif (!msg || !msg.text) return []; // ignore stickers/photos for the demo\nconst chatId = msg.chat.id;\nconst text = String(msg.text).trim();\nconst from = msg.from?.first_name || 'Parent';\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst key = 'chat_' + chatId;\nconst state = staticData[key] || { data: {}, history: [] };\n\nstate.history = state.history || [];\nstate.history.push({ role: 'parent', text });\nwhile (state.history.length > 8) state.history.shift();\nstaticData[key] = state;\n\nconst KB = [\n  'Courses: IELTS Preparation (intensive & standard), TOEFL Preparation, Business English.',\n  'Class size: max 12 students. Teachers are certified, IELTS 8.0+.',\n  'Free placement test every Saturday morning.',\n  'Tuition: from 6,000,000 VND for an 8-week course (exact quote given by a counselor).',\n  'Campuses: District 1 and Thu Duc (Ho Chi Minh City).',\n  'Hours: 8:00-20:00 Mon-Sat. Hotline: 0900 000 000.'\n].join('\\n');\n\nconst system = [\n  'You are the friendly enrollment assistant of an English training school, chatting with parents on Telegram.',\n  'Knowledge base:',\n  KB,\n  '',\n  'Rules:',\n  '- Answer questions clearly and briefly, using ONLY the knowledge base. If something is not there, say a counselor will confirm it.',\n  '- When the parent shows enrollment intent (wants to register, asks how to sign up), collect: full name, phone number, and course of interest. Ask for ONE missing item at a time, warmly.',\n  '- Never invent prices beyond the \"from 6,000,000 VND\" line. Never promise discounts or schedules.',\n  '- Reply in the parent\\'s language (Vietnamese or English).',\n  'Return ONLY a single JSON object:',\n  '- Normal answer or still collecting: {\"action\":\"reply\",\"text\":\"<your reply>\",\"collected\":{...}}',\n  '- When name AND phone AND course are all known: {\"action\":\"submit\",\"text\":\"<warm confirmation that a counselor will contact them soon>\",\"lead\":{\"name\":\"...\",\"phone\":\"...\",\"course\":\"...\",\"note\":\"<anything else the parent said that matters>\"}}'\n].join('\\n');\n\nconst user = [\n  'Collected so far: ' + JSON.stringify(state.data || {}),\n  'Recent conversation:',\n  ...state.history.map((h) => h.role + ': ' + h.text)\n].join('\\n');\n\nreturn [{ json: { chatId, from, text, key, state, system, user } }];"
+      },
+      "id": "b2000000-0000-0000-0000-000000000002",
+      "name": "Prepare turn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.AI_MODEL || 'gemini-3.5-flash-lite' }}:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "={{ $env.GEMINI_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: $json.system }] }, contents: [{ role: 'user', parts: [{ text: $json.user }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "b2000000-0000-0000-0000-000000000003",
+      "name": "AI chat turn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-80, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Schema check + merge AI's collected info into conversation state.\nconst turn = $('Prepare turn').first().json;\nconst ai = $('AI chat turn').first().json;\n\nconst text = (ai.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  return [{ json: { chatId: turn.chatId, action: 'reply', replyText: 'Sorry, I had trouble just now — please try again in a moment.' } }];\n}\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst state = staticData.chats[turn.key] || { data: {}, history: [] };\nstate.data = { ...(state.data || {}), ...(parsed.collected || {}) };\n\nlet action = parsed.action === 'submit' ? 'submit' : 'reply';\nconst lead = parsed.lead || {};\n// Only submit when we truly have the required trio.\nif (action === 'submit' && (!lead.name || !lead.phone || !lead.course)) {\n  action = 'reply';\n}\n\nif (action === 'submit') {\n  staticData.chats[turn.key] = { data: {}, history: [] }; // reset for the next parent\n} else {\n  staticData.chats[turn.key] = state;\n}\n\nconst replyText = action === 'submit'\n  ? (parsed.text || 'Thank you! A counselor will contact you soon.')\n  : (parsed.text || 'Could you tell me a bit more?');\n\nreturn [{ json: {\n  chatId: turn.chatId,\n  action,\n  replyText,\n  lead: action === 'submit'\n    ? {\n        name: String(lead.name).slice(0, 200),\n        phone: String(lead.phone).slice(0, 40),\n        course: String(lead.course).slice(0, 100),\n        note: String(lead.note || turn.text).slice(0, 1000),\n        from: turn.from\n      }\n    : null\n} }];"
+      },
+      "id": "b2000000-0000-0000-0000-000000000004",
+      "name": "Resolve turn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c-submit",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "submit",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000005",
+      "name": "Enrollment intent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [360, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $json.lead.name, email: $json.lead.phone.replace(/\\D/g, '') + '.tg@lead.local', phone: $json.lead.phone, source: 'telegram', course_interest: $json.lead.course, message: '[Telegram chat with ' + $json.lead.from + '] ' + $json.lead.note }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "b2000000-0000-0000-0000-000000000006",
+      "name": "Fire admissions pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Resolve turn').first().json.chatId }}",
+        "text": "={{ $('Resolve turn').first().json.replyText }}",
+        "additionalFields": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000007",
+      "name": "Telegram: confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [820, 0],
+      "credentials": {
+        "telegramApi": { "name": "Telegram bot" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Resolve turn').first().json.chatId }}",
+        "text": "={{ $json.replyText }}",
+        "additionalFields": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000008",
+      "name": "Telegram: reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [600, 200],
+      "credentials": {
+        "telegramApi": { "name": "Telegram bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Prepare turn", "type": "main", "index": 0 }]]
+    },
+    "Prepare turn": {
+      "main": [[{ "node": "AI chat turn", "type": "main", "index": 0 }]]
+    },
+    "AI chat turn": {
+      "main": [[{ "node": "Resolve turn", "type": "main", "index": 0 }]]
+    },
+    "Resolve turn": {
+      "main": [[{ "node": "Enrollment intent?", "type": "main", "index": 0 }]]
+    },
+    "Enrollment intent?": {
+      "main": [
+        [{ "node": "Fire admissions pipeline", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fire admissions pipeline": {
+      "main": [[{ "node": "Telegram: confirm", "type": "main", "index": 0 }]]
+    }
+  }
+}

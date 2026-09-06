@@ -1,5 +1,8 @@
 // Launch n8n locally with the project's secrets from .env.
-// Usage: npm run n8n  (first run downloads n8n via npx, takes a minute)
+// Usage:
+//   npm run n8n            (plain localhost — app + admissions pipeline)
+//   npm run n8n:tunnel     (adds --tunnel: public HTTPS URL so Telegram/cloud
+//                           webhooks can reach this machine — dev only)
 // Editor UI: http://localhost:5678
 //
 // Precedence: .env WINS over any inherited environment variable. This is a
@@ -12,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const useTunnel = process.argv.includes('--tunnel')
 
 const secrets = {}
 for (const line of readFileSync(join(root, '.env'), 'utf8').split('\n')) {
@@ -22,7 +26,7 @@ for (const line of readFileSync(join(root, '.env'), 'utf8').split('\n')) {
 if (!secrets.SUPABASE_URL) secrets.SUPABASE_URL = secrets.NEXT_PUBLIC_SUPABASE_URL
 if (!secrets.SUPABASE_SERVICE_ROLE_KEY) secrets.SUPABASE_SERVICE_ROLE_KEY = secrets.SUPABASE_SERVICE_ROLE_KEY
 
-const child = spawn('npx', ['n8n', 'start'], {
+const child = spawn('npx', ['n8n', 'start', ...(useTunnel ? ['--tunnel'] : [])], {
   stdio: 'inherit',
   shell: true,
   env: {
