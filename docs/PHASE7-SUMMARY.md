@@ -76,3 +76,39 @@ governance content.
 - Gemini free-tier quota can interrupt heavy testing; mitigation is model switching or a paid tier
 - Model names age quickly (2.0/2.5 generations retired during this project); AI_MODEL is env-pinned and swappable
 - Real incidents and their root causes live in docs/dev-fix-log.md — the Troubleshooting SOP links there
+
+10. Future work: governance-driven access (the registry loop)
+
+Phase 7 is deliberately static — documents and records, per spec §13/§15/§17. The natural evolution for a real
+deployment is to make governance a **loop that drives access**, not just evidence of judgment:
+
+    Decision → Approved-tool Registry → Access → Training gate → Usage → Audit → back to Decision
+
+Concretely, mapped onto this codebase:
+- `tool_evaluations` gains an approval status + department scope → becomes an **approved-tool registry**.
+  A "Recommended" decision no longer just documents itself; it flips a status: tool X approved for departments
+  A and B, under condition C.
+- Tool access stops being hardcoded. Today `canUseTool(role, 'F-020')` (lib/roles.ts, lib/auth.ts, wired in
+  components/site-header.tsx and the API routes) is static code. The registry version reads: *Marketing can use
+  the Content Generator because evaluation #id approved it for Marketing on date Y* — so governance decisions
+  can grant or revoke tool access per role, and every tool page displays
+  "Approved for: [roles] · per evaluation [id/date] · training required".
+- Training becomes the entry ticket: each department training module gets a completion record, and access to
+  a tool can require its department's training. The workshop/training content stays a document — but it gates
+  something real.
+- The audit surfaces that already exist (`ai_generations` usage logs, `automation_runs`) close the loop:
+  usage volume and incidents feed periodic re-evaluation, and a "conditional" approval's conditions get
+  re-checked against real data.
+
+Communication-app integration (alerts to employees): registry state changes — tool approved, tool revoked,
+training now required, a conditional approval's condition triggered — should notify the affected employees
+automatically. The natural connector is the **n8n instance already in the stack** (it owns all webhook
+orchestration): a workflow watches registry changes and posts to Slack / Telegram / Microsoft Teams (or email
+via Gmail), e.g. "Lesson Planner access revoked pending re-evaluation — complete the Academic training module
+to restore access" or "Content Generator is now approved for Marketing; training session on Thursday."
+No new infrastructure is needed — it is one more workflow plus registry webhook hooks.
+
+Why not built now: the spec intentionally scopes governance as designed artifacts and records. The registry
+loop is the next phase of a real deployment — and the fact that every ingredient for it (evaluations table,
+role gating, training content, usage logs, an orchestration engine) already exists in this codebase is
+itself part of the design story.
