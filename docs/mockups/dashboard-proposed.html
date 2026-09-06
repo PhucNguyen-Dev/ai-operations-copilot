@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Lead Dashboard (proposed)</title>
+<style>
+  :root{
+    --brand:#2563eb; --brand-strong:#0f172a; --surface:#f8fafc; --card:#fff;
+    --border:#e2e8f0; --ink:#0f172a; --ink-2:#475569; --ink-3:#64748b; --ink-4:#94a3b8;
+    --success:#16a34a; --warning:#f59e0b; --danger:#dc2626; --info:#0ea5e9; --ring:#3b82f6;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--surface);color:var(--ink);font-size:14px;line-height:1.5}
+  a{color:var(--brand);text-decoration:none}
+  ::selection{background:#bfdbfe}
+  /* app bar */
+  .appbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;gap:20px;height:56px;position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--brand-strong)}
+  .brand .mark{width:26px;height:26px;border-radius:7px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800}
+  nav{display:flex;gap:2px;height:100%}
+  nav a{display:flex;align-items:center;padding:0 12px;color:var(--ink-2);font-weight:500;border-bottom:2px solid transparent}
+  nav a:hover{color:var(--ink);background:#f1f5f9}
+  nav a.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+  .userarea{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .rolechip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#dbeafe;color:#1d4ed8}
+  .signout{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 12px;color:var(--ink-2);font-size:13px;cursor:pointer}
+  main{max-width:1100px;margin:0 auto;padding:28px 24px}
+  h1{font-size:22px;color:var(--brand-strong)}
+  .sub{color:var(--ink-3);margin-top:2px}
+  /* filter pills */
+  .filters{display:flex;gap:16px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin:20px 0 16px;flex-wrap:wrap}
+  .fgroup{display:flex;gap:6px;align-items:center}
+  .fgroup .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--ink-4);text-transform:uppercase;margin-right:4px}
+  .pill{border:1px solid var(--border);background:#fff;border-radius:999px;padding:5px 14px;font-size:13px;color:var(--ink-2);cursor:pointer}
+  .pill.active{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+  .stat .num{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat .cap{color:var(--ink-3);font-size:13px}
+  .stat.danger .num{color:var(--danger)}
+  /* table */
+  .tablecard{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th{background:#f1f5f9;color:var(--ink-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;text-align:left;padding:10px 16px;border-bottom:1px solid var(--border)}
+  td{padding:12px 16px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#f8fafc}
+  /* badges */
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+  .b-hot{background:#fee2e2;color:#b91c1c}.b-warm{background:#fef3c7;color:#a16207}.b-cold{background:#e0f2fe;color:#0369a1}
+  .b-succ{background:#dcfce7;color:#15803d}.b-fail{background:#fee2e2;color:#b91c1c}.b-run{background:#e0f2fe;color:#0369a1}
+  .name{font-weight:600}
+  .mut{color:var(--ink-3)}
+  .note{margin-top:14px;color:var(--ink-4);font-size:12px}
+</style>
+</head>
+<body>
+<div class="appbar">
+  <div class="brand"><span class="mark">AC</span> AI Operations Copilot</div>
+  <nav>
+    <a class="active" href="#">Dashboard</a>
+    <a href="#">Governance</a>
+    <a href="#">Content Generator</a>
+    <a href="#">Campaign Analyzer</a>
+    <a href="#">Lesson Planner</a>
+    <a href="#">Quiz Generator</a>
+    <a href="#">Report Generator</a>
+    <a href="#">Automation Logs</a>
+    <a href="#">Overview</a>
+    <a href="#">Simulate incoming lead</a>
+  </nav>
+  <div class="userarea">
+    <span class="mut">Alex Admin</span>
+    <span class="rolechip">admin</span>
+    <button class="signout">Sign out</button>
+  </div>
+</div>
+
+<main>
+  <h1>Lead Dashboard</h1>
+  <p class="sub">Every lead visible to your role (RLS-enforced by Supabase).</p>
+
+  <div class="filters">
+    <div class="fgroup"><span class="lbl">Category</span>
+      <button class="pill active">All</button><button class="pill">HOT</button><button class="pill">WARM</button><button class="pill">COLD</button>
+    </div>
+    <div class="fgroup"><span class="lbl">Created</span>
+      <button class="pill active">All time</button><button class="pill">7 days</button><button class="pill">30 days</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat danger"><div class="num">11</div><div class="cap">hot (in current view)</div></div>
+    <div class="stat"><div class="num">16</div><div class="cap">leads visible to you</div></div>
+    <div class="stat"><div class="num">7</div><div class="cap">still untouched (status: new)</div></div>
+  </div>
+
+  <div class="tablecard">
+    <table>
+      <thead><tr><th>Name</th><th>Email</th><th>Category</th><th>Score</th><th>Intent</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Final Test</td><td class="mut">final.test@example.com</td><td><span class="badge b-hot">HOT</span></td><td>90</td><td>HIGH</td><td><span class="badge b-succ">contacted</span></td><td class="mut">9/6/2026, 11:38 AM</td></tr>
+        <tr><td class="name">Env Fix Check</td><td class="mut">env.fix.check@example.com</td><td><span class="badge b-hot">HOT</span></td><td>95</td><td>HIGH</td><td><span class="badge b-succ">contacted</span></td><td class="mut">9/6/2026, 9:02 AM</td></tr>
+        <tr><td class="name">Emma Nguyen</td><td class="mut">aaliyah.test@example.com</td><td><span class="badge b-hot">HOT</span></td><td>85</td><td>HIGH</td><td><span class="badge b-run">new</span></td><td class="mut">9/5/2026, 7:10 PM</td></tr>
+        <tr><td class="name">Eden</td><td class="mut">saso.test@example.com</td><td><span class="badge b-warm">WARM</span></td><td>65</td><td>MEDIUM</td><td><span class="badge b-succ">contacted</span></td><td class="mut">9/5/2026, 2:30 PM</td></tr>
+        <tr><td class="name">Test User</td><td class="mut">cold.verify@example.com</td><td><span class="badge b-cold">COLD</span></td><td>25</td><td>LOW</td><td><span class="badge b-fail">lost</span></td><td class="mut">9/5/2026, 2:18 PM</td></tr>
+        <tr><td class="name">Fix Verification</td><td class="mut">fix.verify@example.com</td><td><span class="badge b-hot">HOT</span></td><td>95</td><td>HIGH</td><td><span class="badge b-run">new</span></td><td class="mut">9/5/2026, 2:17 PM</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Mockup only — proposed styling. New vs current: sticky white app bar with brand-mark + active-route highlight (blue underline), user chip moved right, brand-blue active filter pills, stat cards with tabular numerals, semantic badges unchanged in color meaning.</p>
+</main>
+</body>
+</html>

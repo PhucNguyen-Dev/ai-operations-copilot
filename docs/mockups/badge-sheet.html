@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mockup — Badge sheet (all status variants)</title>
+<style>
+  :root{--brand:#2563eb;--surface:#f8fafc;--border:#e2e8f0;--ink:#0f172a;--ink-3:#64748b}
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--surface);color:var(--ink);font-size:14px;padding:32px}
+  h1{font-size:20px;margin-bottom:4px}
+  p.sub{color:var(--ink-3);margin-bottom:24px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:980px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:12px}
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .use{color:var(--ink-3);font-size:12px;margin-left:auto}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 10px;border-radius:999px}
+  .note{max-width:980px;margin-top:20px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;font-size:13px;color:#92400e}
+</style>
+</head>
+<body>
+<h1>Badge sheet — approve the color semantics</h1>
+<p class="sub">Every status variant that exists in the database. Colors match today's dashboard so users recognize them; this sheet makes it explicit — including the three the plan didn't list (retried, skipped, dry_run).</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Lead category</h2>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">HOT</span><span class="use">score ≥ 70 · red (unchanged)</span></div>
+    <div class="row"><span class="badge" style="background:#fef3c7;color:#a16207">WARM</span><span class="use">score 40–69 · amber (unchanged)</span></div>
+    <div class="row"><span class="badge" style="background:#e0f2fe;color:#0369a1">COLD</span><span class="use">score &lt; 40 · sky (unchanged)</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Lead status</h2>
+    <div class="row"><span class="badge" style="background:#e0f2fe;color:#0369a1">new</span><span class="use">untouched · sky/info</span></div>
+    <div class="row"><span class="badge" style="background:#dcfce7;color:#15803d">contacted</span><span class="use">counselor acted · green</span></div>
+    <div class="row"><span class="badge" style="background:#f3e8ff;color:#7e22ce">converted</span><span class="use">enrolled · purple (new — needs a distinct hue)</span></div>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">lost</span><span class="use">dead · red</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Automation run status</h2>
+    <div class="row"><span class="badge" style="background:#e0f2fe;color:#0369a1">running</span><span class="use">in flight · sky</span></div>
+    <div class="row"><span class="badge" style="background:#dcfce7;color:#15803d">success</span><span class="use">all steps ok · green</span></div>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">failed</span><span class="use">halted · red</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Step status <span style="color:#b45309;text-transform:none;letter-spacing:0">⚠ the ones the plan didn't list</span></h2>
+    <div class="row"><span class="badge" style="background:#dcfce7;color:#15803d">success</span><span class="use">green</span></div>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">failed</span><span class="use">red</span></div>
+    <div class="row"><span class="badge" style="background:#ffedd5;color:#c2410c">retried</span><span class="use">succeeded after retry · orange = "wobbly but ok"</span></div>
+    <div class="row"><span class="badge" style="background:#f1f5f9;color:#64748b">skipped</span><span class="use">not attempted (e.g. email draft failed) · neutral gray</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Email status (sent_emails)</h2>
+    <div class="row"><span class="badge" style="background:#dcfce7;color:#15803d">sent</span><span class="use">delivered via Gmail · green</span></div>
+    <div class="row"><span class="badge" style="background:#e0e7ff;color:#4338ca">dry_run</span><span class="use">recorded, deliberately not sent · indigo = "intentional, not an error"</span></div>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">failed</span><span class="use">send error · red</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Task priority</h2>
+    <div class="row"><span class="badge" style="background:#fee2e2;color:#b91c1c">high</span><span class="use">HOT leads · red</span></div>
+    <div class="row"><span class="badge" style="background:#fef3c7;color:#a16207">medium</span><span class="use">WARM leads · amber</span></div>
+    <div class="row"><span class="badge" style="background:#f1f5f9;color:#64748b">low</span><span class="use">COLD leads · neutral</span></div>
+  </div>
+</div>
+
+<div class="note"><b>Decision needed from you:</b> two colors don't exist on today's dashboard — <b>converted</b> (purple proposed) and <b>retried / skipped / dry_run</b> (orange / gray / indigo proposed). If you approve this sheet, these become the single source of truth in the new Badge component.</div>
+</body>
+</html>
