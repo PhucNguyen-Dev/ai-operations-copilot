@@ -39,7 +39,7 @@ export default function LoginPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <h1 className="mb-1 text-2xl font-semibold">AI Operations Copilot</h1>
-      <p className="mb-6 text-sm text-gray-500">Phase 2 — database &amp; RLS verification</p>
+      <p className="mb-6 text-sm text-gray-500">Internal AI system — sign in with your work account</p>
 
       <form onSubmit={onSubmit} className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
         <div>

@@ -12,23 +12,14 @@ type LeadRow = {
   lead_analyses: { score: number; category: string; intent: string }[] | null
 }
 
-const CATEGORY_STYLES: Record<string, string> = {
-  HOT: 'bg-red-100 text-red-700',
-  WARM: 'bg-amber-100 text-amber-700',
-  COLD: 'bg-sky-100 text-sky-700',
-}
-
-function filterHref(active: { category: string | null; periodKey: string }, category: string | null, periodKey: string) {
+function filterHref(active: { category: string | null; periodKey: string; q: string }, category: string | null, periodKey: string) {
   const qs = new URLSearchParams()
   if (category) qs.set('category', category)
   if (periodKey !== 'all') qs.set('days', periodKey)
+  if (active.q) qs.set('q', active.q)
   const s = qs.toString()
   return s ? `/?${s}` : '/'
 }
-
-const PILL = 'rounded-full border px-3 py-1 text-xs font-medium'
-const PILL_ON = 'border-gray-900 bg-gray-900 text-white'
-const PILL_OFF = 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
 
 export default async function Home({
   searchParams,
@@ -38,6 +29,7 @@ export default async function Home({
   const supabase = await createClient()
   const params = await searchParams
   const { category, period } = parseLeadFilters(params)
+  const q = typeof params.q === 'string' ? params.q.trim().slice(0, 100) : ''
 
   let query = supabase
     .from('leads')
@@ -49,6 +41,7 @@ export default async function Home({
   if (period.days !== null) {
     query = query.gte('created_at', new Date(Date.now() - period.days * 86_400_000).toISOString())
   }
+  if (q) query = query.or(`name.ilike.%${q}%,email.ilike.%${q}%`)
 
   const { data, error } = await query
 
@@ -65,7 +58,7 @@ export default async function Home({
   }
 
   const rows: LeadRow[] = data ?? []
-  const active = { category, periodKey: period.key }
+  const active = { category, periodKey: period.key, q }
   const byCategory = { HOT: 0, WARM: 0, COLD: 0 }
   for (const row of rows) {
     const c = row.lead_analyses?.[0]?.category
@@ -80,11 +73,24 @@ export default async function Home({
       />
 
       <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-white p-4">
+        <form method="get" action="/" className="mr-2 flex min-w-[220px] flex-1 items-center gap-2">
+          {category && <input type="hidden" name="category" value={category} />}
+          {period.key !== 'all' && <input type="hidden" name="days" value={period.key} />}
+          <input
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="Search name or email…"
+            className="field max-w-[280px]"
+          />
+          <button type="submit" className="btn btn-secondary">Search</button>
+          {q && <a href={filterHref({ ...active, q: '' }, category, period.key)} className="pill">Clear</a>}
+        </form>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Category</span>
-          <a href={filterHref(active, null, period.key)} className={`${PILL} ${category === null ? PILL_ON : PILL_OFF}`}>All</a>
+          <a href={filterHref(active, null, period.key)} className={`pill ${category === null ? 'active' : ''}`}>All</a>
           {LEAD_CATEGORIES.map((c) => (
-            <a key={c} href={filterHref(active, c, period.key)} className={`${PILL} ${category === c ? PILL_ON : PILL_OFF}`}>
+            <a key={c} href={filterHref(active, c, period.key)} className={`pill ${category === c ? 'active' : ''}`}>
               {c}
             </a>
           ))}
@@ -92,7 +98,7 @@ export default async function Home({
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Created</span>
           {LEAD_PERIODS.map((p) => (
-            <a key={p.key} href={filterHref(active, category, p.key)} className={`${PILL} ${period.key === p.key ? PILL_ON : PILL_OFF}`}>
+            <a key={p.key} href={filterHref(active, category, p.key)} className={`pill ${period.key === p.key ? 'active' : ''}`}>
               {p.label}
             </a>
           ))}
@@ -119,49 +125,49 @@ export default async function Home({
         <CategoryBar counts={byCategory} />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+      <div className="table-card mb-8">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Category</th>
-              <th className="px-4 py-3">Score</th>
-              <th className="px-4 py-3">Intent</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Created</th>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Category</th>
+              <th>Score</th>
+              <th>Intent</th>
+              <th>Status</th>
+              <th>Created</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  {category || period.days !== null
-                    ? 'No leads match these filters.'
-                    : 'No leads visible — this is correct for marketing/teacher roles (RLS).'}
+                  {q
+                    ? `No leads match "${q}".`
+                    : category || period.days !== null
+                      ? 'No leads match these filters.'
+                      : 'No leads visible — this is correct for marketing/teacher roles (RLS).'}
                 </td>
               </tr>
             )}
             {rows.map((lead) => {
               const analysis = lead.lead_analyses?.[0]
               return (
-                <tr key={lead.id} className="border-b last:border-0 hover:bg-gray-50">
+                <tr key={lead.id}>
                   <td className="px-4 py-3 font-medium">
-                    <a href={`/leads/${lead.id}`} className="hover:underline">{lead.name}</a>
+                    <a href={`/leads/${lead.id}`} className="text-[var(--brand)] hover:underline">{lead.name}</a>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{lead.email}</td>
                   <td className="px-4 py-3">
                     {analysis ? (
-                      <span className={`rounded px-2 py-0.5 text-xs font-semibold ${CATEGORY_STYLES[analysis.category] ?? 'bg-gray-100'}`}>
-                        {analysis.category}
-                      </span>
+                      <span className={`badge badge-${analysis.category.toLowerCase()}`}>{analysis.category}</span>
                     ) : (
                       <span className="text-xs text-gray-400">not analyzed</span>
                     )}
                   </td>
                   <td className="px-4 py-3">{analysis?.score ?? '—'}</td>
                   <td className="px-4 py-3">{analysis?.intent ?? '—'}</td>
-                  <td className="px-4 py-3">{lead.status}</td>
+                  <td className="px-4 py-3"><span className={`badge badge-${lead.status}`}>{lead.status}</span></td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(lead.created_at).toLocaleString()}
                   </td>

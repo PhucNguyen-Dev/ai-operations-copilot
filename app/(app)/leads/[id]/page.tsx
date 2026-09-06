@@ -58,7 +58,11 @@ export default async function LeadDetailPage({
     console.error('[lead-detail] query failed:', error.message)
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
-        <SiteHeader title="Lead Detail" />
+        <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
+          <a href="/" className="hover:text-gray-800 hover:underline">Dashboard</a>
+          <span className="mx-1">/</span>
+          <span className="text-gray-700">Lead Detail</span>
+        </nav>
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
           Could not load this lead — please try again. The issue has been logged.
         </div>
@@ -91,6 +95,11 @@ export default async function LeadDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
+      <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
+        <a href="/" className="hover:text-gray-800 hover:underline">Dashboard</a>
+        <span className="mx-1">/</span>
+        <span className="text-gray-700">{lead.name}</span>
+      </nav>
       <SiteHeader title={lead.name} subtitle={`Lead detail · status: ${lead.status}`} />
 
       <div className="grid gap-6 lg:grid-cols-2">

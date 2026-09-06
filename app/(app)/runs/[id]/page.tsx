@@ -48,6 +48,11 @@ export default async function RunDetailPage({
     console.error('[run-detail] query failed:', error.message)
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
+        <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
+          <a href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</a>
+          <span className="mx-1">/</span>
+          <span className="text-gray-700">Run detail</span>
+        </nav>
         <SiteHeader title="Run detail" />
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
           Could not load this run — please try again. The issue has been logged.
@@ -65,6 +70,11 @@ export default async function RunDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
+      <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
+        <a href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</a>
+        <span className="mx-1">/</span>
+        <span className="text-gray-700">Run {run.id.slice(0, 8)}</span>
+      </nav>
       <SiteHeader
         title={`Run ${run.id.slice(0, 8)}`}
         subtitle={`${run.workflow_name} · triggered by ${run.trigger_source}`}
