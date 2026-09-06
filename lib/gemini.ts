@@ -10,13 +10,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // JSON mode, retry transient only, schema gate before persist).
 // =============================================================
 
-const DEFAULT_MODEL = 'gemini-2.0-flash'
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite'
 const TIMEOUT_MS = 30_000
 const DEFAULT_MAX_ATTEMPTS = 3
 const BACKOFF_MS = 2_000
 
 export type AiErrorCode =
   | 'AI_NOT_CONFIGURED' // server has no GEMINI_API_KEY — permanent
+  | 'AI_CONFIG' // bad key / retired model (401, 400, 404) — permanent, needs admin
   | 'AI_UNREACHABLE' // network error, 429, 5xx — transient
   | 'AI_BAD_OUTPUT' // empty / malformed / truncated response
   | 'AI_SCHEMA_MISMATCH' // parsed but failed the tool's validator — permanent
@@ -39,6 +40,7 @@ export type ValidationResult<T> =
 /** Client-safe phrasing per code — infrastructure detail stays in server logs. */
 const CLIENT_MESSAGES: Record<AiErrorCode, string> = {
   AI_NOT_CONFIGURED: 'AI is not configured on the server (missing GEMINI_API_KEY).',
+  AI_CONFIG: 'The AI service is misconfigured (bad key or retired model) — contact the admin.',
   AI_UNREACHABLE: 'The AI service is unreachable or busy — try again in a moment.',
   AI_BAD_OUTPUT: 'The AI returned an unusable response — try again.',
   AI_SCHEMA_MISMATCH: 'The AI returned an unexpected response format — try again.',
@@ -58,9 +60,12 @@ export function isTruncated(text: string): boolean {
   return t.length > 0 && !t.endsWith('}') && !t.endsWith(']')
 }
 
-/** 429 and 5xx are transient; other HTTP statuses are permanent failures. */
+/** 429 and 5xx are transient; 400/401/403/404 are permanent config errors. */
 export function classifyHttpStatus(status: number): { code: AiErrorCode; retryable: boolean } {
   if (status === 429 || status >= 500) return { code: 'AI_UNREACHABLE', retryable: true }
+  if (status === 400 || status === 401 || status === 403 || status === 404) {
+    return { code: 'AI_CONFIG', retryable: false }
+  }
   return { code: 'AI_UNREACHABLE', retryable: false }
 }
 
