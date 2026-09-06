@@ -102,3 +102,51 @@ export function validateContentDraft(parsed: unknown): ValidationResult<ContentD
     },
   }
 }
+
+// -------------------------------------------------------------
+// F-021 — Campaign Analyzer (marketing)
+// -------------------------------------------------------------
+
+export type CampaignInsights = {
+  summary: string
+  strong_segments: string[]
+  weak_segments: string[]
+  trends: string[]
+  recommendations: string[]
+}
+
+export function validateCampaignInsights(parsed: unknown): ValidationResult<CampaignInsights> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['response must be a single JSON object'] }
+  }
+  const p = parsed as Partial<CampaignInsights>
+  const errors: string[] = []
+
+  if (typeof p.summary !== 'string' || !p.summary.trim()) {
+    errors.push('summary is required')
+  }
+  // Segments/trends/recommendations: non-empty arrays of short strings,
+  // capped so a runaway model cannot produce endless output.
+  for (const [key, min, max] of [
+    ['strong_segments', 1, 6],
+    ['weak_segments', 1, 6],
+    ['trends', 1, 6],
+    ['recommendations', 1, 6],
+  ] as const) {
+    if (!isNonEmptyStringArray(p[key], min, max)) {
+      errors.push(`${key} must be an array of ${min}-${max} non-empty strings`)
+    }
+  }
+
+  if (errors.length) return { ok: false, errors }
+  return {
+    ok: true,
+    data: {
+      summary: (p.summary as string).trim(),
+      strong_segments: (p.strong_segments as string[]).map((s) => s.trim()),
+      weak_segments: (p.weak_segments as string[]).map((s) => s.trim()),
+      trends: (p.trends as string[]).map((s) => s.trim()),
+      recommendations: (p.recommendations as string[]).map((s) => s.trim()),
+    },
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateContentDraft } from '@/lib/ai/schemas'
+import { validateContentDraft, validateCampaignInsights } from '@/lib/ai/schemas'
 import { canUseTool, AI_TOOLS } from '@/lib/roles'
 
 describe('validateContentDraft (F-020)', () => {
@@ -50,6 +50,52 @@ describe('validateContentDraft (F-020)', () => {
     for (const garbage of [null, undefined, 7, 'x', [], true]) {
       expect(() => validateContentDraft(garbage)).not.toThrow()
       expect(validateContentDraft(garbage).ok).toBe(false)
+    }
+  })
+})
+
+describe('validateCampaignInsights (F-021)', () => {
+  const valid = {
+    summary: 'Spend efficiency improved mid-week.',
+    strong_segments: ['Thursday CTR 2.6x baseline'],
+    weak_segments: ['Weekend conversions dropped 70%'],
+    trends: ['Conversions track impressions with a 1-day lag'],
+    recommendations: ['Shift 30% of weekend budget to Thu-Fri'],
+  }
+
+  it('accepts a valid analysis', () => {
+    expect(validateCampaignInsights(valid).ok).toBe(true)
+  })
+
+  it('requires all five keys as 1-6 item string arrays', () => {
+    for (const key of ['strong_segments', 'weak_segments', 'trends', 'recommendations'] as const) {
+      const r = validateCampaignInsights({ ...valid, [key]: [] })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.errors.join(' ')).toMatch(new RegExp(key))
+    }
+    const r7 = validateCampaignInsights({
+      ...valid,
+      recommendations: Array.from({ length: 7 }, (_, i) => `rec ${i + 1}`),
+    })
+    expect(r7.ok).toBe(false)
+  })
+
+  it('rejects blank items inside arrays', () => {
+    const r = validateCampaignInsights({ ...valid, trends: ['real trend', '   '] })
+    expect(r.ok).toBe(false)
+  })
+
+  it('rejects missing/blank summary', () => {
+    for (const summary of [undefined, '', '   ']) {
+      const r = validateCampaignInsights({ ...valid, summary: summary as never })
+      expect(r.ok).toBe(false)
+    }
+  })
+
+  it('rejects non-object payloads without throwing', () => {
+    for (const garbage of [null, undefined, 3, 'x', [], false]) {
+      expect(() => validateCampaignInsights(garbage)).not.toThrow()
+      expect(validateCampaignInsights(garbage).ok).toBe(false)
     }
   })
 })
