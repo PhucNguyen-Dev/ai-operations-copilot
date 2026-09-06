@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireGovernanceAccess } from '@/lib/auth'
 import SiteHeader from '@/components/site-header'
 
 export const dynamic = 'force-dynamic'
@@ -26,6 +27,7 @@ const GRADE_STYLES: Record<string, string> = {
 }
 
 export default async function ToolLabPage() {
+  await requireGovernanceAccess()
   const supabase = await createClient()
   const { data } = await supabase
     .from('tool_experiments')

@@ -35,3 +35,18 @@ export async function requireUser(): Promise<{
     fullName: profile?.full_name ?? user.email ?? '',
   }
 }
+
+/**
+ * Governance back office (Tool Lab, evaluations, adoption decisions) is the
+ * AI specialist's workspace: admin + operations only. Staff are sent to the
+ * AI Guidelines portal instead (PHASE7-SUMMARY §10 — the registry loop's
+ * decision-maker vs access-holder split).
+ */
+export async function requireGovernanceAccess(): Promise<{
+  role: Role
+  fullName: string
+}> {
+  const { role, fullName } = await requireUser()
+  if (role !== 'admin' && role !== 'operations') redirect('/guidelines')
+  return { role, fullName }
+}

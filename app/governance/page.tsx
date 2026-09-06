@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { requireGovernanceAccess } from '@/lib/auth'
 import SiteHeader from '@/components/site-header'
 
 export const dynamic = 'force-dynamic'
@@ -6,6 +7,7 @@ export const dynamic = 'force-dynamic'
 const CARD = 'rounded-lg border bg-white p-6 shadow-sm hover:shadow-md transition-shadow'
 
 export default async function GovernanceHub() {
+  await requireGovernanceAccess()
   const supabase = await createClient()
   const [{ count: expCount }, { count: evalCount }] = await Promise.all([
     supabase.from('tool_experiments').select('id', { count: 'exact', head: true }),
