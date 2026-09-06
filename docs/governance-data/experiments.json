@@ -1,0 +1,176 @@
+{
+  "generatedAt": "2026-09-06T05:01:49.439Z",
+  "experiments": {
+    "gemini-3.5-flash": {
+      "experiment": "F-004 lead analysis (JSON mode), 5 runs, 3 rotating real leads",
+      "runs": [
+        {
+          "latencyMs": 3112,
+          "parsed": true,
+          "validSchema": true,
+          "score": 95,
+          "category": "HOT",
+          "expected": "HOT",
+          "categoryCorrect": true,
+          "summaryLen": 130
+        },
+        {
+          "latencyMs": 4025,
+          "parsed": true,
+          "validSchema": true,
+          "score": 40,
+          "category": "COLD",
+          "expected": "COLD",
+          "categoryCorrect": true,
+          "summaryLen": 116
+        },
+        {
+          "latencyMs": 3947,
+          "parsed": true,
+          "validSchema": true,
+          "score": 65,
+          "category": "WARM",
+          "expected": "WARM",
+          "categoryCorrect": true,
+          "summaryLen": 131
+        },
+        {
+          "latencyMs": 3829,
+          "parsed": true,
+          "validSchema": true,
+          "score": 95,
+          "category": "HOT",
+          "expected": "HOT",
+          "categoryCorrect": true,
+          "summaryLen": 118
+        },
+        {
+          "latencyMs": 3553,
+          "parsed": true,
+          "validSchema": true,
+          "score": 50,
+          "category": "WARM",
+          "expected": "COLD",
+          "categoryCorrect": false,
+          "summaryLen": 118
+        }
+      ],
+      "avgLatencyMs": 3693,
+      "parseSuccess": "5/5",
+      "schemaValid": "5/5",
+      "categoryCorrect": "4/5",
+      "sampleOutput": "see runs"
+    },
+    "gemini-3.5-flash-lite": {
+      "experiment": "F-004 lead analysis (JSON mode), 5 runs, 3 rotating real leads",
+      "runs": [
+        {
+          "latencyMs": 1086,
+          "parsed": true,
+          "validSchema": true,
+          "score": 95,
+          "category": "HOT",
+          "expected": "HOT",
+          "categoryCorrect": true,
+          "summaryLen": 184
+        },
+        {
+          "latencyMs": 1002,
+          "parsed": true,
+          "validSchema": true,
+          "score": 35,
+          "category": "COLD",
+          "expected": "COLD",
+          "categoryCorrect": true,
+          "summaryLen": 111
+        },
+        {
+          "latencyMs": 998,
+          "parsed": true,
+          "validSchema": true,
+          "score": 60,
+          "category": "WARM",
+          "expected": "WARM",
+          "categoryCorrect": true,
+          "summaryLen": 137
+        },
+        {
+          "latencyMs": 1092,
+          "parsed": true,
+          "validSchema": true,
+          "score": 95,
+          "category": "HOT",
+          "expected": "HOT",
+          "categoryCorrect": true,
+          "summaryLen": 181
+        },
+        {
+          "latencyMs": 1100,
+          "parsed": true,
+          "validSchema": true,
+          "score": 35,
+          "category": "COLD",
+          "expected": "COLD",
+          "categoryCorrect": true,
+          "summaryLen": 129
+        }
+      ],
+      "avgLatencyMs": 1056,
+      "parseSuccess": "5/5",
+      "schemaValid": "5/5",
+      "categoryCorrect": "5/5",
+      "sampleOutput": "see runs"
+    },
+    "gemini-2.0-flash (retired)": {
+      "experiment": "negative control: model retired by Google",
+      "ok": false,
+      "status": 404,
+      "error": "This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.6-flash for the latest features and improvements. We r",
+      "latencyMs": 159
+    },
+    "quiz: json-mode": {
+      "parseSuccess": "3/3",
+      "questionsOk": "3/3",
+      "avgLatencyMs": 1738,
+      "runs": [
+        {
+          "latencyMs": 1839,
+          "parsed": true,
+          "questionsOk": true
+        },
+        {
+          "latencyMs": 1635,
+          "parsed": true,
+          "questionsOk": true
+        },
+        {
+          "latencyMs": 1739,
+          "parsed": true,
+          "questionsOk": true
+        }
+      ]
+    },
+    "quiz: plain-prompt": {
+      "parseSuccess": "3/3",
+      "questionsOk": "3/3",
+      "avgLatencyMs": 1709,
+      "runs": [
+        {
+          "latencyMs": 1749,
+          "parsed": true,
+          "questionsOk": true
+        },
+        {
+          "latencyMs": 1745,
+          "parsed": true,
+          "questionsOk": true
+        },
+        {
+          "latencyMs": 1634,
+          "parsed": true,
+          "questionsOk": true
+        }
+      ]
+    }
+  }
+}

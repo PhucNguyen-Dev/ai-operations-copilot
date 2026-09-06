@@ -5,7 +5,7 @@ prototype demonstrating AI + workflow automation across Admissions, Marketing,
 Academic, and Operations.
 
 - **Docs:** [Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) · Architecture: `docs/AI Operations Copilot — Phase 1 System A.md`
-- **Current status:** Phase 5 complete ✅ — P0 admissions pipeline (F-001–F-016) verified end-to-end, dashboards (F-017–F-019, F-025) shipped, hardening (tests, AI convention, rate limiting) done. Phase 6 (department AI tools) is next.
+- **Current status:** Phase 7 complete — all 30 features (P0+P1+P2) built. Roadmap finished.
 
 ## Quick start
 

@@ -35,6 +35,7 @@ export default async function SiteHeader({
 
       <nav className="mt-4 flex flex-wrap items-center gap-1 border-b pb-3">
         <a href="/" className={NAV_LINK}>Dashboard</a>
+        <a href="/governance" className={NAV_LINK}>Governance</a>
         {canUseTool(role, 'F-020') && (
           <>
             <a href="/tools/content-generator" className={NAV_LINK}>Content Generator</a>
