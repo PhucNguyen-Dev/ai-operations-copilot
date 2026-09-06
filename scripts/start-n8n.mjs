@@ -1,6 +1,11 @@
 // Launch n8n locally with the project's secrets from .env.
 // Usage: npm run n8n  (first run downloads n8n via npx, takes a minute)
 // Editor UI: http://localhost:5678
+//
+// Precedence: .env WINS over any inherited environment variable. This is a
+// deliberate deviation from the usual "existing env wins" convention —
+// see docs/WEAK_POINTS_AND_RISKS.md R-09: a stale GEMINI_API_KEY in the
+// Windows user environment silently shadowed the project's real key.
 import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

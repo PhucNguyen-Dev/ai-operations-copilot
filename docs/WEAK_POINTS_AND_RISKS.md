@@ -121,18 +121,42 @@ a malformed write is unrestricted.
   Phase 6, consider a dedicated Postgres role limited to the tables/columns the
   pipeline needs.
 
-## R-09 — Invalid GEMINI_API_KEY in .env (High — action needed)
+## R-09 — Stale env var shadowed the real GEMINI_API_KEY (High — fixed)
 
-**Area:** `.env` → Gemini API (n8n pipeline + future Phase 6 tools).
+**Area:** environment precedence — `.env` vs inherited OS environment
+(affected the n8n start script and the integration-test env loader).
 
-Discovered by the new integration suite: the current key (new `AQ.` format)
-is rejected by Google with `API_KEY_INVALID`. The Gemini API used to work
-earlier the same day, so the key was likely rotated or replaced.
+**Symptom history (why this was misdiagnosed twice):** after the key was
+rotated to a new-format `AQ.` key, Gemini calls returned
+`API_KEY_INVALID`. First blamed on key-format incompatibility (wrong —
+the `AQ.` key works with the native API and both auth header styles);
+then on "fresh-key propagation" (partially right, but not the whole
+story).
 
-- Impact: every AI call fails — the n8n pipeline's Gemini node returns 400 and
-  all Phase 6 tools would fail.
-- Fix (user action): create a key at https://aistudio.google.com (starts with
-  `AIza`), set `GEMINI_API_KEY=` in `.env`, restart n8n.
+**True root cause — two stacked issues:**
+1. The Windows **user environment** held the old, revoked `AIza…` key as
+   `GEMINI_API_KEY`. Every spawned process (vitest, node, n8n) inherited
+   it, and the loaders' standard `!process.env[KEY]` guard ("existing env
+   wins") let the stale var beat the project's real key in `.env`.
+2. A **fresh-key propagation window**: a newly created `AQ.` key returns
+   `API_KEY_INVALID` for a short time after creation — which made the
+   correct key look broken during the first direct probe.
+
+**Resolution:**
+- `scripts/start-n8n.mjs` and `tests/integration/load-env.ts` now let
+  **`.env` override inherited environment variables** — a deliberate
+  deviation from the usual convention, documented in both files. `.env`
+  is this project's single source of truth for secrets.
+- The stale user-level `GEMINI_API_KEY` was removed from the Windows
+  user environment.
+- **Verified:** integration suite 3/3 green (including the live HOT-lead
+  happy path) and the n8n pipeline end-to-end accepted a live lead
+  (score 95, HOT) with the `AQ.` key.
+
+**Lesson:** when a freshly-rotated credential "fails", (a) test it in
+isolation against the real endpoint before blaming the format, and (b)
+check what the *process* actually inherited — the env var you think
+you're testing may not be the one being sent.
 
 ## Summary
 
@@ -146,4 +170,4 @@ earlier the same day, so the key was likely rotated or replaced.
 | R-06 | Workspace-root misdetection | Low | Fixed |
 | R-07 | Stale dev server / unstyled page | Low | Fixed |
 | R-08 | Service-role for pipeline writes | Low | Accepted risk |
-| R-09 | Invalid GEMINI_API_KEY in .env | High | Open — user action: new AI Studio key |
+| R-09 | Stale env var shadowed real GEMINI_API_KEY | High | Fixed (env precedence + stale var removed) |
