@@ -111,6 +111,48 @@ Known accepted tradeoff: rate limiting is in-memory (resets on restart, per-inst
 
 ---
 
+## Phase 6 (in progress 🔨) — Department AI Tools
+
+Five single-purpose Gemini tools, one per department need (F-020–F-024). Per
+**AD-2** they bypass n8n: Next.js calls Gemini directly via the **H1
+convention** (`lib/gemini.ts` — JSON mode, truncation-aware retry, per-tool
+validators, client-safe errors, `ai_generations` logging). Every output is a
+**draft for human review** — nothing auto-sends, auto-persists downstream, or
+creates tasks.
+
+Decisions locked: generations logged to `ai_generations` (004, applied) ·
+F-024 uses real Supabase aggregates as prompt context · rate limiter gates
+every `/api/ai/*` route · role gates enforced server-side per tool ·
+CSV parsing for F-021 is client-side with zero new dependencies.
+
+### Stages
+
+| # | Delivers | Verify |
+|---|---|---|
+| P6-1 | `/api/ai` route scaffolding (role gate + rate limit + logging wired) + **F-020 Content Generator** page (marketing): brief → headlines, ad copy, CTA variations; copy buttons | marketing can generate; admin can; teacher/operations get Not allowed; generation row lands in `ai_generations` |
+| P6-2 | **F-021 Campaign Analyzer** (marketing): pasted metrics (manual/CSV text) → summary, strong/weak segments, recommendations | valid CSV → insights; malformed input → friendly error, still logged |
+| P6-3 | **F-022 Lesson Planner** (teacher): grade/subject/topic/duration → structured plan | teacher can generate; marketing gated |
+| P6-4 | **F-023 Quiz Generator** (teacher): topic, difficulty, count → Q/A + explanations (details/summary reveal) | teacher can generate; count/difficulty params respected |
+| P6-5 | **F-024 Report Generator** (operations): date range → real aggregates from leads/tasks/runs as prompt context → executive report | operations can generate; report reflects real numbers for the range |
+| P6-6 | `/admin` dept-activity card reads `ai_generations` (per department, 7d/30d counts) | card shows real usage after tool use |
+| P6-7 | Close-out: FEATURES → Done (F-020–F-024), ROADMAP trimmed, typecheck + build + tests, role × tool matrix | below |
+
+### Verification matrix (P6-7 exit criteria)
+
+| Role | Sees tools | Can generate |
+|---|---|---|
+| admin | all 5 tool pages + nav | all |
+| marketing | Content Generator, Campaign Analyzer | those 2 |
+| teacher | Lesson Planner, Quiz Generator | those 2 |
+| operations | Report Generator + Overview usage card | Report Generator |
+| counselor | no AI-tool nav | no (routes 403) |
+
+Every generation (success or failure) writes an `ai_generations` row; unit
+tests for each tool's validator; integration smoke for one representative
+tool.
+
+---
+
 ## Key commands
 
 | Command | What it does |
@@ -138,5 +180,6 @@ Demo logins: `admin@` / `operations@` / `counselor@` / `marketing@` / `teacher@d
 | `ROADMAP.md` | This page — the plan for all phases |
 | `PRODUCT_SPEC.md` | Product definition: problem, users, processes, priorities |
 | `FEATURES.md` | All 30 features with IDs, priorities, and live status |
+| `WEAK_POINTS_AND_RISKS.md` | Living risk register from project reviews (R-01…R-10 with status) |
 | `AI Operations Copilot — Phase 1 System A.md` | Architecture: components, data flow, design decisions (AD-1…AD-12) |
 | `fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |

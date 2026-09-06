@@ -158,6 +158,19 @@ isolation against the real endpoint before blaming the format, and (b)
 check what the *process* actually inherited — the env var you think
 you're testing may not be the one being sent.
 
+## R-10 — Vulnerable transitive postcss inside Next 15 (Medium — accepted for demo)
+
+**Area:** `next@15.5.25` bundles a postcss version with two advisories (XSS via
+unescaped `</style>` in CSS stringify output; arbitrary file read via
+attacker-controlled `sourceMappingURL` in CSS comments).
+
+- Impact: **build-time only** — the app serves no user-controlled CSS, and the
+  stylesheet is authored by the project. Exposure is local-demo scale.
+- Fix path: `next@16.3.4` (major upgrade, likely dragging `@supabase/ssr`
+  0.6→0.12 and newer TypeScript as separate upgrades).
+- Decision (2026-09-05): **deferred** — re-verify middleware/cookies/async-API
+  changes as a standalone upgrade project after Phase 6 ships, not mid-phase.
+
 ## Summary
 
 | ID | Risk | Severity | Status |
@@ -167,7 +180,8 @@ you're testing may not be the one being sent.
 | R-03 | Raw error messages to client | Medium | Fixed (H2) |
 | R-04 | Static shared webhook secret | Medium | Open (accepted for demo) |
 | R-05 | No intake rate limiting | Medium | Fixed (H4) |
-| R-06 | Workspace-root misdetection | Low | Fixed |
+| R-06 | Workspace-root misdetection | Low | Fixed (committed) |
 | R-07 | Stale dev server / unstyled page | Low | Fixed |
 | R-08 | Service-role for pipeline writes | Low | Accepted risk |
 | R-09 | Stale env var shadowed real GEMINI_API_KEY | High | Fixed (env precedence + stale var removed) |
+| R-10 | Vulnerable transitive postcss in Next 15 | Medium | Accepted — upgrade to Next 16 post-Phase 6 |
