@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `AI Operations Copilot — Phase 1 System A.md`.
 
-**Current status: Phase 5 done ✅ — the P0 pipeline (F-001–F-016) is complete and verified live, and the dashboards (F-017–F-019, F-025) are built with the role verification matrix below. Phase 6 (department AI tools) is next.**
+**Current status: Phase 6 done ✅ — P0 pipeline verified live, dashboards shipped, hardening done, and all five department AI tools (F-020–F-024) are built on the shared AI convention with generation logging. Phase 7 (governance) is next.**
 
 ---
 
@@ -17,7 +17,7 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 | 3 — Core admissions automation | n8n pipeline end-to-end: intake → validate → Gemini analysis → score/classify → CRM write, with per-step logging and retries | F-001–F-014 | ✅ Done (verified) |
 | 4 — Finish the P0 pipeline | AI email draft + Gmail send (dry-run), counselor assignment + follow-up task, notification, dedicated error workflow | F-008–F-011, F-013 | ✅ Done (verified) |
 | 5 — Dashboards | Lead Dashboard, Lead Detail view, Automation Logs Viewer, Ops/Admin overview | F-017–F-019, F-025 | ✅ Done (verified) |
-| 6 — Department AI tools | Marketing (content generator, campaign analyzer), Academic (lesson planner, quiz generator), Operations (report generator) — Gemini called from Next.js directly | F-020–F-024 | Planned |
+| 6 — Department AI tools | Marketing (content generator, campaign analyzer), Academic (lesson planner, quiz generator), Operations (report generator) — Gemini called from Next.js directly | F-020–F-024 | ✅ Done (verified) |
 | 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | Planned |
 
 ---
@@ -111,31 +111,20 @@ Known accepted tradeoff: rate limiting is in-memory (resets on restart, per-inst
 
 ---
 
-## Phase 6 (in progress 🔨) — Department AI Tools
+## Phase 6 (done ✅) — Department AI Tools
 
-Five single-purpose Gemini tools, one per department need (F-020–F-024). Per
-**AD-2** they bypass n8n: Next.js calls Gemini directly via the **H1
-convention** (`lib/gemini.ts` — JSON mode, truncation-aware retry, per-tool
-validators, client-safe errors, `ai_generations` logging). Every output is a
-**draft for human review** — nothing auto-sends, auto-persists downstream, or
-creates tasks.
+Five single-purpose Gemini tools, one per department need (F-020–F-024) — **built and verified** (matrix below). Per
+**AD-2** they bypass n8n: Next.js calls Gemini directly via the **AI convention**
+(`lib/gemini.ts` — JSON mode, truncation-aware retry, per-tool validators in
+`lib/ai/schemas.ts`, client-safe errors, `ai_generations` logging via the shared
+`runAiTool` handler). Every output is a **draft for human review** — nothing auto-sends,
+auto-persists downstream, or creates tasks.
 
-Decisions locked: generations logged to `ai_generations` (004, applied) ·
-F-024 uses real Supabase aggregates as prompt context · rate limiter gates
-every `/api/ai/*` route · role gates enforced server-side per tool ·
-CSV parsing for F-021 is client-side with zero new dependencies.
-
-### Stages
-
-| # | Delivers | Verify |
-|---|---|---|
-| P6-1 | `/api/ai` route scaffolding (role gate + rate limit + logging wired) + **F-020 Content Generator** page (marketing): brief → headlines, ad copy, CTA variations; copy buttons | marketing can generate; admin can; teacher/operations get Not allowed; generation row lands in `ai_generations` |
-| P6-2 | **F-021 Campaign Analyzer** (marketing): pasted metrics (manual/CSV text) → summary, strong/weak segments, recommendations | valid CSV → insights; malformed input → friendly error, still logged |
-| P6-3 | **F-022 Lesson Planner** (teacher): grade/subject/topic/duration → structured plan | teacher can generate; marketing gated |
-| P6-4 | **F-023 Quiz Generator** (teacher): topic, difficulty, count → Q/A + explanations (details/summary reveal) | teacher can generate; count/difficulty params respected |
-| P6-5 | **F-024 Report Generator** (operations): date range → real aggregates from leads/tasks/runs as prompt context → executive report | operations can generate; report reflects real numbers for the range |
-| P6-6 | `/admin` dept-activity card reads `ai_generations` (per department, 7d/30d counts) | card shows real usage after tool use |
-| P6-7 | Close-out: FEATURES → Done (F-020–F-024), ROADMAP trimmed, typecheck + build + tests, role × tool matrix | below |
+Delivered: `/api/ai/*` scaffolding (session JSON-401, server-enforced role gates from the
+`AI_TOOLS` registry, per-user rate limit, success+failure logging) · input whitelists and
+length caps on every route · empty-payload short-circuits before any AI call · F-024 fed
+by real Supabase aggregates · `/admin` dept-activity card reading `ai_generations` ·
+61 unit tests + 3 integration tests green · production build green (16 routes).
 
 ### Verification matrix (P6-7 exit criteria)
 
