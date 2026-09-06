@@ -112,3 +112,24 @@ Why not built now: the spec intentionally scopes governance as designed artifact
 loop is the next phase of a real deployment — and the fact that every ingredient for it (evaluations table,
 role gating, training content, usage logs, an orchestration engine) already exists in this codebase is
 itself part of the design story.
+
+11. Future work: live lead sources & social auto-reply
+
+The prototype's front door is deliberately an internal Test Lead form (spec §9, §23) — the pipeline, however,
+is already a webhook waiting for JSON. Two levels of "going live" are foreseeable:
+
+a) Auto-collecting real customer submissions (planned — spec §25): a live Facebook Lead Ads (or Google Ads
+   lead form, website chat export, etc.) webhook replaces the Test Lead form. Because the pipeline's trigger
+   is a plain webhook accepting a documented JSON shape, the real version is one n8n branch: platform event →
+   map the platform's fields to the lead shape → existing webhook. Nothing downstream changes: validation,
+   AI analysis, scoring, CRM, email, tasks, notifications, and logging all work unchanged.
+
+b) Auto-answering on social media (not in scope — gated future concept): a bot that converses with prospects
+   in Messenger/Instagram DMs or replies to comments. Technically it is a second branch off the same analysis
+   (the pipeline already generates a personalized first-touch response; route it to Messenger instead of
+   Gmail), but it changes the system's risk class and is therefore gated behind explicit design decisions:
+   public, unreviewed AI output (breaks the "AI drafts, humans decide" principle), platform API policies and
+   spam limits, and an approval policy defining when the bot may speak and when it must hand off to a human.
+   If ever built: bot replies are drafted by the same schema-gated analysis, logged in a new sent-channel
+   record alongside sent_emails, reviewed in an approvals dashboard, and covered by new SOPs — same
+   governance pattern as everything else in this system.
