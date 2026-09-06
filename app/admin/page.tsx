@@ -70,21 +70,27 @@ export default async function AdminPage() {
 
   // Bounded recent-window queries; aggregates computed in JS. The counts are
   // labeled "recent" so the numbers stay honest once data exceeds the cap.
-  const [{ data: leads, error: leadsError }, { data: runs, error: runsError }] = await Promise.all([
-    supabase
-      .from('leads')
-      .select('id, status, created_at, lead_analyses(category, score)')
-      .order('created_at', { ascending: false })
-      .limit(MAX_ROWS),
-    supabase
-      .from('automation_runs')
-      .select('id, status, started_at, finished_at, error_summary, lead_id')
-      .order('started_at', { ascending: false })
-      .limit(MAX_ROWS),
-  ])
+  const [{ data: leads, error: leadsError }, { data: runs, error: runsError }, { data: generations, error: genError }] =
+    await Promise.all([
+      supabase
+        .from('leads')
+        .select('id, status, created_at, lead_analyses(category, score)')
+        .order('created_at', { ascending: false })
+        .limit(MAX_ROWS),
+      supabase
+        .from('automation_runs')
+        .select('id, status, started_at, finished_at, error_summary, lead_id')
+        .order('started_at', { ascending: false })
+        .limit(MAX_ROWS),
+      supabase
+        .from('ai_generations')
+        .select('id, tool_id, department, status, created_at')
+        .order('created_at', { ascending: false })
+        .limit(MAX_ROWS),
+    ])
 
-  if (leadsError || runsError) {
-    console.error('[admin] overview query failed:', leadsError?.message ?? runsError?.message)
+  if (leadsError || runsError || genError) {
+    console.error('[admin] overview query failed:', leadsError?.message ?? runsError?.message ?? genError?.message)
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <SiteHeader title="Operations Overview" />
@@ -97,6 +103,7 @@ export default async function AdminPage() {
 
   const leadRows = leads ?? []
   const runRows = runs ?? []
+  const genRows = generations ?? []
   const sevenDaysAgo = Date.now() - 7 * 86_400_000
 
   const leadsCapped = leadRows.length >= MAX_ROWS
@@ -193,11 +200,51 @@ export default async function AdminPage() {
         </div>
       )}
 
-      <h2 className="mb-3 font-semibold">Department tool activity</h2>
-      <div className="rounded-lg border border-dashed bg-white p-6 text-sm text-gray-500">
-        Arrives with Phase 6 — Marketing / Academic / Operations AI tools will report usage here
-        (generations per department, tool adoption). Nothing to show yet by design; no fake data.
-      </div>
+      <h2 className="mb-3 font-semibold">Department AI tool activity</h2>
+      {(() => {
+        const byDept: Record<string, { total: number; failed: number; last7d: number }> = {
+          marketing: { total: 0, failed: 0, last7d: 0 },
+          academic: { total: 0, failed: 0, last7d: 0 },
+          operations: { total: 0, failed: 0, last7d: 0 },
+        }
+        for (const g of genRows) {
+          const d = byDept[g.department]
+          if (!d) continue
+          d.total += 1
+          if (g.status === 'failed') d.failed += 1
+          if (new Date(g.created_at).getTime() >= sevenDaysAgo) d.last7d += 1
+        }
+        const anyActivity = genRows.length > 0
+        return (
+          <div className="rounded-lg border bg-white p-6">
+            {anyActivity ? (
+              <>
+                <p className="mb-4 text-xs text-gray-400">
+                  {genRows.length} generation{genRows.length === 1 ? '' : 's'} recorded (recent window)
+                </p>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {Object.entries(byDept).map(([dept, s]) => (
+                    <div key={dept} className="rounded border p-4">
+                      <p className="text-sm font-medium capitalize text-gray-900">{dept}</p>
+                      <p className="mt-1 text-2xl font-semibold">{s.total}</p>
+                      <p className="text-xs text-gray-500">
+                        generations · {s.last7d} in last 7 days
+                        {s.failed > 0 && <span className="text-red-600"> · {s.failed} failed</span>}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No AI tool generations recorded yet — use any department tool (Content Generator,
+                Campaign Analyzer, Lesson Planner, Quiz Generator, Report Generator) and usage will
+                appear here.
+              </p>
+            )}
+          </div>
+        )
+      })()}
     </main>
   )
 }
