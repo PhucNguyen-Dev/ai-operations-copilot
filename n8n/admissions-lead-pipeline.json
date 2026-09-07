@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F-003 — Lead validation (+ webhook secret check)\nconst item = $input.first().json;\nconst headers = Object.fromEntries(\n  Object.entries(item.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])\n);\nconst body = item.body || {};\n\nif (headers['x-webhook-secret'] !== $env.N8N_WEBHOOK_SECRET) {\n  return [{ json: { valid: false, status: 401, error: 'invalid webhook secret' } }];\n}\n\nconst name = String(body.name || '').trim();\nconst email = String(body.email || '').trim();\nconst errors = [];\nif (!name) errors.push('name is required');\nif (!email) errors.push('email is required');\nelse if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('email format is invalid');\nif (body.phone) {\n  const digits = String(body.phone).replace(/\\D/g, '');\n  if (digits.length < 7 || digits.length > 15) errors.push('phone format is invalid');\n}\nif (errors.length) {\n  return [{ json: { valid: false, status: 422, error: errors.join('; ') } }];\n}\n\nreturn [{ json: {\n  valid: true,\n  payload: {\n    name,\n    email,\n    phone: body.phone || null,\n    source: body.source || 'test',\n    course_interest: body.course_interest || null,\n    budget: body.budget || null,\n    timeline: body.timeline || null,\n    message: body.message || null\n  }\n} }];"
+        "jsCode": "// F-003 - Lead validation + webhook security (R-04).\n// Two layers: (1) shared-secret header, (2) HMAC-SHA256 signature over\n// `${timestamp}.${JSON.stringify(payload)}` with a 5-minute replay window.\n// The signature is verified with Web Crypto - the same algorithm runs on\n// the Next.js side (lib/webhook-signing.ts), see docs/ROADMAP.md hardening.\nconst item = $input.first().json;\nconst headers = Object.fromEntries(\n  Object.entries(item.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])\n);\nconst body = item.body || {};\n\nif (headers['x-webhook-secret'] !== $env.N8N_WEBHOOK_SECRET) {\n  return [{ json: { valid: false, status: 401, error: 'invalid webhook secret' } }];\n}\n\n// --- R-04: HMAC signature + replay window ---\nconst secret = $env.N8N_WEBHOOK_SECRET;\nconst ts = body.timestamp;\nconst sig = body.signature;\nconst payload = body.payload || {};\nif (typeof ts !== 'number' || typeof sig !== 'string' || !sig) {\n  return [{ json: { valid: false, status: 401, error: 'missing webhook signature' } }];\n}\nif (Math.abs(Date.now() - ts) > 5 * 60 * 1000) {\n  return [{ json: { valid: false, status: 401, error: 'stale webhook timestamp (possible replay)' } }];\n}\nconst enc = new TextEncoder();\nconst key = await crypto.subtle.importKey(\n  'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']\n);\nconst mac = await crypto.subtle.sign('HMAC', key, enc.encode(ts + '.' + JSON.stringify(payload)));\nconst expected = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');\nlet diff = sig.length !== expected.length ? 1 : 0;\nfor (let i = 0; i < expected.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);\nif (diff !== 0) {\n  return [{ json: { valid: false, status: 401, error: 'invalid webhook signature' } }];\n}\n\n// --- field validation (unchanged) ---\nconst name = String(payload.name || '').trim();\nconst email = String(payload.email || '').trim();\nconst errors = [];\nif (!name) errors.push('name is required');\nif (!email) errors.push('email is required');\nelse if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('email format is invalid');\nif (payload.phone) {\n  const digits = String(payload.phone).replace(/\\D/g, '');\n  if (digits.length < 7 || digits.length > 15) errors.push('phone format is invalid');\n}\nif (errors.length) {\n  return [{ json: { valid: false, status: 422, error: errors.join('; ') } }];\n}\n\nreturn [{ json: {\n  valid: true,\n  payload: {\n    name,\n    email,\n    phone: payload.phone || null,\n    source: payload.source || 'test',\n    course_interest: payload.course_interest || null,\n    budget: payload.budget || null,\n    timeline: payload.timeline || null,\n    message: payload.message || null\n  }\n} }];"
       },
       "id": "a1000000-0000-0000-0000-000000000002",
       "name": "Validate & authorize",
@@ -84,7 +84,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -132,7 +132,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -263,7 +263,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -294,7 +294,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -355,7 +355,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -397,7 +397,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -431,7 +431,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -462,7 +462,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -686,7 +686,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -802,7 +802,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -842,7 +842,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           ]
         },
@@ -888,7 +888,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -928,7 +928,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -968,7 +968,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",

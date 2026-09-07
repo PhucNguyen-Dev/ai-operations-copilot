@@ -43,7 +43,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",
@@ -81,7 +81,7 @@
             },
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              "value": "=Bearer {{ $env.N8N_PIPELINE_JWT || $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Prefer",

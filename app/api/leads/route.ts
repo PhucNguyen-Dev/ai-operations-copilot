@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { signPayload } from '@/lib/webhook-signing'
 
 /** GET /api/leads — list leads under the caller's RLS scope. */
 export async function GET() {
@@ -72,6 +73,21 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // R-04: the payload is HMAC-signed (tamper evidence + replay window) on
+  // top of the shared-secret header — see lib/webhook-signing.ts.
+  const payload = {
+    name,
+    email,
+    phone: body.phone ?? null,
+    source: body.source ?? 'test',
+    course_interest: body.course_interest ?? null,
+    budget: body.budget ?? null,
+    timeline: body.timeline ?? null,
+    message: body.message ?? null,
+  }
+  const timestamp = Date.now()
+  const { signature } = await signPayload(payload, webhookSecret, timestamp)
+
   let upstream: Response
   try {
     upstream = await fetch(webhookUrl, {
@@ -80,16 +96,7 @@ export async function POST(request: NextRequest) {
         'content-type': 'application/json',
         'x-webhook-secret': webhookSecret,
       },
-      body: JSON.stringify({
-        name,
-        email,
-        phone: body.phone ?? null,
-        source: body.source ?? 'test',
-        course_interest: body.course_interest ?? null,
-        budget: body.budget ?? null,
-        timeline: body.timeline ?? null,
-        message: body.message ?? null,
-      }),
+      body: JSON.stringify({ timestamp, signature, payload }),
       cache: 'no-store',
     })
   } catch {

@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { Socket } from 'node:net'
+import { createHmac } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -28,6 +29,23 @@ if (!secrets.SUPABASE_SERVICE_ROLE_KEY) secrets.SUPABASE_SERVICE_ROLE_KEY = secr
 // n8n calls its own admissions webhook on this same instance. This must never
 // be the public Telegram tunnel URL.
 secrets.N8N_WEBHOOK_URL = 'http://localhost:5678/webhook/admissions-lead'
+
+// R-08 (least-privilege pipeline): mint a JWT whose `role` claim is
+// `n8n_pipeline` - a Postgres role with grants ONLY on the tables the
+// pipeline writes (migration 008). PostgREST acts as that role, so n8n
+// no longer writes with the all-powerful service-role claim. Requires
+// SUPABASE_JWT_SECRET in .env (Dashboard -> Settings -> API -> JWT Secret);
+// falls back to service-role auth when absent so nothing breaks mid-setup.
+if (secrets.SUPABASE_JWT_SECRET) {
+  const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
+  const now = Math.floor(Date.now() / 1000)
+  const header = b64url({ alg: 'HS256', typ: 'JWT' })
+  const claims = b64url({ role: 'n8n_pipeline', iss: 'supabase', iat: now, exp: now + 60 * 60 * 24 * 365 })
+  const sig = createHmac('sha256', secrets.SUPABASE_JWT_SECRET).update(`${header}.${claims}`).digest('base64url')
+  secrets.N8N_PIPELINE_JWT = `${header}.${claims}.${sig}`
+} else {
+  console.warn('⚠ SUPABASE_JWT_SECRET not set - n8n falls back to service-role writes (R-08 still open).')
+}
 
 // WEBHOOK_URL is optional: `npm run bot` supplies a fresh public HTTPS URL;
 // plain `npm run n8n` runs without one (Telegram trigger stays offline).
