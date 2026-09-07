@@ -30,21 +30,20 @@ if (!secrets.SUPABASE_SERVICE_ROLE_KEY) secrets.SUPABASE_SERVICE_ROLE_KEY = secr
 // be the public Telegram tunnel URL.
 secrets.N8N_WEBHOOK_URL = 'http://localhost:5678/webhook/admissions-lead'
 
-// R-08 (least-privilege pipeline): mint a JWT whose `role` claim is
-// `n8n_pipeline` - a Postgres role with grants ONLY on the tables the
-// pipeline writes (migration 008). PostgREST acts as that role, so n8n
-// no longer writes with the all-powerful service-role claim. Requires
-// SUPABASE_JWT_SECRET in .env (Dashboard -> Settings -> API -> JWT Secret);
-// falls back to service-role auth when absent so nothing breaks mid-setup.
-if (secrets.SUPABASE_JWT_SECRET) {
+// R-08 status update: the minted-JWT approach does NOT work on hosted
+// Supabase - PostgREST there rejects `SET ROLE n8n_pipeline` for custom
+// roles ("permission denied to set role"). Migration 008 (role + grants +
+// RLS policies) remains correct for SELF-HOSTED Supabase where
+// `db-authenticator` can assume custom roles. On hosted Supabase the
+// pipeline keeps service-role auth; the JWT minting is disabled to avoid
+// dead credentials. See WEAK_POINTS_AND_RISKS.md R-08 (reopened note).
+if (false && secrets.SUPABASE_JWT_SECRET) {
   const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
   const now = Math.floor(Date.now() / 1000)
   const header = b64url({ alg: 'HS256', typ: 'JWT' })
   const claims = b64url({ role: 'n8n_pipeline', iss: 'supabase', iat: now, exp: now + 60 * 60 * 24 * 365 })
   const sig = createHmac('sha256', secrets.SUPABASE_JWT_SECRET).update(`${header}.${claims}`).digest('base64url')
   secrets.N8N_PIPELINE_JWT = `${header}.${claims}.${sig}`
-} else {
-  console.warn('⚠ SUPABASE_JWT_SECRET not set - n8n falls back to service-role writes (R-08 still open).')
 }
 
 // WEBHOOK_URL is optional: `npm run bot` supplies a fresh public HTTPS URL;
@@ -68,6 +67,10 @@ const child = spawn('npx', ['n8n', 'start'], {
     N8N_PERSONALIZATION_ENABLED: 'false',
     N8N_VERSION_NOTIFICATIONS_ENABLED: 'false',
     N8N_BLOCK_ENV_ACCESS_IN_NODE: 'false',
+    // The pipeline's HMAC webhook verification (R-04) requires the crypto
+    // builtin inside Code nodes. The task-runner allowlist matches the raw
+    // require() string, so both 'crypto' and 'node:crypto' forms are listed.
+    NODE_FUNCTION_ALLOW_BUILTIN: 'crypto,node:crypto',
     GENERIC_TIMEZONE: 'Asia/Ho_Chi_Minh',
   },
 })
