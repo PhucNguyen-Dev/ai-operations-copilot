@@ -25,3 +25,7 @@ npm-debug.log*
 
 # other AI tool worktrees
 /.kilo/
+
+# playwright
+test-results/
+playwright-report/
