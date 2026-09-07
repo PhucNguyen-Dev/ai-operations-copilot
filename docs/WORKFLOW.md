@@ -1,7 +1,7 @@
 # WORKFLOW — the n8n automations
 
 Source of truth: `n8n/*.json` (version-controlled, imported with `npm run push:n8n` while n8n is stopped).
-Secrets come from `.env` via `scripts/start-n8n.mjs` (`npm run n8n`; `npm run n8n:tunnel` for public webhooks).
+Secrets come from `.env` via `scripts/start-n8n.mjs` (`npm run n8n`; `npm run bot` for public webhooks).
 
 ## Workflow 1 — Admissions Lead Pipeline (`admissions-lead-pipeline`)
 

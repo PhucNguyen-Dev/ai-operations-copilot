@@ -171,6 +171,21 @@ attacker-controlled `sourceMappingURL` in CSS comments).
 - Decision (2026-09-05): **deferred** — re-verify middleware/cookies/async-API
   changes as a standalone upgrade project after Phase 6 ships, not mid-phase.
 
+## R-11 — Telegram webhook secret is hardcoded in the launcher (Low — accepted debt)
+
+**Area:** `scripts/start-bot.mjs` → the Telegram trigger's `secret` header.
+
+The chatbot trigger's webhook secret is derived from n8n workflow/trigger ids and
+hardcoded in the launcher (repo-visible). The CLI/API cannot set a Telegram
+trigger's per-workflow webhook secret at all, so the launcher can only re-register
+with the same derived value — a workflow re-import that changes ids breaks the
+watchdog's healing registration (documented in docs/TELEGRAM-CHATBOT.md).
+
+- Impact: the value is repo-visible and id-fragile. Mitigation today: the
+  single-stack discipline (one n8n instance, one workflow, launcher is the only
+  registrar) — see docs/TELEGRAM-CHATBOT.md and the incident post-mortem.
+- Accepted for the demo; revisit if the bot is ever exposed beyond localtunnel.
+
 ## Summary
 
 | ID | Risk | Severity | Status |
@@ -185,3 +200,4 @@ attacker-controlled `sourceMappingURL` in CSS comments).
 | R-08 | Service-role for pipeline writes | Low | Accepted risk |
 | R-09 | Stale env var shadowed real GEMINI_API_KEY | High | Fixed (env precedence + stale var removed) |
 | R-10 | Vulnerable transitive postcss in Next 15 | Medium | Accepted — upgrade to Next 16 post-Phase 6 |
+| R-11 | Telegram webhook secret hardcoded in launcher | Low | Accepted (demo) — see TELEGRAM-CHATBOT.md |

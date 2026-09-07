@@ -18,7 +18,7 @@
 --     from ai_generations order by created_at desc limit 50;     -- admin
 --
 -- Findings: `leads (created_at desc)` already covered by 003.
--- The three indexes below close the remaining sort/lookup paths used by
+-- The four indexes below close the remaining sort/lookup paths used by
 -- the dashboard, runs pages, and admin console. Additive, idempotent.
 
 -- Runs list, run detail breadcrumb, admin console all sort on started_at

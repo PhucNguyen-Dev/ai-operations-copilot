@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
-**Current status: Phase 6 done ✅ — P0 pipeline verified live, dashboards shipped, hardening done, and all five department AI tools (F-020–F-024) are built on the shared AI convention with generation logging. Phase 7 (governance) is next.**
+**Current status: Phase 7 done ? (governance, F-026-F-030) and Phase 8 done ? (E2E failure-case suite 8/8, docs consolidation, UX shell, a11y pass), plus the Telegram parent chatbot (n8n workflow + launcher stack - see docs/TELEGRAM-CHATBOT.md). All 30 features complete. Post-8 hardening landed (AI response cache, swap-ready rate limiter, health observability, generation-log fix); Playwright RLS matrix is the main open item (see backlog).**
 
 ---
 
@@ -18,7 +18,9 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 | 4 — Finish the P0 pipeline | AI email draft + Gmail send (dry-run), counselor assignment + follow-up task, notification, dedicated error workflow | F-008–F-011, F-013 | ✅ Done (verified) |
 | 5 — Dashboards | Lead Dashboard, Lead Detail view, Automation Logs Viewer, Ops/Admin overview | F-017–F-019, F-025 | ✅ Done (verified) |
 | 6 — Department AI tools | Marketing (content generator, campaign analyzer), Academic (lesson planner, quiz generator), Operations (report generator) — Gemini called from Next.js directly | F-020–F-024 | ✅ Done (verified) |
-| 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | Planned |
+| 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | ✅ Done (verified) |
+| 8 - Polish & verification | E2E failure-case suite (8/8), docs consolidation + post-mortems, UX shell (sidebar, icons, tokens), a11y pass | - | ✅ Done |
+| + Telegram parent chatbot | Lead-capture chatbot: n8n workflow + launcher stack (tunnel, self-registration, watchdog) + live lead channel | - | ✅ Done (demo-grade, see TELEGRAM-CHATBOT.md) |
 
 ---
 
@@ -198,7 +200,7 @@ deliberately deferred there.
 
 | Idea | Why | Existing hook |
 |---|---|---|
-| Apply `supabase/migrations/006_indexes_review.sql` to the live project | Index review written but not yet run against the real DB | Migration file is idempotent, safe to re-run |
+| Apply `supabase/migrations/006_indexes_review.sql` to the live project | APPLIED 2026-09-07 together with 007 (ai_generations user_id default) | Migration file is idempotent, safe to re-run |
 | Shared rate limiter (Upstash Redis free tier or Supabase table) | Needed only when running >1 app instance | Single swap point exists: `RateLimiter` interface + `rateLimiter` export in `lib/rate-limit.ts` |
 | Shared AI response cache (same store as the limiter) | Same multi-instance requirement | Swap point exists: `lib/ai/cache.ts`; call sites don't change |
 | Playwright E2E for the auth/RLS matrix | Role gating (counselor sees assigned only, etc.) is only manually verified | Planned since the hardening phase; unit tests cover pure logic only |
@@ -241,6 +243,10 @@ Demo logins: `admin@` / `operations@` / `counselor@` / `marketing@` / `teacher@d
 | `FEATURES.md` | All 30 features with IDs, priorities, and live status |
 | `WEAK_POINTS_AND_RISKS.md` | Living risk register from project reviews (R-01…R-10 with status) |
 | `ARCHITECTURE.md` | Canonical architecture: components, data flow, design decisions |
-| `LESSONS-LEARNED.md` | Every error hit, symptom → root cause → lesson — the study doc |
+| `LESSONS-LEARNED.md` | Every error hit, symptom → root cause → lesson — the study doc || `WORKFLOW.md` | The three n8n workflows (pipeline / chatbot / error handler) + operational notes |
+| `AI_DESIGN.md` | AI design: model pin, per-use-case schema contracts, scoring thresholds |
+| `TELEGRAM-CHATBOT.md` | Bot runbook: two-layer stack, troubleshooting |
+| `TELEGRAM-INCIDENT-2026-09-07.md` | Post-mortem of the bot outage and the final webhook architecture |
+
 | `archive/AI Operations Copilot — Phase 1 System A.md` | Original long-form architecture (AD-1…AD-12) |
 | `archive/fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |
