@@ -51,7 +51,7 @@ The model proposes a 0–100 score; the **HOT/WARM/COLD thresholds are fixed cod
 - Chatbot: KB-grounded, may not invent prices/discounts; unknowns defer to a counselor; enrollment info
   flows into the human queue (task + notification), not into an auto-enrollment.
 
-## Failure philosophy (learned from real incidents — docs/dev-fix-log.md)
+## Failure philosophy (learned from real incidents — docs/LESSONS-LEARNED.md)
 
 - 429/5xx/timeout → transient, retried ×3–4 with backoff (5–10s steps to survive rate limits).
 - 400/401/403/404 → permanent config errors (`AI_CONFIG`), surfaced honestly ("misconfigured — contact admin").

@@ -25,6 +25,26 @@ Test Lead form — the chatbot is just a new front door. Leads arrive with
 `source: 'telegram'`. (Email is synthesized as `<phone>.tg@lead.local` because
 the pipeline requires a valid email — flagged in the lead's message field.)
 
+## Running the stack (two layers)
+
+| Command | What it starts | Use when |
+|---|---|---|
+| `npm run n8n` | n8n only — editor at http://localhost:5678 | You want to inspect/edit workflows or test the admissions pipeline locally. The **Telegram trigger stays offline** (it needs a public HTTPS URL) — that is expected, not an error. |
+| `npm run bot` | Fresh tunnel + n8n + Telegram webhook, all verified | You want the chatbot live. One terminal, keep it open. |
+| `npm run kill-stack` | Emergency stop of everything (n8n ports + stray tunnels) | Anything feels "out of hand"; run this, then start fresh. |
+
+`npm run bot` performs, in order: kills stale port-5678 processes → claims the
+**fixed** tunnel URL `https://aileads-dev.loca.lt` and verifies it actually
+serves (auto-falls back to a random `.loca.lt` URL if the relay is stale) →
+starts n8n with that URL as `WEBHOOK_URL` → waits for n8n health → verifies
+the Telegram webhook (with 429 retry) → prints `✓ Bot stack ready`. If any
+layer fails it prints exactly which one and stops both children.
+
+The startup banner is always the source of truth for the current public URL.
+That URL is for Telegram's servers only — for the editor, always use
+`http://localhost:5678` (the free relay chokes on the editor's asset burst in
+a browser). Override the subdomain with `TUNNEL_SUBDOMAIN=<name>` if needed.
+
 ## Your steps
 
 ### 1. Create the bot (~3 min)
@@ -34,12 +54,11 @@ the pipeline requires a valid email — flagged in the lead's message field.)
 
 ### 2. Configure the project
 1. Open `.env` → paste the token into `TELEGRAM_BOT_TOKEN=`
-2. Stop n8n if it's running, then:
+2. Then:
    ```bash
-   npm run push:n8n       # imports the chatbot workflow
-   npm run n8n:tunnel     # starts n8n with a public HTTPS URL (needed for Telegram)
+   npm run push:n8n       # imports the chatbot workflow (first time / after edits)
+   npm run bot            # tunnel + n8n + Telegram webhook in one command
    ```
-   The tunnel prints a public URL — that's how Telegram reaches your machine.
 
 ### 3. One-time n8n UI step (~2 min)
 1. Open http://localhost:5678 → **Credentials** → **Add credential** → **Telegram API**
@@ -60,9 +79,24 @@ Watch the runs: each enrollment-intent chat produces a full `admissions-lead-pip
 
 ## Troubleshooting
 
-- **Bot silent** → workflow not Active, or the Telegram credential missing/mismatched token.
-- **Webhook errors in n8n** → tunnel not running (must use `npm run n8n:tunnel`, not `npm run n8n`).
+For the full post-mortem of the 2026-09-07 outage (silent bot, 502 tunnels,
+429 rate limits, webhook secret race), see
+[TELEGRAM-INCIDENT-2026-09-07.md](./TELEGRAM-INCIDENT-2026-09-07.md).
+
+- **Bot silent, no execution row in n8n** → message never reached n8n. Usually
+  the tunnel is down or you're in plain `npm run n8n` mode (Telegram offline by
+  design). Run `npm run kill-stack`, then `npm run bot`.
+- **`403 Provided secret is not valid`** → webhook was registered without the
+  secret. `npm run bot`'s watchdog re-registers with the correct secret; a
+  restart also fixes it (n8n registers itself on activation).
+- **Webhook errors in n8n** → run `npm run kill-stack`, then `npm run bot`.
+- **Everything feels broken / port in use** → `npm run kill-stack` stops every
+  n8n and stray tunnel process; then start again with `npm run bot`.
+- **`The service is receiving too many requests from you`** → Telegram 429
+  rate limit from many restarts; the launcher retries with backoff — wait a
+  minute between restarts.
 - **Lead not appearing** → check the chatbot workflow execution: "Fire admissions pipeline" node output;
   remember the admissions workflow must also be Active.
-- **Weird long URL in Telegram trigger** → restart with tunnel *before* activating; the trigger re-registers
-  its webhook on startup.
+- **`⚠ Tunnel is down — healing`** → normal watchdog behavior; it opens a new
+  tunnel and re-registers automatically. Messages sent during the dead window
+  are lost (Telegram does not queue).

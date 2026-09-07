@@ -110,7 +110,7 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 - **61 unit tests** (`npm test`): AI helpers, tool schemas, app logic, rate limiting.
 - **E2E failure-case suite** (`node scripts/e2e-tests.mjs`): valid lead, invalid phone, missing fields,
   malformed email, wrong secret, duplicate leads, oversized fields, unreachable pipeline — verified against
-  live Supabase. Latest results: [docs/e2e-results.md](docs/e2e-results.md) (8/8).
+  live Supabase. Latest results: [docs/archive/e2e-results.md](docs/archive/e2e-results.md) (8/8).
 - Integration test for the Gemini client (`npm run test:integration`).
 
 ## Limitations
@@ -126,7 +126,7 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 
 - Live Facebook Lead Ads / Zalo webhook replacing the test-lead simulation (§25; one mapping branch).
 - Registry-driven access: governance decisions granting/revoking tool access per role, with training gates
-  and n8n alerting to employees (PHASE7-SUMMARY §10).
+  and n8n alerting to employees (docs/archive/PHASE7-SUMMARY §10).
 - Duplicate-lead detection, prompt versioning with accuracy tracking, multi-language lead handling.
 - Deployment: Vercel + hosted n8n; HMAC webhook signing.
 
@@ -135,5 +135,5 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 [Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) ·
 [Architecture](docs/ARCHITECTURE.md) · [AI Design](docs/AI_DESIGN.md) · [Workflows](docs/WORKFLOW.md) ·
 [Tool Lab](docs/AI_TOOL_LAB.md) · [Tool Evaluation](docs/AI_TOOL_EVALUATION.md) · [Training](docs/TRAINING.md) ·
-[Phase 7 Summary](docs/PHASE7-SUMMARY.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) ·
-[Bug log](docs/dev-fix-log.md) · [Interview objections](docs/interview-objections.md) · [UX direction](docs/UX-DIRECTION.md)
+[Phase 7 Summary](docs/archive/PHASE7-SUMMARY.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) ·
+[Lessons learned](docs/LESSONS-LEARNED.md) · [Interview objections](docs/interview-objections.md) · [UX direction](docs/UX-DIRECTION.md)

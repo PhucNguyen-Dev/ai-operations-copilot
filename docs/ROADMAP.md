@@ -1,7 +1,7 @@
 # Roadmap — AI Operations Copilot
 
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
-Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `AI Operations Copilot — Phase 1 System A.md`.
+Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
 **Current status: Phase 6 done ✅ — P0 pipeline verified live, dashboards shipped, hardening done, and all five department AI tools (F-020–F-024) are built on the shared AI convention with generation logging. Phase 7 (governance) is next.**
 
@@ -142,6 +142,76 @@ tool.
 
 ---
 
+## Path to production (when we decide to deploy)
+
+Everything is written swap-ready — nothing here blocks the demo, and none of it
+needs doing until the deploy decision is made.
+
+1. **Deploy target** — Vercel for the Next.js app (zero-config for App Router
+   + Supabase), a **hosted n8n** instance (n8n Cloud or a small VPS) for the
+   pipeline and the Telegram webhook. Telegram needs a stable HTTPS URL — a
+   hosted n8n removes localtunnel entirely.
+2. **Shared rate limiter** — the limiter is already behind the `RateLimiter`
+   interface in `lib/rate-limit.ts` (single swap point, `rateLimiter` export).
+   Swap the in-memory implementation for Redis/Upstash (or a Supabase table)
+   when running more than one app instance.
+3. **Shared AI response cache** — same story: `lib/ai/cache.ts` is in-memory
+   (10-min TTL, 50 entries). Move it to the same shared store as the rate
+   limiter; call sites don't change.
+4. **Webhook secret rotation** — `N8N_WEBHOOK_SECRET` guards the pipeline
+   webhook; the Telegram trigger uses n8n's per-workflow secret
+   (`<workflowId>_<triggerNodeId>`). Rotate by updating `.env` + the n8n
+   credential and restarting (see `TELEGRAM-CHATBOT.md` for the mechanics).
+5. **Observability already in place** — `/api/health` reports rate-limiter
+   state and the last AI generation's latency/cached flag; `ai_generations`
+   logs every call. Wire uptime monitoring to the health endpoint.
+
+Deliberately NOT in production scope: streaming AI responses (measure first),
+workflow JSON changes, or any `.env` migration.
+
+---
+
+## Future implementations (backlog)
+
+Ideas parked for future versions — nothing here blocks the demo. Cross-links:
+deploy-time items also appear in **Path to production** (above); the Phase 5
+"Future enhancements" list remains the authoritative record of what was
+deliberately deferred there.
+
+### 1. UX/UI (recommended for version 0.3)
+
+| Idea | Why | Existing hook |
+|---|---|---|
+| Full UI redesign — blue-slate palette, design tokens, shared component layer | Biggest user-perceived win; pages still use plain prototype Tailwind | Phase A groundwork already committed (sidebar shell + tokens) |
+| Streaming AI responses in tool pages | A generation currently feels frozen for 5–15s; streaming shows progress live | Pairs with the AI response cache + `durationMs`/`cached` already in `lib/gemini.ts` and tool UIs |
+| Lead Dashboard status filter + score sort | Spec-minimum filters shipped; these were explicitly deferred | Documented under Phase 5 "Future enhancements" |
+| Notifications list + mark-read UI | F-011 is currently just a counter + pipeline rows | Documented under Phase 5 "Future enhancements" |
+
+### 2. Connection / bot stack
+
+| Idea | Why | Notes |
+|---|---|---|
+| Replace localtunnel with an account-based stable tunnel (Cloudflare Tunnel or ngrok free tier) | Permanently ends the zombie-502 / random-subdomain / IP-confirmation-page problems; stable URL = fewer Telegram re-registrations | Requires one account signup (owner previously declined); localtunnel stack stays as fallback |
+| Hosted n8n (n8n Cloud or a small VPS) | Permanent HTTPS webhook for Telegram — bot runs without the laptop on and removes the tunnel entirely | Also on the Path to production list |
+
+### 3. Backend / infrastructure
+
+| Idea | Why | Existing hook |
+|---|---|---|
+| Apply `supabase/migrations/006_indexes_review.sql` to the live project | Index review written but not yet run against the real DB | Migration file is idempotent, safe to re-run |
+| Shared rate limiter (Upstash Redis free tier or Supabase table) | Needed only when running >1 app instance | Single swap point exists: `RateLimiter` interface + `rateLimiter` export in `lib/rate-limit.ts` |
+| Shared AI response cache (same store as the limiter) | Same multi-instance requirement | Swap point exists: `lib/ai/cache.ts`; call sites don't change |
+| Playwright E2E for the auth/RLS matrix | Role gating (counselor sees assigned only, etc.) is only manually verified | Planned since the hardening phase; unit tests cover pure logic only |
+| Per-user daily AI generation budget in DB + admin `ai_generations` trend chart | Currently only a 10/min in-memory rate limit; a daily budget protects the Gemini free-tier quota in real use | `ai_generations` already logs every call with tool + user context |
+
+### Recommended "version 0.3" scope
+
+UX/UI redesign + streaming AI responses — these change how the product
+*feels*. Everything else in this backlog is infrastructure that only becomes
+necessary at deploy time (see **Path to production**).
+
+---
+
 ## Key commands
 
 | Command | What it does |
@@ -170,5 +240,7 @@ Demo logins: `admin@` / `operations@` / `counselor@` / `marketing@` / `teacher@d
 | `PRODUCT_SPEC.md` | Product definition: problem, users, processes, priorities |
 | `FEATURES.md` | All 30 features with IDs, priorities, and live status |
 | `WEAK_POINTS_AND_RISKS.md` | Living risk register from project reviews (R-01…R-10 with status) |
-| `AI Operations Copilot — Phase 1 System A.md` | Architecture: components, data flow, design decisions (AD-1…AD-12) |
-| `fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |
+| `ARCHITECTURE.md` | Canonical architecture: components, data flow, design decisions |
+| `LESSONS-LEARNED.md` | Every error hit, symptom → root cause → lesson — the study doc |
+| `archive/AI Operations Copilot — Phase 1 System A.md` | Original long-form architecture (AD-1…AD-12) |
+| `archive/fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |

@@ -69,6 +69,6 @@ Error Trigger → Build error payload [Code] (workflow, last node, error message
 - Secrets are env-driven (`SUPABASE_*`, `GEMINI_API_KEY`, `AI_MODEL`, `N8N_WEBHOOK_SECRET`,
   `GMAIL_DRY_RUN`, `TELEGRAM_BOT_TOKEN`) — no credentials stored in n8n except Telegram's bot token.
 - HTTP nodes never hand-set `Content-Type` when `specifyBody: json` is on (duplicate header → Supabase 400;
-  see dev-fix-log #4).
+  see docs/LESSONS-LEARNED.md §3.1).
 - PostgREST inserts that need the created row back use `Prefer: return=representation` +
   `Accept: application/vnd.pgrst.object+json`; response-wrapping is normalized in the consuming Code nodes.

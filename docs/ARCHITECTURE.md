@@ -1,7 +1,7 @@
 # ARCHITECTURE
 
 Canonical architecture document for AI Operations Copilot (Phase 1 deliverable, maintained through Phase 8).
-The long-form original lives in `docs/AI Operations Copilot — Phase 1 System A.md`; this file is the
+The long-form original lives in `docs/archive/AI Operations Copilot — Phase 1 System A.md`; this file is the
 up-to-date summary including everything added since (Telegram chatbot, UX shell, governance split).
 
 ## One-line shape
@@ -43,7 +43,7 @@ The dashboard reads **exclusively from Supabase** — never from n8n's internal 
 - n8n writes with the service-role key (trusted system actor) and stamps `created_by = 'n8n-pipeline'`.
 - Webhook protected by `x-webhook-secret` (Next.js API and the chatbot are the only holders).
 - Two-audience UI: `/governance` back office (admin/ops) vs `/guidelines` staff portal — the UX half of the
-  registry loop (PHASE7-SUMMARY §10).
+  registry loop (docs/archive/PHASE7-SUMMARY §10).
 
 ## Key decisions (full list in the Phase 1 doc, AD-1..AD-12)
 
