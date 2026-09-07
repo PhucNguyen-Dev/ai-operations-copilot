@@ -1,4 +1,4 @@
-// One-command bot stack: fresh localtunnel -> n8n with WEBHOOK_URL=<tunnel url>.
+// One-command bot stack: cloudflared quick tunnel -> n8n with WEBHOOK_URL=<tunnel url>.
 // Usage:  npm run bot
 //
 // Registration rules (see docs/TELEGRAM-INCIDENT-2026-09-07.md):
@@ -46,7 +46,6 @@ if (!TELEGRAM_SECRET) {
   console.error("  Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"")
 // to a random subdomain automatically.
   console.error("  then add TELEGRAM_WEBHOOK_SECRET=<value> to .env and re-run.")
-const FIXED_SUBDOMAIN = process.env.TUNNEL_SUBDOMAIN || 'aileads-dev'
 }
 
 let url = null
@@ -167,56 +166,62 @@ async function registerWebhook(publicUrl) {
 }
 
 // Open one tunnel client, wait for its URL, then verify it actually serves.
-// Returns the URL or null (zombie claim / relay failure / no URL in time).
-function spawnTunnel(subdomain) {
+// Returns the URL or null (cloudflared failure / no URL in time).
+//
+// Tunnel backend: cloudflared quick tunnel (free, no account/domain, far
+// more stable than localtunnel - the localtunnel zombie-502 incidents are
+// documented in docs/TELEGRAM-INCIDENT-2026-09-07.md). The quick-tunnel URL
+// is random per start, which is fine: the launcher re-registers the Telegram
+// webhook with whatever URL comes up.
+// Backend is swappable via .env TUNNEL_BACKEND ('cloudflared' | 'localtunnel').
+function spawnTunnel() {
   return new Promise((resolve) => {
-    const args = ['localtunnel', '--port', String(port)]
-    if (subdomain) args.push('--subdomain', subdomain)
-    lt = spawn('npx', args, {
-      shell: true,
-      stdio: ['ignore', 'pipe', 'inherit'],
-    })
+    const backend = (process.env.TUNNEL_BACKEND || 'cloudflared').toLowerCase()
+    let child
     let gotUrl = null
-    const rl = createInterface({ input: lt.stdout })
+
+    if (backend === 'cloudflared') {
+      // `npx cloudflared` downloads the binary on first use (cached after).
+      child = spawn('npx', ['--yes', 'cloudflared', 'tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
+        shell: true,
+        stdio: ['ignore', 'pipe', 'inherit'],
+      })
+    } else {
+      const args = ['localtunnel', '--port', String(port)]
+      child = spawn('npx', args, {
+        shell: true,
+        stdio: ['ignore', 'pipe', 'inherit'],
+      })
+    }
+    lt = child
+
+    const rl = createInterface({ input: child.stdout })
     rl.on('line', (line) => {
       console.log('[tunnel]', line)
-      const m = line.match(/https:\/\/[a-z0-9-]+\.loca\.lt/)
+      let m = line.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)
+      if (!m && backend === 'localtunnel') m = line.match(/https:\/\/[a-z0-9-]+\.loca\.lt/)
       if (m && !gotUrl) {
         gotUrl = m[0]
         resolve(m[0])
       }
     })
-    lt.on('exit', (code) => {
+    child.on('exit', (code) => {
       if (shuttingDown) return
       if (!gotUrl) resolve(null)
       else if (!healing) {
-        console.warn(`⚠ localtunnel exited (code ${code}) — healing...`)
+        console.warn(`⚠ tunnel exited (code ${code}) — healing...`)
         heal()
       }
     })
     setTimeout(() => {
       if (!gotUrl) resolve(null)
-    }, 20000).unref()
+    }, 30_000).unref()
   })
 }
 
-// Prefer the fixed subdomain; verify it truly serves; fall back to random.
-// NOTE: at startup nothing listens on the port yet, so the caller starts a
-// temporary stub server first — otherwise /healthz would 502 and every fixed
-// claim would be misread as a zombie.
+// Verify the tunnel truly serves. (Quick tunnels have no fixed subdomain to
+// claim, so the old fixed-vs-random fallback logic is gone by design.)
 async function acquireTunnel() {
-  if (FIXED_SUBDOMAIN) {
-    const fixedUrl = await spawnTunnel(FIXED_SUBDOMAIN)
-    if (fixedUrl) {
-      const ok = await probe(`${fixedUrl}/healthz`, bypassHeaders)
-      if (ok) return fixedUrl
-      console.warn(`⚠ ${FIXED_SUBDOMAIN}.loca.lt is zombie on the relay — falling back to a random subdomain`)
-      if (lt?.pid) killPid(lt.pid)
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-    } else if (lt?.pid) {
-      killPid(lt.pid)
-    }
-  }
   return spawnTunnel()
 }
 
