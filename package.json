@@ -11,7 +11,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "seed:users": "node scripts/seed-users.mjs",
     "n8n": "node scripts/start-n8n.mjs",
-    "n8n:tunnel": "node scripts/start-n8n.mjs --tunnel",
+    "bot": "node scripts/start-bot.mjs",
+    "kill-stack": "node scripts/kill-stack.mjs",
     "push:n8n": "node scripts/push-workflow.mjs"
   },
   "dependencies": {
