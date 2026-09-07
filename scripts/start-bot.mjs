@@ -24,12 +24,30 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const port = 5678
 const bypassHeaders = { 'bypass-tunnel-reminder': '1' }
 const WEBHOOK_PATH = '/webhook/tg-parent-chatbot/webhook'
-const TELEGRAM_SECRET =
-  'tgch000000000001_b2000000-0000-0000-0000-000000000001'.replace(/[^a-zA-Z0-9\-_]+/g, '')
+// R-11 fix: the Telegram trigger's secret is env-backed (workflow node reads
+// $env.TELEGRAM_WEBHOOK_SECRET; n8n uses it for setWebhook AND validates the
+// X-Telegram-Bot-Api-Secret-Token header on every update). The launcher reads
+// the same value - deterministic across workflow re-imports, never hardcoded.
+const envSecret = (() => {
+  try {
+    const line = readFileSync(join(root, '.env'), 'utf8')
+      .split(/\r?\n/)
+      .find((value) => value.trim().startsWith('TELEGRAM_WEBHOOK_SECRET='))
+    return line?.slice(line.indexOf('=') + 1).trim().replace(/^["']|["']$/g, '')
+  } catch {
+    return undefined
+  }
+})()
+const TELEGRAM_SECRET = envSecret
+if (!TELEGRAM_SECRET) {
 // Stable URL across restarts (fewer Telegram re-registrations). If the relay
+  console.error("? TELEGRAM_WEBHOOK_SECRET is missing from .env - the launcher cannot register/heal the webhook securely.")
 // has a stale registry entry for it (zombie -> 502), we verify and fall back
+  console.error("  Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"")
 // to a random subdomain automatically.
+  console.error("  then add TELEGRAM_WEBHOOK_SECRET=<value> to .env and re-run.")
 const FIXED_SUBDOMAIN = process.env.TUNNEL_SUBDOMAIN || 'aileads-dev'
+}
 
 let url = null
 let n8n = null

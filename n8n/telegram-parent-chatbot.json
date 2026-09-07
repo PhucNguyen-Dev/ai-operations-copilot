@@ -2,20 +2,31 @@
   "id": "tgch000000000001",
   "name": "Parent Inquiry Chatbot (Telegram)",
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "nodes": [
     {
       "parameters": {
-        "updates": ["message"],
-        "additionalFields": {}
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "secret": "={{ $env.TELEGRAM_WEBHOOK_SECRET }}"
+        }
       },
       "id": "b2000000-0000-0000-0000-000000000001",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.1,
-      "position": [-520, 0],
+      "position": [
+        -520,
+        0
+      ],
       "credentials": {
-        "telegramApi": { "name": "Telegram bot" }
+        "telegramApi": {
+          "name": "Telegram bot"
+        }
       },
       "webhookId": "tg-parent-chatbot"
     },
@@ -27,7 +38,10 @@
       "name": "Prepare turn",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-300, 0]
+      "position": [
+        -300,
+        0
+      ]
     },
     {
       "parameters": {
@@ -36,19 +50,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-goog-api-key", "value": "={{ $env.GEMINI_API_KEY }}" }
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: $json.system }] }, contents: [{ role: 'user', parts: [{ text: $json.user }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "b2000000-0000-0000-0000-000000000003",
       "name": "AI chat turn",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-80, 0],
+      "position": [
+        -80,
+        0
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
@@ -61,18 +83,29 @@
       "name": "Resolve turn",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [140, 0]
+      "position": [
+        140,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
             {
               "id": "c-submit",
               "leftValue": "={{ $json.action }}",
               "rightValue": "submit",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -83,7 +116,10 @@
       "name": "Enrollment intent?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [360, 0]
+      "position": [
+        360,
+        0
+      ]
     },
     {
       "parameters": {
@@ -92,19 +128,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-webhook-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ name: $json.lead.name, email: $json.lead.phone.replace(/\\D/g, '') + '.tg@lead.local', phone: $json.lead.phone, source: 'telegram', course_interest: $json.lead.course, message: '[Telegram chat with ' + $json.lead.from + '] ' + $json.lead.note }) }}",
-        "options": { "timeout": 60000 }
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "b2000000-0000-0000-0000-000000000006",
       "name": "Fire admissions pipeline",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 0],
+      "position": [
+        600,
+        0
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
@@ -119,9 +163,14 @@
       "name": "Telegram: confirm",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [820, 0],
+      "position": [
+        820,
+        0
+      ],
       "credentials": {
-        "telegramApi": { "name": "Telegram bot" }
+        "telegramApi": {
+          "name": "Telegram bot"
+        }
       }
     },
     {
@@ -134,33 +183,90 @@
       "name": "Telegram: reply",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [600, 200],
+      "position": [
+        600,
+        200
+      ],
       "credentials": {
-        "telegramApi": { "name": "Telegram bot" }
+        "telegramApi": {
+          "name": "Telegram bot"
+        }
       }
     }
   ],
   "connections": {
     "Telegram Trigger": {
-      "main": [[{ "node": "Prepare turn", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare turn": {
-      "main": [[{ "node": "AI chat turn", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "AI chat turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI chat turn": {
-      "main": [[{ "node": "Resolve turn", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Resolve turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Resolve turn": {
-      "main": [[{ "node": "Enrollment intent?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Enrollment intent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Enrollment intent?": {
       "main": [
-        [{ "node": "Fire admissions pipeline", "type": "main", "index": 0 }],
-        [{ "node": "Telegram: reply", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Fire admissions pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Fire admissions pipeline": {
-      "main": [[{ "node": "Telegram: confirm", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Telegram: confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   }
 }
