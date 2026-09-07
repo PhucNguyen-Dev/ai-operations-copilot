@@ -239,6 +239,10 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
 // -------------------------------------------------------------
 
 export type GenerationLog = {
+  /** Row owner — required by the table (not null) and by RLS
+   * (auth.uid() = user_id). Must be the calling user's id, passed
+   * explicitly from the session. */
+  userId: string
   tool: string
   department: 'marketing' | 'academic' | 'operations'
   model: string
@@ -258,6 +262,7 @@ export async function logGeneration(
   log: GenerationLog
 ): Promise<void> {
   const { error } = await client.from('ai_generations').insert({
+    user_id: log.userId,
     tool_id: log.tool,
     department: log.department,
     model: log.model,

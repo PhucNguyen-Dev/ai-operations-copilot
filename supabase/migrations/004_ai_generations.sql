@@ -7,7 +7,7 @@
 
 create table if not exists public.ai_generations (
   id            uuid primary key default gen_random_uuid(),
-  user_id       uuid not null references public.profiles (id) on delete cascade,
+  user_id       uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   tool_id       text not null,              -- 'F-020' … 'F-024'
   department    text not null,              -- marketing | academic | operations
   input_summary jsonb,                      -- sanitized tool inputs (no long free text)

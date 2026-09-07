@@ -55,15 +55,16 @@ export async function runAiTool<T>(
 
   // --- generation log (best-effort; success and failure both recorded) ---
   const supabase = await createClient()
-  await logGeneration(supabase, {
-    tool: toolId,
-    department: AI_TOOLS[toolId].department,
-    model: result.ok ? result.model : 'n/a',
-    status: result.ok ? 'success' : 'failed',
-    errorCode: result.ok ? null : result.error.code,
-    durationMs: result.ok ? result.durationMs : Date.now() - startedAt,
-    inputSummary: spec.inputSummary,
-  })
+    await logGeneration(supabase, {
+      userId,
+      tool: toolId,
+      department: AI_TOOLS[toolId].department,
+      model: result.ok ? result.model : 'n/a',
+      status: result.ok ? 'success' : 'failed',
+      errorCode: result.ok ? null : result.error.code,
+      durationMs: result.ok ? result.durationMs : Date.now() - startedAt,
+      inputSummary: spec.inputSummary,
+    })
 
   if (!result.ok) {
     // error.message is already client-safe (H1 convention).
