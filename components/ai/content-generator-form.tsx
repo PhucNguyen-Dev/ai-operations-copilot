@@ -32,7 +32,7 @@ export default function ContentGeneratorForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<ContentDraft | null>(null)
-  const [meta, setMeta] = useState<{ model: string; durationMs: number } | null>(null)
+  const [meta, setMeta] = useState<{ model: string; durationMs: number; cached?: boolean } | null>(null)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -52,7 +52,7 @@ export default function ContentGeneratorForm() {
         setError(json.error ?? 'Generation failed — try again.')
       } else {
         setDraft(json.data as ContentDraft)
-        setMeta({ model: json.model, durationMs: json.durationMs })
+        setMeta({ model: json.model, durationMs: json.durationMs, cached: json.cached })
       }
     } catch {
       setError('Could not reach the server.')
@@ -122,7 +122,7 @@ export default function ContentGeneratorForm() {
           <>
             {meta && (
               <p className="text-xs text-gray-400">
-                {meta.model} · {(meta.durationMs / 1000).toFixed(1)}s
+                {meta.model} · {(meta.durationMs / 1000).toFixed(1)}s{meta.cached && ' · cached'}
               </p>
             )}
             <div className="rounded-lg border bg-white p-6">

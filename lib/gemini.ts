@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { cacheGet, cacheKey, cacheSet } from '@/lib/ai/cache'
 
 // =============================================================
 // R-02 — THE one AI-call convention. Every Gemini feature in this app
@@ -30,7 +31,7 @@ export type AiError = {
 }
 
 export type AiResult<T> =
-  | { ok: true; data: T; model: string; durationMs: number }
+  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean }
   | { ok: false; error: AiError; durationMs: number }
 
 export type ValidationResult<T> =
@@ -97,14 +98,48 @@ export type GenerateJsonOptions<T> = {
  * Never throws — every failure is an `ok: false` result whose `message`
  * is safe to show to a user. Full detail goes to server logs.
  */
+// Health-endpoint observability (A3): last generation's latency so
+// "is AI smooth right now?" is answerable with one curl to /api/health.
+let lastGeneration: { tool: string; ok: boolean; durationMs: number; cached: boolean; at: string } | null = null
+export function getLastGeneration() {
+  return lastGeneration
+}
+
 export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiResult<T>> {
   const startedAt = Date.now()
-  const fail = (error: AiError): AiResult<T> => ({ ok: false, error: clientSafe(error), durationMs: Date.now() - startedAt })
+  const fail = (error: AiError): AiResult<T> => {
+    lastGeneration = { tool: opts.tool, ok: false, durationMs: Date.now() - startedAt, cached: false, at: new Date().toISOString() }
+    return { ok: false, error: clientSafe(error), durationMs: Date.now() - startedAt }
+  }
 
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
 
   const model = process.env.AI_MODEL || DEFAULT_MODEL
+
+  // --- response cache: identical repeat calls skip the network entirely
+  // (free-tier per-model daily quota is the real constraint) ---
+  const key = cacheKey({
+    tool: opts.tool,
+    model,
+    system: opts.system,
+    user: opts.user,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+  })
+  const hit = cacheGet(key)
+  if (hit.hit) {
+    const durationMs = Date.now() - startedAt
+    lastGeneration = { tool: opts.tool, ok: true, durationMs, cached: true, at: new Date().toISOString() }
+    return {
+      ok: true,
+      data: hit.value as T,
+      model,
+      durationMs,
+      cached: true,
+    }
+  }
+
   const maxAttempts = Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: opts.system }] },
@@ -184,12 +219,15 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     }
 
     const modelVersion = (json as { modelVersion?: string })?.modelVersion ?? model
-    return {
-      ok: true,
+    const result2 = {
+      ok: true as const,
       data: result.data,
       model: modelVersion.replace(/^models\//, ''),
       durationMs: Date.now() - startedAt,
     }
+    lastGeneration = { tool: opts.tool, ok: true, durationMs: result2.durationMs, cached: false, at: new Date().toISOString() }
+    cacheSet(key, result2.data)
+    return result2
   }
 
   return fail(lastError)

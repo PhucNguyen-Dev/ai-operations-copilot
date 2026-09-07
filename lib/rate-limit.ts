@@ -48,3 +48,22 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): Ra
 export function resetRateLimits(): void {
   buckets.clear()
 }
+
+/**
+ * Swap-ready interface (Part E1): a multi-instance deploy would supply a
+ * Redis/Supabase-backed implementation without touching call sites —
+ * only this export changes.
+ */
+export interface RateLimiter {
+  check(key: string, limit: number, windowMs: number): RateLimitResult
+}
+
+/** The single swap point. All call sites go through this object. */
+export const rateLimiter: RateLimiter = {
+  check: (key, limit, windowMs) => checkRateLimit(key, limit, windowMs),
+}
+
+/** Introspection for the health endpoint (current in-memory bucket count). */
+export function rateLimiterStats(): { backend: 'in-memory'; keys: number } {
+  return { backend: 'in-memory', keys: buckets.size }
+}

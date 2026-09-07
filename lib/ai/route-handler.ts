@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getApiUser } from '@/lib/auth-server'
 import { canUseTool, AI_TOOLS } from '@/lib/roles'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { rateLimiter } from '@/lib/rate-limit'
 import { generateJSON, logGeneration, type GenerateJsonOptions } from '@/lib/gemini'
 
 /**
@@ -35,7 +35,7 @@ export async function runAiTool<T>(
   }
 
   // --- rate limit (R-05): every AI call is a paid Gemini request ---
-  const limit = checkRateLimit(`ai:${userId}`, 10, 60_000)
+  const limit = rateLimiter.check(`ai:${userId}`, 10, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many generations — try again in ${limit.retryAfterSec}s.` },
@@ -73,5 +73,5 @@ export async function runAiTool<T>(
     )
   }
 
-  return NextResponse.json({ data: result.data, model: result.model, durationMs: result.durationMs })
+  return NextResponse.json({ data: result.data, model: result.model, durationMs: result.durationMs, cached: result.cached === true })
 }
