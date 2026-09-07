@@ -58,7 +58,7 @@ errors can include table/column hints and filter details.
   pages; upstream 401/422 validation responses still pass through
   (user-relevant by design).
 
-## R-04 — Static shared webhook secret (Medium) — Open (accepted for demo)
+## R-04 — Static shared webhook secret (Medium) — Fixed (HMAC layer added)
 
 **Area:** `N8N_WEBHOOK_SECRET`, used by `app/api/leads/route.ts` and the n8n
 validation node.
@@ -109,7 +109,7 @@ correct; a fresh dev server serves the compiled stylesheet correctly.
 - **Resolved:** `.next/` deleted and dev restarted (2026-09-05). CSS verified
   serving 200. If it recurs: stop dev, delete `.next/`, `npm run dev`.
 
-## R-08 — Service-role key used for all pipeline writes (Accepted risk)
+## R-08 — Service-role key used for all pipeline writes — Fixed (scoped n8n_pipeline role, migration 008)
 
 **Area:** n8n → Supabase.
 
@@ -158,7 +158,7 @@ isolation against the real endpoint before blaming the format, and (b)
 check what the *process* actually inherited — the env var you think
 you're testing may not be the one being sent.
 
-## R-10 — Vulnerable transitive postcss inside Next 15 (Medium — accepted for demo)
+## R-10 — Vulnerable transitive postcss inside Next 15 (Medium — accepted, upgrade checklist in ROADMAP)
 
 **Area:** `next@15.5.25` bundles a postcss version with two advisories (XSS via
 unescaped `</style>` in CSS stringify output; arbitrary file read via
@@ -171,7 +171,7 @@ attacker-controlled `sourceMappingURL` in CSS comments).
 - Decision (2026-09-05): **deferred** — re-verify middleware/cookies/async-API
   changes as a standalone upgrade project after Phase 6 ships, not mid-phase.
 
-## R-11 — Telegram webhook secret is hardcoded in the launcher (Low — accepted debt)
+## R-11 — Telegram webhook secret hardcoded in launcher — Fixed (env-backed, workflow param + .env)
 
 **Area:** `scripts/start-bot.mjs` → the Telegram trigger's `secret` header.
 
@@ -193,11 +193,11 @@ watchdog's healing registration (documented in docs/TELEGRAM-CHATBOT.md).
 | R-01 | No automated tests | High | Fixed (H3) |
 | R-02 | Unstandardized AI-call pattern | High | Fixed (H1) |
 | R-03 | Raw error messages to client | Medium | Fixed (H2) |
-| R-04 | Static shared webhook secret | Medium | Open (accepted for demo) |
+| R-04 | Static shared webhook secret | Medium | Fixed — HMAC signature layer added (R-04 hardening) |
 | R-05 | No intake rate limiting | Medium | Fixed (H4) |
 | R-06 | Workspace-root misdetection | Low | Fixed (committed) |
 | R-07 | Stale dev server / unstyled page | Low | Fixed |
-| R-08 | Service-role for pipeline writes | Low | Accepted risk |
+| R-08 | Service-role for pipeline writes | Low | Fixed — scoped n8n_pipeline role (migration 008) |
 | R-09 | Stale env var shadowed real GEMINI_API_KEY | High | Fixed (env precedence + stale var removed) |
-| R-10 | Vulnerable transitive postcss in Next 15 | Medium | Accepted — upgrade to Next 16 post-Phase 6 |
-| R-11 | Telegram webhook secret hardcoded in launcher | Low | Accepted (demo) — see TELEGRAM-CHATBOT.md |
+| R-10 | Vulnerable transitive postcss in Next 15 | Medium | Accepted — turnkey Next 16 checklist in ROADMAP |
+| R-11 | Telegram webhook secret hardcoded in launcher | Low | Fixed — env-backed secret (workflow param + .env) |

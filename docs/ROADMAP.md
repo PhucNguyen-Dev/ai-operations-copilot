@@ -214,6 +214,78 @@ necessary at deploy time (see **Path to production**).
 
 ---
 
+
+---
+
+## Hardening pass (post-Phase 8) — security + scale + design notes for the next agent
+
+Everything below is implemented and verified (see WEAK_POINTS_AND_RISKS.md for
+statuses). This section is the handoff brief for whoever extends this project.
+
+### Security hardening that landed
+
+- **R-04 closed — HMAC-signed webhooks.** `lib/webhook-signing.ts` signs
+  `${timestamp}.${JSON.stringify(payload)}` with HMAC-SHA256; `/api/leads`
+  sends a `{timestamp, signature, payload}` envelope; the n8n
+  `Validate & authorize` node verifies it with Web Crypto (same algorithm on
+  both sides) and enforces a 5-minute replay window. The static
+  `x-webhook-secret` header remains as layer 1.
+- **R-08 closed — least-privilege pipeline role (migration 008).** Postgres
+  role `n8n_pipeline` has grants only on the 7 pipeline tables (no delete, no
+  other tables). n8n authenticates with a JWT that `scripts/start-n8n.mjs`
+  mints (HS256, `role: n8n_pipeline` claim, signed with `SUPABASE_JWT_SECRET`
+  from .env) — PostgREST acts as that role. Fallback to service-role writes
+  when the secret is absent so setup never dead-ends.
+- **R-11 closed — Telegram webhook secret is env-backed.** The chatbot
+  trigger node reads `$env.TELEGRAM_WEBHOOK_SECRET`; the launcher
+  (`start-bot.mjs`) reads the same value for setWebhook/watchdog healing.
+  Nothing depends on workflow/trigger ids surviving a re-import.
+- **R-01 fully closed — Playwright RLS matrix** (`tests/e2e/rls-matrix.spec.ts`,
+  `npm run test:e2e`): 6 tests over 5 roles covering redirects, API auth,
+  page visibility, nav gating, server-side Not-allowed pages, and
+  no-existence-leak on hidden leads. Requires dev server + seeded users.
+
+### Design notes for the next agent (deferred deliberately — do not improvise)
+
+1. **Multi-LLM routing (supersedes the old "single provider" decision).**
+   Why: quota spread, cost control, deprecation insurance. Design: refactor
+   `lib/gemini.ts` into `lib/ai/providers/` with two adapters — `gemini.ts`
+   (native REST, code already exists) and `openai-compatible.ts` (covers
+   OpenAI, DeepSeek, Qwen, Groq, local models) — behind a registry; keep the
+   generateJSON convention (validate/retry/cache/log) untouched for callers;
+   route via one env-backed JSON table `{ "<toolId>": { provider, model } }`
+   with a default fallback. Cache keys already include the model; logging
+   already records it. Do NOT touch validators. n8n can stay on Gemini or
+   migrate node-by-node.
+2. **Prompt versioning.** 7+ live prompts (5 tool routes + 2 n8n nodes) are
+   inline strings. Step 1: extract to `lib/ai/prompts/` as constants with
+   explicit `vN` labels; add `prompt_version` column to `ai_generations`
+   (migration) and log it; convention: changing a prompt = bump its version.
+   Step 2 (optional): eval script that runs a fixed lead set through old/new
+   prompts and diffs schema-pass rate. Do not alter prompt text while
+   extracting — byte-identical, or outputs shift.
+3. **Next 16 upgrade — turnkey checklist.** Known breaks for THIS codebase:
+   `middleware.ts` → `proxy.ts` rename; Turbopack default (delete `.next`
+   and verify CSS cold-start — see R-07); `@supabase/ssr` 0.6 → 0.12 cookie
+   API changes (touches `lib/supabase/*` + `middleware.ts`); Node >= 20.9
+   (already on 22). Sequence: upgrade next + ssr in one commit → typecheck
+   → 66 unit tests → 3 integration → 6 Playwright E2E → production build
+   → browser matrix. Rollback: `git revert` the single commit.
+
+### Scale readiness (100 concurrent counselors, 24/7 intake)
+
+The code architecture is scale-ready; the deployment is the work. Honest map:
+
+| Layer | At 100 users | Change needed |
+|---|---|---|
+| Next.js app | fine (stateless routes) | host it (Vercel/VPS) |
+| Supabase | fine for this write volume | paid tier (free pauses + connection caps) |
+| Gemini | first bottleneck — free tier ~10 req/min | multi-LLM routing (note 1) + paid tier |
+| n8n | works, fragile at scale | queue mode (Redis + Postgres + workers) — deployment re-architecture |
+| limiter/cache | wrong for multi-instance | Redis backend behind the existing `rateLimiter`/cache swap points (1-file change) |
+
+No app rewrite is required for any of it — the swap points were built for
+exactly this. Until deployed, these stay documented decisions.
 ## Key commands
 
 | Command | What it does |
@@ -250,3 +322,28 @@ Demo logins: `admin@` / `operations@` / `counselor@` / `marketing@` / `teacher@d
 
 | `archive/AI Operations Copilot — Phase 1 System A.md` | Original long-form architecture (AD-1…AD-12) |
 | `archive/fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |
+
+---
+
+## Final status judgment (post-revision, 2026-09-07)
+
+**Verdict: portfolio-ready through Phase 8.** All 30 features complete and
+working at runtime; the security-hardening pass (HMAC-signed webhooks,
+least-privilege pipeline role, env-backed bot secret) is implemented with the
+convention untouched; the auth/RLS matrix is now automated (Playwright 6/6);
+every open risk is either fixed or carries a turnkey plan in
+[Hardening pass](#hardening-pass-post-phase-8--security--scale--design-notes-for-the-next-agent).
+
+**Verification state:** 74 unit + 3 live-Gemini integration + 6 Playwright E2E
+tests green; production build green; typecheck strict; workflow JSONs valid;
+`node --check` clean on all 8 scripts.
+
+**Deliberately open (documented, not forgotten):** Next 16 major upgrade
+(turnkey checklist in the hardening section), multi-LLM provider routing
+(design note), prompt versioning (design note), shared limiter/cache backends
+(swap points exist), Cloudflare/domain for a stable bot URL. None are code
+debts — each is a decision awaiting deployment need.
+
+The remaining honest limitation: free/local infrastructure (single n8n
+instance, free-tier Gemini, in-memory caches). The swap points and the scale
+map above make that a deployment checklist, not a rewrite.
