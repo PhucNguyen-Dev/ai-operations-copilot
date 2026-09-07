@@ -109,14 +109,14 @@ correct; a fresh dev server serves the compiled stylesheet correctly.
 - **Resolved:** `.next/` deleted and dev restarted (2026-09-05). CSS verified
   serving 200. If it recurs: stop dev, delete `.next/`, `npm run dev`.
 
-## R-08 — Service-role key used for all pipeline writes — Fixed (scoped n8n_pipeline role, migration 008)
+## R-08 - Service-role key used for all pipeline writes - PARTIALLY FIXED (008 ready for self-hosted; hosted Supabase limitation documented)
 
-**Area:** n8n → Supabase.
-
-The pipeline writes with the service-role key, bypassing RLS entirely. This is
-documented and intentional, but means every n8n node carries full DB power and
-a malformed write is unrestricted.
-
+n8n  Supabase. VERIFICATION NOTE (2026-09-07): the minted-JWT approach
+does NOT work on hosted Supabase - PostgREST rejects `SET ROLE` for
+custom roles ("permission denied to set role n8n_pipeline"). Migration 008
+is correct for SELF-HOSTED Supabase. On hosted Supabase, the active
+hardening layer is the HMAC webhook signature (R-04) + workflow-level
+schema gates; service-role auth stays until a self-hosted move.
 - Impact: acceptable for a single-workflow demo. If more workflows are added in
   Phase 6, consider a dedicated Postgres role limited to the tables/columns the
   pipeline needs.
@@ -197,7 +197,7 @@ watchdog's healing registration (documented in docs/TELEGRAM-CHATBOT.md).
 | R-05 | No intake rate limiting | Medium | Fixed (H4) |
 | R-06 | Workspace-root misdetection | Low | Fixed (committed) |
 | R-07 | Stale dev server / unstyled page | Low | Fixed |
-| R-08 | Service-role for pipeline writes | Low | Fixed — scoped n8n_pipeline role (migration 008) |
+| R-08 | Service-role for pipeline writes | Low | PARTIALLY FIXED — 008 valid for self-hosted only; hosted Supabase keeps service-role (HMAC R-04 = hosted layer) |
 | R-09 | Stale env var shadowed real GEMINI_API_KEY | High | Fixed (env precedence + stale var removed) |
 | R-10 | Vulnerable transitive postcss in Next 15 | Medium | Accepted — turnkey Next 16 checklist in ROADMAP |
 | R-11 | Telegram webhook secret hardcoded in launcher | Low | Fixed — env-backed secret (workflow param + .env) |
