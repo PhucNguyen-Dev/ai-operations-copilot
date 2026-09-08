@@ -104,7 +104,7 @@ Next.js 15 (App Router, TypeScript, Tailwind v4) · Supabase (Postgres + Auth + 
 ```bash
 npm install
 cp .env.example .env    # fill: Supabase URL/keys, GEMINI_API_KEY (free at aistudio.google.com)
-# Supabase SQL editor: run supabase/migrations/001..008, then seed.sql (+ seed_governance.sql)
+# Supabase SQL editor: run supabase/migrations/001..009, then seed.sql (+ seed_governance.sql)
 npm run seed:users      # 5 demo logins (password demo1234)
 npm run push:n8n        # import workflows (n8n stopped), then Activate in the UI
 npm run dev             # app at :3000
@@ -112,7 +112,8 @@ npm run bot             # full bot stack: cloudflared tunnel + n8n + Telegram we
 npm run kill-stack      # emergency stop: n8n, tunnels, stray node processes
 ```
 
-Demo logins: `admin@ / operations@ / counselor@ / marketing@ / teacher@ demo.dev` — password `demo1234`.
+Demo logins: any of `admin@demo.dev` / `operations@demo.dev` / `counselor@demo.dev` / `marketing@demo.dev` /
+`teacher@demo.dev` — password `demo1234`.
 Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Testing
@@ -132,8 +133,8 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 - No duplicate-lead dedupe yet (documented); chatbot demo runs on Telegram (Messenger/Zalo = same pattern,
   business-account gated).
 - Single environment, no multi-region/HA — deliberate non-goals for a prototype.
-- n8n pipeline writes use the service-role key (R-08, partially fixed); RLS-scoped writes need
-  `SUPABASE_JWT_SECRET` in `.env` — see [docs/WEAK_POINTS_AND_RISKS.md](docs/WEAK_POINTS_AND_RISKS.md).
+- n8n pipeline writes are RLS-scoped when `SUPABASE_JWT_SECRET` is set in `.env`; without it they fall
+  back to the service-role key (R-08) — see [docs/WEAK_POINTS_AND_RISKS.md](docs/WEAK_POINTS_AND_RISKS.md).
 - Rate limiter + AI response cache are in-memory (single-instance); both sit behind swap-ready
   interfaces for a multi-instance deploy.
 
