@@ -134,7 +134,7 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
   business-account gated).
 - Single environment, no multi-region/HA — deliberate non-goals for a prototype.
 - n8n pipeline writes are RLS-scoped when `SUPABASE_JWT_SECRET` is set in `.env`; without it they fall
-  back to the service-role key (R-08) — see [docs/WEAK_POINTS_AND_RISKS.md](docs/WEAK_POINTS_AND_RISKS.md).
+  back to the service-role key (R-08, tracked in the project risk register).
 - Rate limiter + AI response cache are in-memory (single-instance); both sit behind swap-ready
   interfaces for a multi-instance deploy.
 
@@ -153,6 +153,4 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 [Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) ·
 [Architecture](docs/ARCHITECTURE.md) · [AI Design](docs/AI_DESIGN.md) · [Workflows](docs/WORKFLOW.md) ·
 [Tool Lab](docs/AI_TOOL_LAB.md) · [Tool Evaluation](docs/AI_TOOL_EVALUATION.md) · [Training](docs/TRAINING.md) ·
-[Phase 7 Summary](docs/archive/PHASE7-SUMMARY.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) ·
-[Lessons learned](docs/LESSONS-LEARNED.md) — **the one mistakes document, every incident cataloged** ·
-[Interview objections](docs/interview-objections.md)
+[Phase 7 Summary](docs/archive/PHASE7-SUMMARY.md)

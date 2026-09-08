@@ -124,8 +124,8 @@ Watch the runs: each enrollment-intent chat produces a full `admissions-lead-pip
 ## Troubleshooting
 
 For the full post-mortem of the 2026-09-07 outage (silent bot, 502 tunnels,
-429 rate limits, webhook secret race), see
-[LESSONS-LEARNED.md — Part 1](./LESSONS-LEARNED.md).
+429 rate limits, webhook secret race), see the incident log maintained in the
+project's internal lessons-learned register.
 
 - **Bot silent, no execution row in n8n** → message never reached n8n. Usually
   the tunnel is down or you're in plain `npm run n8n` mode (Telegram offline by

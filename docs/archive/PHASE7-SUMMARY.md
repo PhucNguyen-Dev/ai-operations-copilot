@@ -9,7 +9,7 @@ Five governance features, one page hub (/governance), two new database tables, a
 - F-027 AI Tool Evaluation: 1 documented adoption decision — gemini-3.5-flash-lite, scored 36/40, "Recommended" with conditions
 - F-028 Employee AI Training: designed per-department programs (Marketing, Admissions, Academic, Operations)
 - F-029 Internal AI Workshop: "AI for Everyday Work" 90-minute agenda with facilitator guide
-- F-030 Internal AI Documentation/SOP: 7 SOPs, with the Troubleshooting SOP sourced from real incidents (docs/LESSONS-LEARNED.md)
+- F-030 Internal AI Documentation/SOP: 7 SOPs, with the Troubleshooting SOP sourced from real incidents
 
 2. The Genuine Experiments (spec §13 requires real work, not placeholders)
 All runs executed by scripts/run-lab-experiments.mjs against the live Gemini API on the actual production prompt:
@@ -22,7 +22,7 @@ B. Negative control — gemini-2.0-flash (retired): HTTP 404 in 159 ms with Goog
    that model retirement fails as a plain 404 — the reason the app now classifies 404 as a permanent AI_CONFIG error.
 C. JSON-mode vs plain-prompt — quiz generation on flash-lite: parity (3/3 parse each, ~1.7 s). JSON mode kept as the
    project-wide guardrail (R-02) because it costs nothing and removes reliance on instruction-following.
-Context from the build period (documented in docs/LESSONS-LEARNED.md §2.3): the free tier's per-model daily quota exhausted once
+Context from the build period: the free tier's per-model daily quota exhausted once
 mid-testing, and retired models were discovered the hard way — both limitations are recorded in the experiment rows.
 
 3. The Adoption Decision (spec §14)
@@ -75,7 +75,7 @@ governance content.
 - Gmail sending is dry-run by design locally; real sends need credentials + GMAIL_DRY_RUN=false
 - Gemini free-tier quota can interrupt heavy testing; mitigation is model switching or a paid tier
 - Model names age quickly (2.0/2.5 generations retired during this project); AI_MODEL is env-pinned and swappable
-- Real incidents and their root causes live in docs/LESSONS-LEARNED.md — the Troubleshooting SOP links there
+- Real incidents and their root causes live in the project's internal lessons-learned register — the Troubleshooting SOP links there
 
 10. Future work: governance-driven access (the registry loop)
 

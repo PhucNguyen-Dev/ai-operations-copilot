@@ -23,6 +23,11 @@ npm-debug.log*
 # screenshots for debugging (safe to delete)
 /tmp/
 
+# local-only docs (interview prep / internal risk & lessons registers)
+/docs/interview-objections.md
+/docs/WEAK_POINTS_AND_RISKS.md
+/docs/LESSONS-LEARNED.md
+
 # other AI tool worktrees
 /.kilo/
 /.freebuff/
