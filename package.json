@@ -14,7 +14,7 @@
     "n8n": "node scripts/start-n8n.mjs",
     "bot": "node scripts/start-bot.mjs",
     "kill-stack": "node scripts/kill-stack.mjs",
-    "push:n8n": "node scripts/push-workflow.mjs"
+    "push:n8n": "node scripts/validate-n8n.mjs && node scripts/push-workflow.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

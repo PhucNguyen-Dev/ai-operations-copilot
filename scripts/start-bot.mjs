@@ -182,21 +182,23 @@ function spawnTunnel() {
 
     if (backend === 'cloudflared') {
       // `npx cloudflared` downloads the binary on first use (cached after).
+      // NOTE: cloudflared prints ALL logs (incl. the URL box) to stderr —
+      // both streams must be scanned for the URL (the old localtunnel only
+      // printed to stdout, which is where the stdout-only listener came from).
       child = spawn('npx', ['--yes', 'cloudflared', 'tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
         shell: true,
-        stdio: ['ignore', 'pipe', 'inherit'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       })
     } else {
       const args = ['localtunnel', '--port', String(port)]
       child = spawn('npx', args, {
         shell: true,
-        stdio: ['ignore', 'pipe', 'inherit'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       })
     }
     lt = child
 
-    const rl = createInterface({ input: child.stdout })
-    rl.on('line', (line) => {
+    const handleLine = (line) => {
       console.log('[tunnel]', line)
       let m = line.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)
       if (!m && backend === 'localtunnel') m = line.match(/https:\/\/[a-z0-9-]+\.loca\.lt/)
@@ -204,7 +206,9 @@ function spawnTunnel() {
         gotUrl = m[0]
         resolve(m[0])
       }
-    })
+    }
+    createInterface({ input: child.stdout }).on('line', handleLine)
+    createInterface({ input: child.stderr }).on('line', handleLine)
     child.on('exit', (code) => {
       if (shuttingDown) return
       if (!gotUrl) resolve(null)
@@ -231,6 +235,22 @@ function banner() {
   console.log(`  Telegram webhook: ${url}${WEBHOOK_PATH}`)
 }
 
+// One-time bot profile setup: the empty-chat description (what a parent sees
+// BEFORE tapping Start) and the command menu. Idempotent — same values every
+// start, so re-running is always safe. Static until changed, per Bot API docs.
+async function configureBotProfile() {
+  const description = 'Enrollment assistant for our English courses — ask about IELTS, TOEFL or Business English (tuition, schedules, free placement test), or press Start to register. Ban co the tro chuyen bang tieng Viet!'
+  const commands = [
+    { command: 'start', description: 'Register or ask about our courses' },
+    { command: 'help', description: 'What the bot can do' },
+    { command: 'stop', description: 'Stop follow-up check-ins (say /start to re-enable)' },
+  ]
+  const okDesc = await telegramRequest('setMyDescription', { description })
+  const okCmds = await telegramRequest('setMyCommands', { commands })
+  if (okDesc?.ok && okCmds?.ok) console.log('✓ Bot profile set (description + command menu)')
+  else console.warn('⚠ Bot profile setup incomplete (setMyDescription/setMyCommands failed) — non-fatal')
+}
+
 async function startN8n() {
   console.log(`→ Tunnel ready: ${url} — starting n8n with WEBHOOK_URL...`)
   n8n = spawn('node', ['scripts/start-n8n.mjs'], {
@@ -249,6 +269,7 @@ async function startN8n() {
 
   const ok = await verifyWebhook(url)
   if (!ok) throw new Error('Telegram webhook verification failed')
+  await configureBotProfile()
   console.log('✓ Bot stack ready (webhook registered by n8n, secret intact)')
   banner()
   console.log(`\n  Next steps: open http://localhost:${port} to edit workflows,`)
@@ -341,7 +362,7 @@ killPort()
     await stopStub(stub)
   }
   killPort() // make sure the stub is fully released before n8n binds
-  if (!url) throw new Error('Could not obtain a healthy tunnel (fixed and random both failed)')
+  if (!url) throw new Error('Tunnel started but no URL was captured in time — see [tunnel] lines above')
   await startN8n()
 
   // Watchdog: require 2 consecutive public failures before healing, so a

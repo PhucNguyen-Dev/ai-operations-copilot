@@ -25,6 +25,7 @@ npm-debug.log*
 
 # other AI tool worktrees
 /.kilo/
+/.freebuff/
 
 # playwright
 test-results/
