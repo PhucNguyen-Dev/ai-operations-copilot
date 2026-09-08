@@ -86,8 +86,13 @@ More in `docs/screenshots/`.
 
 ## Demo video
 
-_Placeholder — see `docs/screenshots/` for stills. Video: submit a test lead in the dashboard, watch the
-n8n pipeline execute node by node, show the run log, then the same lead landing via the Telegram chatbot._
+**Full lead pipeline** — submit a test lead, watch n8n execute node by node:
+
+[![Lead pipeline demo](docs/screenshots/01-dashboard-admin.png)](https://youtu.be/f44MgJeGtNw)
+
+**Telegram chatbot** — the same flow through a live chat conversation:
+
+[![Telegram chatbot demo](docs/screenshots/03-automation-logs.png)](https://youtu.be/f44MgIc-8d4)
 
 ## Tech stack
 
