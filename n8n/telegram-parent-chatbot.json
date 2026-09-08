@@ -32,7 +32,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Per-conversation memory (survives between messages via workflow static data).\nconst msg = $input.first().json.message;\nif (!msg || !msg.text) return []; // ignore stickers/photos for the demo\nconst chatId = msg.chat.id;\nconst text = String(msg.text).trim();\nconst from = msg.from?.first_name || 'Parent';\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst key = 'chat_' + chatId;\nconst state = staticData[key] || { data: {}, history: [] };\n\nstate.history = state.history || [];\nstate.history.push({ role: 'parent', text });\nwhile (state.history.length > 8) state.history.shift();\nstaticData[key] = state;\n\nconst KB = [\n  'Courses: IELTS Preparation (intensive & standard), TOEFL Preparation, Business English.',\n  'Class size: max 12 students. Teachers are certified, IELTS 8.0+.',\n  'Free placement test every Saturday morning.',\n  'Tuition: from 6,000,000 VND for an 8-week course (exact quote given by a counselor).',\n  'Campuses: District 1 and Thu Duc (Ho Chi Minh City).',\n  'Hours: 8:00-20:00 Mon-Sat. Hotline: 0900 000 000.'\n].join('\\n');\n\nconst system = [\n  'You are the friendly enrollment assistant of an English training school, chatting with parents on Telegram.',\n  'Knowledge base:',\n  KB,\n  '',\n  'Rules:',\n  '- Answer questions clearly and briefly, using ONLY the knowledge base. If something is not there, say a counselor will confirm it.',\n  '- When the parent shows enrollment intent (wants to register, asks how to sign up), collect: full name, phone number, and course of interest. Ask for ONE missing item at a time, warmly.',\n  '- Never invent prices beyond the \"from 6,000,000 VND\" line. Never promise discounts or schedules.',\n  '- Reply in the parent\\'s language (Vietnamese or English).',\n  'Return ONLY a single JSON object:',\n  '- Normal answer or still collecting: {\"action\":\"reply\",\"text\":\"<your reply>\",\"collected\":{...}}',\n  '- When name AND phone AND course are all known: {\"action\":\"submit\",\"text\":\"<warm confirmation that a counselor will contact them soon>\",\"lead\":{\"name\":\"...\",\"phone\":\"...\",\"course\":\"...\",\"note\":\"<anything else the parent said that matters>\"}}'\n].join('\\n');\n\nconst user = [\n  'Collected so far: ' + JSON.stringify(state.data || {}),\n  'Recent conversation:',\n  ...state.history.map((h) => h.role + ': ' + h.text)\n].join('\\n');\n\nreturn [{ json: { chatId, from, text, key, state, system, user } }];"
+        "jsCode": "// Per-conversation memory (survives between messages via workflow static data).\n// Single source of truth: staticData.chats['chat_<id>'] — Prepare AND Resolve\n// both read/write this map (previously they used two different maps, so\n// collected info never actually persisted across turns).\nconst msg = $input.first().json.message;\nif (!msg || !msg.text) return []; // ignore stickers/photos for the demo\nconst chatId = msg.chat.id;\nconst text = String(msg.text).trim();\nconst from = msg.from?.first_name || 'Parent';\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst key = 'chat_' + chatId;\nconst state = staticData.chats[key] || { data: {}, history: [], lang: 'en' };\n\n// Quick commands skip the AI turn entirely.\nconst cmd = text === '/start' ? '/start' : (text === '/stop' ? '/stop' : (text === '/help' ? '/help' : null));\nif (cmd) {\n  return [{ json: { quick: 'quick', quickCommand: cmd, chatId, key } }];\n}\n\n// Track activity (nudge logic skips chats active in the last 2h) + language.\nstate.lastActiveAt = new Date().toISOString();\nconst isVi = /[ăâđêôơưàáảãạầấẩẫậằắẳẵặèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộùúủũụỳýỷỹỵ]/i.test(text);\nif (isVi) state.lang = 'vi';\n\nstate.history = state.history || [];\nstate.history.push({ role: 'parent', text });\nwhile (state.history.length > 8) state.history.shift();\nstaticData.chats[key] = state;\n\nconst KB = [\n  'Courses: IELTS Preparation (intensive & standard), TOEFL Preparation, Business English.',\n  'Class size: max 12 students. Teachers are certified, IELTS 8.0+.',\n  'Free placement test every Saturday morning.',\n  'Tuition: from 6,000,000 VND for an 8-week course (exact quote given by a counselor).',\n  'Campuses: District 1 and Thu Duc (Ho Chi Minh City).',\n  'Hours: 8:00-20:00 Mon-Sat. Hotline: 0900 000 000.'\n].join('\\n');\n\nconst system = [\n  'You are the friendly enrollment assistant of an English training school, chatting with parents on Telegram.',\n  'Knowledge base:',\n  KB,\n  '',\n  'Rules:',\n  '- Answer questions clearly and briefly, using ONLY the knowledge base. If something is not there, say a counselor will confirm it.',\n  '- When the parent shows enrollment intent (wants to register, asks how to sign up), collect: full name, phone number, and course of interest. Ask for ONE missing item at a time, warmly.',\n  '- Never invent prices beyond the \"from 6,000,000 VND\" line. Never promise discounts or schedules.',\n  '- Reply in the parent\\'s language (Vietnamese or English).',\n  '- In the submit confirmation, mention the phone number at most once and keep a consistent, warm tone.',\n  'Return ONLY a single JSON object:',\n  '- Normal answer or still collecting: {\"action\":\"reply\",\"text\":\"<your reply>\",\"collected\":{...}}',\n  '- When name AND phone AND course are all known: {\"action\":\"submit\",\"text\":\"<warm confirmation that a counselor will contact them soon>\",\"lead\":{\"name\":\"...\",\"phone\":\"...\",\"course\":\"...\",\"note\":\"<anything else the parent said that matters>\"}}'\n].join('\\n');\n\nconst user = [\n  'Collected so far: ' + JSON.stringify(state.data || {}),\n  'Recent conversation:',\n  ...state.history.map((h) => h.role + ': ' + h.text)\n].join('\\n');\n\nreturn [{ json: { chatId, from, text, key, state, system, user } }];"
       },
       "id": "b2000000-0000-0000-0000-000000000002",
       "name": "Prepare turn",
@@ -42,6 +42,142 @@
         -300,
         0
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-quick",
+              "leftValue": "={{ $json.quick || '' }}",
+              "rightValue": "quick",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-00000000000a",
+      "name": "Quick command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// /stop and /start flip the CRM opt-out flag; /help is informational only.\n// Reversibility: /start re-enables nudges (explicit re-consent), but the\n// lifetime cap (max 2 automated touches per lead) is NEVER reset.\nconst item = $input.first().json;\nconst cmd = item.quickCommand;\nconst chatId = item.chatId;\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst key = 'chat_' + chatId;\n\nlet replyText = '';\nlet flagChange = null;\n\nif (cmd === '/stop') {\n  if (staticData.chats[key]) staticData.chats[key].stopped = true;\n  flagChange = { telegram_stopped: true };\n  replyText = 'No problem — I won\\'t send you any more check-ins. You can still ask me anything anytime, and just say /start to turn follow-ups back on.';\n} else if (cmd === '/start') {\n  if (staticData.chats[key]) staticData.chats[key].stopped = false;\n  flagChange = { telegram_stopped: false };\n  replyText = [\n    'Hi! I\\'m the enrollment assistant for our English courses. 👋',\n    'Ask me anything about IELTS, TOEFL or Business English — tuition, schedules, the free Saturday placement test — or just tell me which course you\\'re interested in and I\\'ll help you register.',\n    '(Mình có thể trò chuyện bằng tiếng Việt nhé!)'\n  ].join('\\n');\n} else { // /help\n  replyText = [\n    'Here\\'s what I can do:',\n    '• Answer questions about courses, tuition and schedules',\n    '• Register you for a course (I\\'ll just need a name, phone and course choice)',\n    '• /start — restart the conversation and re-enable follow-ups',\n    '• /stop — stop follow-up check-ins anytime'\n  ].join('\\n');\n}\n\nreturn [{ json: { chatId, replyText, flagChange } }];"
+      },
+      "id": "b2000000-0000-0000-0000-00000000000b",
+      "name": "Handle quick command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-flag",
+              "leftValue": "={{ JSON.stringify($json.flagChange) }}",
+              "rightValue": "null",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-00000000000c",
+      "name": "Has flag change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        180,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?telegram_chat_id=eq.{{ $('Handle quick command').first().json.chatId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Handle quick command').first().json.flagChange) }}",
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-00000000000d",
+      "name": "PATCH telegram flag",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Handle quick command').first().json.chatId }}",
+        "text": "={{ $('Handle quick command').first().json.replyText }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b2000000-0000-0000-0000-00000000000e",
+      "name": "Telegram: quick reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram bot"
+        }
+      }
     },
     {
       "parameters": {
@@ -77,7 +213,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Schema check + merge AI's collected info into conversation state.\nconst turn = $('Prepare turn').first().json;\nconst ai = $('AI chat turn').first().json;\n\nconst text = (ai.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  return [{ json: { chatId: turn.chatId, action: 'reply', replyText: 'Sorry, I had trouble just now — please try again in a moment.' } }];\n}\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst state = staticData.chats[turn.key] || { data: {}, history: [] };\nstate.data = { ...(state.data || {}), ...(parsed.collected || {}) };\n\nlet action = parsed.action === 'submit' ? 'submit' : 'reply';\nconst lead = parsed.lead || {};\n// Only submit when we truly have the required trio.\nif (action === 'submit' && (!lead.name || !lead.phone || !lead.course)) {\n  action = 'reply';\n}\n\nif (action === 'submit') {\n  staticData.chats[turn.key] = { data: {}, history: [] }; // reset for the next parent\n} else {\n  staticData.chats[turn.key] = state;\n}\n\nconst replyText = action === 'submit'\n  ? (parsed.text || 'Thank you! A counselor will contact you soon.')\n  : (parsed.text || 'Could you tell me a bit more?');\n\nreturn [{ json: {\n  chatId: turn.chatId,\n  action,\n  replyText,\n  lead: action === 'submit'\n    ? {\n        name: String(lead.name).slice(0, 200),\n        phone: String(lead.phone).slice(0, 40),\n        course: String(lead.course).slice(0, 100),\n        note: String(lead.note || turn.text).slice(0, 1000),\n        from: turn.from\n      }\n    : null\n} }];"
+        "jsCode": "// Schema check + merge AI's collected info into conversation state.\nconst turn = $('Prepare turn').first().json;\nconst ai = $('AI chat turn').first().json;\n\nconst text = (ai.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  return [{ json: { chatId: turn.chatId, action: 'reply', replyText: 'Sorry, I had trouble just now — please try again in a moment.' } }];\n}\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst state = staticData.chats[turn.key] || { data: {}, history: [], lang: 'en' };\nstate.data = { ...(state.data || {}), ...(parsed.collected || {}) };\n\nlet action = parsed.action === 'submit' ? 'submit' : 'reply';\nconst lead = parsed.lead || {};\n// Only submit when we truly have the required trio.\nif (action === 'submit' && (!lead.name || !lead.phone || !lead.course)) {\n  action = 'reply';\n}\n\nif (action === 'submit') {\n  // Reset collection, but keep language + opt-out + activity markers.\n  staticData.chats[turn.key] = {\n    data: {},\n    history: [],\n    lang: state.lang || 'en',\n    stopped: state.stopped || false,\n    lastActiveAt: state.lastActiveAt\n  };\n} else {\n  staticData.chats[turn.key] = state;\n}\n\nconst replyText = action === 'submit'\n  ? (parsed.text || `Thank you, ${lead.name}! Your registration for ${lead.course} is in — a counselor will call ${lead.phone} soon to finalize everything.`)\n  : (parsed.text || 'Could you tell me a bit more?');\n\nreturn [{ json: {\n  chatId: turn.chatId,\n  action,\n  replyText,\n  lead: action === 'submit'\n    ? {\n        name: String(lead.name).slice(0, 200),\n        phone: String(lead.phone).slice(0, 40),\n        course: String(lead.course).slice(0, 100),\n        note: String(lead.note || turn.text).slice(0, 1000),\n        from: turn.from\n      }\n    : null\n} }];"
       },
       "id": "b2000000-0000-0000-0000-000000000004",
       "name": "Resolve turn",
@@ -123,6 +259,19 @@
     },
     {
       "parameters": {
+        "jsCode": "// R-04 sender side - HMAC-sign the pipeline payload. Matches the verifier\n// in admissions-lead-pipeline.json (commit 3133f39): signature =\n// HMAC-SHA256 over `${timestamp}.${JSON.stringify(payload)}`, hex-encoded.\nconst crypto = require('node:crypto');\nconst item = $input.first().json;\nconst lead = item.lead || {};\nconst payload = {\n  name: lead.name,\n  email: String(lead.phone || '').replace(/\\D/g, '') + '.tg@lead.local',\n  phone: lead.phone,\n  source: 'telegram',\n  telegram_chat_id: String(item.chatId),\n  course_interest: lead.course,\n  message: '[Telegram chat with ' + lead.from + '] ' + lead.note\n};\nconst ts = Date.now();\nconst signature = crypto\n  .createHmac('sha256', $env.N8N_WEBHOOK_SECRET)\n  .update(ts + '.' + JSON.stringify(payload))\n  .digest('hex');\nreturn [{ json: { signedBody: JSON.stringify({ timestamp: ts, signature, payload }) } }];"
+      },
+      "id": "b2000000-0000-0000-0000-000000000009",
+      "name": "Sign pipeline payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $env.N8N_WEBHOOK_URL }}",
         "sendHeaders": true,
@@ -136,7 +285,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ name: $json.lead.name, email: $json.lead.phone.replace(/\\D/g, '') + '.tg@lead.local', phone: $json.lead.phone, source: 'telegram', course_interest: $json.lead.course, message: '[Telegram chat with ' + $json.lead.from + '] ' + $json.lead.note }) }}",
+        "jsonBody": "={{ $json.signedBody }}",
         "options": {
           "timeout": 60000
         }
@@ -157,14 +306,16 @@
       "parameters": {
         "chatId": "={{ $('Resolve turn').first().json.chatId }}",
         "text": "={{ $('Resolve turn').first().json.replyText }}",
-        "additionalFields": {}
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "b2000000-0000-0000-0000-000000000007",
       "name": "Telegram: confirm",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        820,
+        720,
         0
       ],
       "credentials": {
@@ -177,7 +328,9 @@
       "parameters": {
         "chatId": "={{ $('Resolve turn').first().json.chatId }}",
         "text": "={{ $json.replyText }}",
-        "additionalFields": {}
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
       "id": "b2000000-0000-0000-0000-000000000008",
       "name": "Telegram: reply",
@@ -192,6 +345,124 @@
           "name": "Telegram bot"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "b2000000-0000-0000-0000-00000000000f",
+      "name": "Hourly follow-up check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?status=eq.new&telegram_chat_id=not.is.null&telegram_stopped=eq.false&nudges_sent=lt.2&select=id,telegram_chat_id,nudges_sent,created_at&created_at=lte.{{ encodeURIComponent($now.minus({ hours: 24 }).toISO()) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000010",
+      "name": "Query nudge candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Follow-up nudge picker (Tier 2 nurture / Tier 3 re-engagement).\n// Caps: max 2 automated touches per lead, EVER (nudges_sent survives /start\n// re-enable). telegram_stopped is filtered server-side; the static flag is\n// re-checked for pre-lead chats. Chats active in the last 2h are skipped.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.chats = staticData.chats || {};\nconst now = Date.now();\nconst out = [];\n\nconst T2 = {\n  en: [\n    'Just checking in — have you had a chance to speak with one of our advisors yet? Happy to answer any questions about schedules or tuition if anything is unclear.',\n    'Hi again! Your registration is still on our list — an advisor will reach out shortly. In the meantime, any questions I can answer for you?'\n  ],\n  vi: [\n    'Chào anh/chị, mình theo lại câu hỏi hôm trước — anh/chị đã trao đổi với chuyên viên tư vấn của chúng tôi chưa? Nếu cần thông tin thêm về lịch học hay học phí, cứ nhắn mình nhé!',\n    'Chào anh/chị! Đăng ký của anh/chị vẫn đang trong danh sách của chúng tôi — chuyên viên sẽ sớm liên hệ. Trong lúc chờ, anh/chị cần mình giải đáp gì thêm không?'\n  ]\n};\nconst T3 = {\n  en: [\n    'A small update: we have a free trial class running this month for IELTS/TOEFL — would you like to reserve a spot? If you\\'ve already decided, feel free to ignore this, and thank you for your interest!',\n    'Last check-in from me, promise 🙂 We still have a seat reserved for you in the upcoming IELTS course. Still interested? One reply is all it takes — or just say /stop and I won\\'t message again.'\n  ],\n  vi: [\n    'Một tin nhỏ: tháng này chúng tôi có buổi học thử miễn phí cho lớp IELTS/TOEFL — anh/chị có muốn giữ chỗ không? Nếu đã quyết định rồi thì bỏ qua tin nhắn này nhé, cảm ơn anh/chị đã quan tâm!',\n    'Lần nhắc cuối cùng của mình, hứa 🙂 Chúng tôi vẫn giữ một chỗ cho anh/chị trong lớp IELTS sắp khai giảng. Vẫn quan tâm chứ ạ? Chỉ cần một tin nhắn trả lời — hoặc nhắn /stop để mình ngừng nhắc.'\n  ]\n};\n\nfor (const lead of $input.all().map((i) => i.json)) {\n  if (!lead.telegram_chat_id) continue;\n  const chat = staticData.chats['chat_' + lead.telegram_chat_id] || {};\n  if (chat.stopped) continue;\n  const lastActive = chat.lastActiveAt ? Date.parse(chat.lastActiveAt) : 0;\n  if (now - lastActive < 2 * 60 * 60 * 1000) continue; // mid-conversation\n  const age = now - Date.parse(lead.created_at);\n  const lang = chat.lang || 'en';\n  const variant = Number(String(lead.id).slice(-1)) % 2; // rotate templates per lead\n  let text = null;\n  let tier = 0;\n  if ((lead.nudges_sent || 0) === 0 && age >= 24 * 60 * 60 * 1000) {\n    tier = 2;\n    text = T2[lang][variant];\n  } else if ((lead.nudges_sent || 0) === 1 && age >= 5 * 24 * 60 * 60 * 1000) {\n    tier = 3;\n    text = T3[lang][variant];\n  }\n  if (text) {\n    out.push({ json: { leadId: lead.id, chatId: lead.telegram_chat_id, tier, nextCount: (lead.nudges_sent || 0) + 1, text } });\n  }\n}\nreturn out;"
+      },
+      "id": "b2000000-0000-0000-0000-000000000011",
+      "name": "Nudge logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b2000000-0000-0000-0000-000000000012",
+      "name": "Telegram: nudge",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        140,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?id=eq.{{ $('Nudge logic').item.json.leadId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ nudges_sent: $('Nudge logic').item.json.nextCount, last_nudge_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "b2000000-0000-0000-0000-000000000013",
+      "name": "Log nudge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        400
+      ]
     }
   ],
   "connections": {
@@ -210,7 +481,65 @@
       "main": [
         [
           {
+            "node": "Quick command?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quick command?": {
+      "main": [
+        [
+          {
+            "node": "Handle quick command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "AI chat turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle quick command": {
+      "main": [
+        [
+          {
+            "node": "Has flag change?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has flag change?": {
+      "main": [
+        [
+          {
+            "node": "PATCH telegram flag",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: quick reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH telegram flag": {
+      "main": [
+        [
+          {
+            "node": "Telegram: quick reply",
             "type": "main",
             "index": 0
           }
@@ -243,7 +572,7 @@
       "main": [
         [
           {
-            "node": "Fire admissions pipeline",
+            "node": "Sign pipeline payload",
             "type": "main",
             "index": 0
           }
@@ -257,11 +586,66 @@
         ]
       ]
     },
+    "Sign pipeline payload": {
+      "main": [
+        [
+          {
+            "node": "Fire admissions pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Fire admissions pipeline": {
       "main": [
         [
           {
             "node": "Telegram: confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hourly follow-up check": {
+      "main": [
+        [
+          {
+            "node": "Query nudge candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query nudge candidates": {
+      "main": [
+        [
+          {
+            "node": "Nudge logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nudge logic": {
+      "main": [
+        [
+          {
+            "node": "Telegram: nudge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: nudge": {
+      "main": [
+        [
+          {
+            "node": "Log nudge",
             "type": "main",
             "index": 0
           }

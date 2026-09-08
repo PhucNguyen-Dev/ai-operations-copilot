@@ -25,6 +25,50 @@ Test Lead form — the chatbot is just a new front door. Leads arrive with
 `source: 'telegram'`. (Email is synthesized as `<phone>.tg@lead.local` because
 the pipeline requires a valid email — flagged in the lead's message field.)
 
+## Welcome experience & quick commands
+
+- **Bot profile**: `start-bot.mjs` sets the empty-chat description
+  (`setMyDescription`) and the command menu (`setMyCommands`) at every startup —
+  idempotent, static until changed. This is the "auto pop-up" a parent sees
+  before tapping Start.
+- **Quick commands skip the AI turn** (instant, zero tokens): `/start` sends a
+  canned welcome, `/help` a menu, `/stop` an opt-out confirmation.
+- **No n8n attribution footer** on any customer-facing message
+  (`appendAttribution: false`).
+
+## Follow-up sequence (CRM-driven)
+
+A second trigger in the same workflow (`Hourly follow-up check`) runs the
+nudge engine — **trigger on inaction, not blind timers**:
+
+| Tier | When | Condition (server-side filtered) | Touches |
+|---|---|---|---|
+| 2 — Nurture | ~24h after registration | `status='new'`, chat_id set, not stopped, `nudges_sent=0` | 1 |
+| 3 — Re-engagement | ~5 days, still cold | same + `nudges_sent=1` | final |
+
+Rules baked into the logic:
+
+- **Max 2 automated touches per lead, ever.** `nudges_sent` is never reset —
+  not even by `/start` re-enable.
+- **`/stop`** sets `leads.telegram_stopped = true` (excluded by the query);
+  **`/start` re-enables** (explicit re-consent) — the `/stop` confirmation says so.
+- **Active-chat skip**: conversations active in the last 2h are never nudged
+  (`lastActiveAt` stamp on every non-command message).
+- **Messages vary per tier and per lead** (2 rotated templates × EN/VI —
+  language detected per message, stored per chat).
+- Every nudge is logged back to the lead (`nudges_sent`, `last_nudge_at` —
+  migration 009), so counselors see the automated history before calling.
+- **Race window note**: the GET-candidates → PATCH-counter pair has a small
+  double-send window at hourly cadence. Accepted at this scale; an RPC-side
+  increment is the over-engineering escape hatch.
+- **Operational bonus**: nudge sends are outbound Telegram API calls — they
+  work even in Layer 1 (`npm run n8n`, tunnel down); only *inbound* parent
+  messages need the tunnel.
+
+Chat memory lives in n8n workflow static data (`staticData.chats['chat_<id>']`,
+one map for Prepare + Resolve), including `lang`, `stopped`, `lastActiveAt`.
+
+
 ## Running the stack (two layers)
 
 | Command | What it starts | Use when |
