@@ -29,8 +29,8 @@ One system with four parts:
 2. **Role-scoped dashboards** — counselors see their assigned leads and tasks; operations sees automation
    health and full logs; the *database* enforces every boundary (Row-Level Security), not just the UI.
 3. **Department AI assistants** — Content Generator & Campaign Analyzer (Marketing), Lesson Planner &
-   Quiz Generator (Academic), Report Generator (Operations). All AI output is draft material with human
-   review built in.
+   Quiz Generator (Academic), Report Generator for reports & data analysis (Operations). All AI output
+   is draft material with human review built in.
 4. **Governance** — real tool experiments (a measured head-to-head that chose the production model), a
    scored adoption decision, per-department training designs, a workshop, and SOPs. Employees get an
    **AI Guidelines** portal; the specialist gets a **Governance** back office.
@@ -65,7 +65,9 @@ Lead in (test form / Telegram chatbot) → webhook → validate → AI analyze (
 → follow-up task → counselor notification → per-step log → dashboard
 ```
 
-A dedicated error-handler workflow catches unhandled crashes into the same log.
+A dedicated error-handler workflow catches unhandled crashes into the same log. The intake form stands
+in for **Facebook Lead Ads** — going live is one mapping branch (webhook payload → the same pipeline),
+tracked under Future Improvements.
 
 ## AI implementation
 
