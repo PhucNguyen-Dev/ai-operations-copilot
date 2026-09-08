@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
-**Current status: Phase 7 done ? (governance, F-026-F-030) and Phase 8 done ? (E2E failure-case suite 8/8, docs consolidation, UX shell, a11y pass), plus the Telegram parent chatbot (n8n workflow + launcher stack - see docs/TELEGRAM-CHATBOT.md). All 30 features complete. Post-8 hardening landed (AI response cache, swap-ready rate limiter, health observability, generation-log fix); Playwright RLS matrix is the main open item (see backlog).**
+**Current status: Phase 7 done ✅ (governance, F-026-F-030) and Phase 8 done ✅ (E2E failure-case suite 8/8, docs consolidation, UX shell, a11y pass), plus the Telegram parent chatbot (n8n workflow + launcher stack - see docs/TELEGRAM-CHATBOT.md). All 30 features complete. Post-8 hardening landed (AI response cache, swap-ready rate limiter, health observability, generation-log fix); Playwright RLS matrix is the main open item (see backlog).**
 
 ---
 
@@ -41,7 +41,7 @@ Extends the existing workflow after `CRM: insert analysis`:
 - **n8n's `{{ }}` expression parser is not real JS** for complex payloads — build big objects in a **Code node** and give the HTTP node a trivial `={{ JSON.stringify($json.rows) }}`. (This caused the `JSON parameter needs to be valid JSON` failure.)
 - **Closing a terminal does not kill n8n on Windows** — the spawned `n8n start` node process survives as an orphan holding port 5678. Use `Ctrl+C`, or `npm run push:n8n -- --kill` to clean up automatically.
 - **n8n must be started via `npm run n8n`** — starting it any other way skips the `.env` secrets, and every webhook call fails with `401 invalid webhook secret`.
-- **n8n's HTTP Request node does NOT auto-set `Content-Type: application/json`** even when `specifyBody: "json"` is used — PostgREST rejects array bodies (e.g. the `Log pipeline steps` batch insert) with a generic 400 unless the header is added explicitly. See [`fix-pipeline-content-type.md`](fix-pipeline-content-type.md) for the full post-mortem.
+- **n8n's HTTP Request node does NOT auto-set `Content-Type: application/json`** even when `specifyBody: "json"` is used — PostgREST rejects array bodies (e.g. the `Log pipeline steps` batch insert) with a generic 400 unless the header is added explicitly. See [LESSONS-LEARNED.md §3.1](LESSONS-LEARNED.md) for the full post-mortem.
 - **PostgREST bulk insert requires every row in the array to have an IDENTICAL key set** — absent fields must be explicit `null`s, not omitted keys (else: `All object keys must match`, 400). This bit us twice: once in Phase 3's `Log pipeline steps`, then again when the Phase 4 `Build step log` rewrite reintroduced it. If you add a column-like field to any row, add it to **all** rows.
 - **Match identifiers exactly across systems** — the F-013 error handler originally filtered `automation_runs` by n8n's display name (`Admissions Lead Pipeline`), but the column stores the hardcoded value `admissions-lead-pipeline`. Zero matches, no error. When a filter matches nothing, suspect an identifier mismatch first.
 - **Fix `_retryCount` propagation end-to-end or the AI retry loop never terminates** — `Count retry` increments it, but any Code node that rebuilds its output from scratch (like `Prepare AI prompt`) silently drops it. `Retry AI?` then always sees `0` and loops forever. Rule: when a node's output is built by hand, carry the loop state through explicitly.
@@ -315,13 +315,11 @@ Demo logins: `admin@` / `operations@` / `counselor@` / `marketing@` / `teacher@d
 | `FEATURES.md` | All 30 features with IDs, priorities, and live status |
 | `WEAK_POINTS_AND_RISKS.md` | Living risk register from project reviews (R-01…R-10 with status) |
 | `ARCHITECTURE.md` | Canonical architecture: components, data flow, design decisions |
-| `LESSONS-LEARNED.md` | Every error hit, symptom → root cause → lesson — the study doc || `WORKFLOW.md` | The three n8n workflows (pipeline / chatbot / error handler) + operational notes |
+| `LESSONS-LEARNED.md` | Every error hit, symptom → root cause → lesson — the study doc |
+| `WORKFLOW.md` | The three n8n workflows (pipeline / chatbot / error handler) + operational notes |
 | `AI_DESIGN.md` | AI design: model pin, per-use-case schema contracts, scoring thresholds |
 | `TELEGRAM-CHATBOT.md` | Bot runbook: two-layer stack, troubleshooting |
-| `TELEGRAM-INCIDENT-2026-09-07.md` | Post-mortem of the bot outage and the final webhook architecture |
-
 | `archive/AI Operations Copilot — Phase 1 System A.md` | Original long-form architecture (AD-1…AD-12) |
-| `archive/fix-pipeline-content-type.md` | Post-mortem: missing `Content-Type` on Supabase POSTs caused 400 on the array-body `Log pipeline steps` node |
 
 ---
 

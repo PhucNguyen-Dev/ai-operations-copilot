@@ -4,7 +4,9 @@ An internal operations platform for a (simulated) education company: an **AI rec
 student leads end-to-end**, five **AI assistants** for the staff, role-scoped dashboards, and a working
 **AI governance** practice — built as a portfolio demonstration of the AI Automation Specialist skill set.
 
-**Status:** all 30 roadmap features complete (Phases 0–7) · Phase 8 polish & docs in progress.
+**Status:** all 30 roadmap features complete (Phases 0–8) · post-8 hardening landed (AI response cache,
+swap-ready rate limiter, health observability, generation-log fix, Telegram webhook secret) · Playwright
+RLS matrix is the main open item.
 
 ![Dashboard](docs/screenshots/01-dashboard-admin.png)
 
@@ -95,11 +97,12 @@ Next.js 15 (App Router, TypeScript, Tailwind v4) · Supabase (Postgres + Auth + 
 ```bash
 npm install
 cp .env.example .env    # fill: Supabase URL/keys, GEMINI_API_KEY (free at aistudio.google.com)
-# Supabase SQL editor: run supabase/migrations/001..005, then seed.sql (+ seed_governance.sql)
+# Supabase SQL editor: run supabase/migrations/001..008, then seed.sql (+ seed_governance.sql)
 npm run seed:users      # 5 demo logins (password demo1234)
-npm run n8n             # n8n at :5678 with .env secrets loaded
 npm run push:n8n        # import workflows (n8n stopped), then Activate in the UI
 npm run dev             # app at :3000
+npm run bot             # full bot stack: cloudflared tunnel + n8n + Telegram webhook, verified
+npm run kill-stack      # emergency stop: n8n, tunnels, stray node processes
 ```
 
 Demo logins: `admin@ / operations@ / counselor@ / marketing@ / teacher@ demo.dev` — password `demo1234`.
@@ -107,11 +110,12 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 
 ## Testing
 
-- **61 unit tests** (`npm test`): AI helpers, tool schemas, app logic, rate limiting.
+- **74 unit tests** (`npm test`): AI helpers + response cache, tool schemas, app logic, rate limiter.
 - **E2E failure-case suite** (`node scripts/e2e-tests.mjs`): valid lead, invalid phone, missing fields,
   malformed email, wrong secret, duplicate leads, oversized fields, unreachable pipeline — verified against
   live Supabase. Latest results: [docs/archive/e2e-results.md](docs/archive/e2e-results.md) (8/8).
 - Integration test for the Gemini client (`npm run test:integration`).
+- Playwright auth/RLS visibility matrix (`d9c3ee1`) — the remaining open item is wiring it into CI.
 
 ## Limitations
 
@@ -121,6 +125,10 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 - No duplicate-lead dedupe yet (documented); chatbot demo runs on Telegram (Messenger/Zalo = same pattern,
   business-account gated).
 - Single environment, no multi-region/HA — deliberate non-goals for a prototype.
+- n8n pipeline writes use the service-role key (R-08, partially fixed); RLS-scoped writes need
+  `SUPABASE_JWT_SECRET` in `.env` — see [docs/WEAK_POINTS_AND_RISKS.md](docs/WEAK_POINTS_AND_RISKS.md).
+- Rate limiter + AI response cache are in-memory (single-instance); both sit behind swap-ready
+  interfaces for a multi-instance deploy.
 
 ## Future improvements
 
@@ -128,7 +136,9 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 - Registry-driven access: governance decisions granting/revoking tool access per role, with training gates
   and n8n alerting to employees (docs/archive/PHASE7-SUMMARY §10).
 - Duplicate-lead detection, prompt versioning with accuracy tracking, multi-language lead handling.
-- Deployment: Vercel + hosted n8n; HMAC webhook signing.
+- Deployment: Vercel + hosted n8n (see docs/ROADMAP.md "Path to production"); shared rate limiter /
+  cache when multi-instance; Supabase JWT Signing Keys when the legacy secret is retired.
+- Full backlog: [docs/ROADMAP.md — Future implementations](docs/ROADMAP.md).
 
 ## Document index
 
@@ -136,4 +146,5 @@ Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [
 [Architecture](docs/ARCHITECTURE.md) · [AI Design](docs/AI_DESIGN.md) · [Workflows](docs/WORKFLOW.md) ·
 [Tool Lab](docs/AI_TOOL_LAB.md) · [Tool Evaluation](docs/AI_TOOL_EVALUATION.md) · [Training](docs/TRAINING.md) ·
 [Phase 7 Summary](docs/archive/PHASE7-SUMMARY.md) · [Weak points & risks](docs/WEAK_POINTS_AND_RISKS.md) ·
-[Lessons learned](docs/LESSONS-LEARNED.md) · [Interview objections](docs/interview-objections.md) · [UX direction](docs/UX-DIRECTION.md)
+[Lessons learned](docs/LESSONS-LEARNED.md) — **the one mistakes document, every incident cataloged** ·
+[Interview objections](docs/interview-objections.md)

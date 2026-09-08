@@ -33,17 +33,17 @@ the pipeline requires a valid email — flagged in the lead's message field.)
 | `npm run bot` | Fresh tunnel + n8n + Telegram webhook, all verified | You want the chatbot live. One terminal, keep it open. |
 | `npm run kill-stack` | Emergency stop of everything (n8n ports + stray tunnels) | Anything feels "out of hand"; run this, then start fresh. |
 
-`npm run bot` performs, in order: kills stale port-5678 processes → claims the
-**fixed** tunnel URL `https://aileads-dev.loca.lt` and verifies it actually
-serves (auto-falls back to a random `.loca.lt` URL if the relay is stale) →
-starts n8n with that URL as `WEBHOOK_URL` → waits for n8n health → verifies
-the Telegram webhook (with 429 retry) → prints `✓ Bot stack ready`. If any
-layer fails it prints exactly which one and stops both children.
+`npm run bot` performs, in order: kills stale port-5678 processes → starts a
+**cloudflared quick tunnel** (free, no account; backend swappable via
+`TUNNEL_BACKEND=cloudflared|localtunnel` in `.env`) and verifies it actually
+serves → starts n8n with that URL as `WEBHOOK_URL` → waits for n8n health →
+verifies the Telegram webhook (with 429 retry) → prints `✓ Bot stack ready`.
+If any layer fails it prints exactly which one and stops both children.
 
 The startup banner is always the source of truth for the current public URL.
 That URL is for Telegram's servers only — for the editor, always use
-`http://localhost:5678` (the free relay chokes on the editor's asset burst in
-a browser). Override the subdomain with `TUNNEL_SUBDOMAIN=<name>` if needed.
+`http://localhost:5678` (quick-tunnel URLs are random per start and free
+relays choke on the editor's asset burst in a browser).
 
 ## Your steps
 
@@ -81,7 +81,7 @@ Watch the runs: each enrollment-intent chat produces a full `admissions-lead-pip
 
 For the full post-mortem of the 2026-09-07 outage (silent bot, 502 tunnels,
 429 rate limits, webhook secret race), see
-[TELEGRAM-INCIDENT-2026-09-07.md](./TELEGRAM-INCIDENT-2026-09-07.md).
+[LESSONS-LEARNED.md — Part 1](./LESSONS-LEARNED.md).
 
 - **Bot silent, no execution row in n8n** → message never reached n8n. Usually
   the tunnel is down or you're in plain `npm run n8n` mode (Telegram offline by
