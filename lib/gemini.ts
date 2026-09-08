@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cacheGet, cacheKey, cacheSet } from '@/lib/ai/cache'
+import { gatewayConfigured, gatewayGenerate } from '@/lib/gateway-client'
+import { TOOL_SCHEMAS } from '@/lib/ai/json-schemas'
 
 // =============================================================
 // R-02 — THE one AI-call convention. Every Gemini feature in this app
@@ -110,6 +112,22 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
   const fail = (error: AiError): AiResult<T> => {
     lastGeneration = { tool: opts.tool, ok: false, durationMs: Date.now() - startedAt, cached: false, at: new Date().toISOString() }
     return { ok: false, error: clientSafe(error), durationMs: Date.now() - startedAt }
+  }
+
+  // --- AI Gateway dispatch (platform service #1): when configured, the
+  // Gateway owns routing/retries/metering; the local validator still runs
+  // as the final gate inside gatewayGenerate. Static switch, no runtime
+  // auto-failover (deliberate — see lib/gateway-client.ts). ---
+  if (gatewayConfigured()) {
+    const result = await gatewayGenerate({ ...opts, schema: TOOL_SCHEMAS[opts.tool] })
+    lastGeneration = {
+      tool: opts.tool,
+      ok: result.ok,
+      durationMs: result.durationMs,
+      cached: result.ok && result.cached === true,
+      at: new Date().toISOString(),
+    }
+    return result
   }
 
   const apiKey = process.env.GEMINI_API_KEY
