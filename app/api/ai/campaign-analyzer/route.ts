@@ -68,6 +68,11 @@ export async function POST(request: NextRequest) {
       validate: validateCampaignInsights,
       temperature: 0.4,
       maxOutputTokens: 1200,
+      trace: {
+        name: 'campaign-analyzer',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         campaign_name_chars: campaignName.length,
         metrics_chars: metrics.length,

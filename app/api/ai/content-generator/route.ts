@@ -73,6 +73,11 @@ export async function POST(request: NextRequest) {
       validate: validateContentDraft,
       temperature: 0.8,
       maxOutputTokens: 800,
+      trace: {
+        name: 'content-generator',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         platform,
         tone,

@@ -164,6 +164,11 @@ export async function POST(request: NextRequest) {
       validate: validateOpsReport,
       temperature: 0.3,
       maxOutputTokens: 1500,
+      trace: {
+        name: 'report-generator',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         range_days: rangeDays,
         leads: aggregates.leadsTotal,

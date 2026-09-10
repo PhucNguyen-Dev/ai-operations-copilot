@@ -63,6 +63,11 @@ export async function POST(request: NextRequest) {
       validate: validateLessonPlan,
       temperature: 0.6,
       maxOutputTokens: 1500,
+      trace: {
+        name: 'lesson-planner',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         level,
         subject_chars: subject.length,

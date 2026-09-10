@@ -61,6 +61,11 @@ export async function POST(request: NextRequest) {
       validate: validateQuiz,
       temperature: 0.7,
       maxOutputTokens: 2000,
+      trace: {
+        name: 'quiz-generator',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         topic_chars: topic.length,
         difficulty,
