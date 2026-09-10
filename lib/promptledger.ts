@@ -17,6 +17,10 @@
 // =============================================================
 
 import committedReportGenerator from '@/prompts/report-generator.json'
+import committedCampaignAnalyzer from '@/prompts/campaign-analyzer.json'
+import committedContentGenerator from '@/prompts/content-generator.json'
+import committedLessonPlanner from '@/prompts/lesson-planner.json'
+import committedQuizGenerator from '@/prompts/quiz-generator.json'
 
 const TIMEOUT_MS = 10_000
 const TTL_MS = 60_000
@@ -52,6 +56,14 @@ export function committedPrompt(name: string): string {
   switch (name) {
     case 'report-generator':
       return committedReportGenerator.system
+    case 'campaign-analyzer':
+      return committedCampaignAnalyzer.system
+    case 'content-generator':
+      return committedContentGenerator.system
+    case 'lesson-planner':
+      return committedLessonPlanner.system
+    case 'quiz-generator':
+      return committedQuizGenerator.system
     default:
       throw new PromptLedgerError('PL_NO_LIVE', `no committed prompt for "${name}"`, false)
   }

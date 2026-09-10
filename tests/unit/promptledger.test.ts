@@ -7,6 +7,10 @@ import {
   resetPromptLedgerCache,
 } from '@/lib/promptledger'
 import committedReportGenerator from '@/prompts/report-generator.json'
+import committedCampaignAnalyzer from '@/prompts/campaign-analyzer.json'
+import committedContentGenerator from '@/prompts/content-generator.json'
+import committedLessonPlanner from '@/prompts/lesson-planner.json'
+import committedQuizGenerator from '@/prompts/quiz-generator.json'
 
 // PromptLedger adapter with mocked fetch — verifies error-code mapping
 // (fail closed when configured), the committed fallback when unconfigured,
@@ -137,5 +141,17 @@ describe('getSystemPrompt — unconfigured (committed fallback)', () => {
   it('throws PL_NO_LIVE for a name with no committed prompt', () => {
     delete process.env.PROMPTLEDGER_URL
     expect(() => committedPrompt('no-such-prompt')).toThrow(PromptLedgerError)
+  })
+
+  it('every owned tool has a non-empty committed prompt (all 5 routes wired)', () => {
+    const owned = ['report-generator', 'campaign-analyzer', 'content-generator', 'lesson-planner', 'quiz-generator']
+    for (const name of owned) {
+      expect(committedPrompt(name), name).toBeTruthy()
+      expect(committedPrompt(name).length, name).toBeGreaterThan(50)
+    }
+    expect(committedPrompt('campaign-analyzer')).toBe(committedCampaignAnalyzer.system)
+    expect(committedPrompt('content-generator')).toBe(committedContentGenerator.system)
+    expect(committedPrompt('lesson-planner')).toBe(committedLessonPlanner.system)
+    expect(committedPrompt('quiz-generator')).toBe(committedQuizGenerator.system)
   })
 })

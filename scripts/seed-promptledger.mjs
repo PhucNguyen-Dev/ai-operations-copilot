@@ -33,6 +33,19 @@ if (!apiKey) {
   process.exit(1)
 }
 
+// Latest registered text for a prompt, or null when never registered.
+// Lets re-runs be idempotent: identical content is skipped instead of
+// minting a byte-identical new version every time the script runs.
+async function latestText(name) {
+  const res = await fetch(`${baseUrl}/api/prompts/${APP}/${name}/latest`, {
+    headers: { 'x-api-key': apiKey },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`checking ${name} failed (HTTP ${res.status})`)
+  const json = await res.json()
+  return typeof json.text === 'string' ? json.text : null
+}
+
 async function logPrompt({ name, text, note }) {
   const res = await fetch(`${baseUrl}/api/prompts`, {
     method: 'POST',
@@ -56,6 +69,11 @@ for (const file of files) {
   const name = file.replace(/\.json$/, '')
   const { system } = JSON.parse(readFileSync(join(promptsDir, file), 'utf-8'))
   try {
+    const existing = await latestText(name)
+    if (existing === system) {
+      console.log(`${APP}/${name} already up to date (identical latest) — skip`)
+      continue
+    }
     const saved = await logPrompt({ name, text: system, note: `seeded from repo ${file} (committed copy)` })
     console.log(`registered ${APP}/${name} v${saved.version} (${saved.status})`)
   } catch (e) {
