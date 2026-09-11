@@ -291,7 +291,7 @@ exactly this. Until deployed, these stay documented decisions.
 
 ## Satellite platform — roadmap for future sessions (2026-09-07)
 
-The Copilot is the first consumer of a planned **platform of specialized
+The Copilot is the first consumer of a live **platform of specialized
 AI services** that integrate over APIs — deliberately NOT shared-database
 satellites (schema coupling at scale is a nightmare). Each satellite is its
 own repo with its own DB; integration is versioned REST + API keys.
@@ -300,7 +300,8 @@ own repo with its own DB; integration is versioned REST + API keys.
 
 | # | Service | Purpose | API surface (draft) |
 |---|---|---|---|
-| A | **AI Gateway** (satellite #1 — planned, new repo `ai-gateway`) | Single metered entry point for every LLM call: multi-provider routing (gemini + openai-compatible), per-key quotas, cost metering, caching, prompt-version pinning. Productizes the Copilot's `lib/gemini.ts` convention | `POST /v1/generate` · `GET /v1/usage` · `GET /v1/health` |
+| A | **AI Gateway** (satellite #1 — BUILT (separate repo; Copilot adapter wired, dormant via commented AI_GATEWAY_URL)) | Single metered entry point for every LLM call: multi-provider routing (gemini + openai-compatible), per-key quotas, cost metering, caching, prompt-version pinning. Productizes the Copilot's `lib/gemini.ts` convention | `POST /v1/generate` · `GET /v1/usage` · `GET /v1/health` |
+| B | **PromptLedger** (satellite #2 - BUILT & LIVE) | Registry-owned prompts: every AI tool route, the pipeline qualification prompt, and the email/chat prompts fetch their LIVE system prompt at runtime (lib/promptledger.ts + prompts/ fallbacks); fail-closed on registry errors; run traces + token usage emitted to POST /api/runs | GET /v1/prompts/:tool · run-trace sink |
 | B | **Eval & Replay Studio** | Golden-set regression: same input → old vs new model/prompt, diff schema-pass rate/latency/cost/quality, promote/rollback verdicts | `POST /v1/runs` · `POST /v1/compare` |
 | C | **Event Bus / Webhook Relay** | Durable inter-project events (lead.created, run.failed, approval.requested) with retries + DLQ — kills the tunnel-inbound fragility pattern | `POST /v1/events` · subscriptions API |
 | D | **HITL Approval Service** | Generic approve/reject + audit trail + timeout escalation, served via Telegram + web — unlocks real email sends safely | `POST /v1/approvals` · decision API |
@@ -329,10 +330,11 @@ client-safe errors — ported from `lib/gemini.ts`).
 
 Stages: **G0** scaffold + own DB + `/v1/health` · **G1** Gemini adapter +
 routing table · **G2** API-key auth + request metering · **G3**
-`POST /v1/generate` + `GET /v1/usage` · **G4** Copilot migration (thin
+`POST /v1/generate` + `GET /v1/usage` · **G4** Copilot migration - DONE (thin
 `lib/gateway-client.ts`, env-flag fallback — zero-risk rollout) · **G5** cost
 metering + usage dashboard · **G6** `openai-compatible` adapter (multi-LLM
-note fulfilled; Ollama-ready) · **G7** docs + consumer onboarding guide.
+routing fulfilled AT THE GATEWAY layer - the Copilot stays
+provider-agnostic by design) · **G7** docs + consumer onboarding guide.
 Session-one scope: G0–G3. Scope guards: no streaming/A-B UI/multi-tenant/
 events in v1; n8n stays on direct Gemini.
 
@@ -350,7 +352,7 @@ metered. Do NOT add agentic routing to the pipeline or fixed tools.
 ### Prerequisite note
 
 Token-usage capture: log Gemini `usageMetadata` (prompt/candidate counts —
-present in every response, currently discarded) into `ai_generations`.
+present in every response) - CAPTURED into run traces (ac1a687)) into `ai_generations`.
 ~15 lines; unlocks cost-per-run dashboards and cost-aware eval scoring.
 ## Key commands
 
