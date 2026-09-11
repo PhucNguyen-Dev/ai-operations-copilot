@@ -82,6 +82,8 @@ export async function runAiTool<T>(
     latencyMs: result.ok ? result.durationMs : Date.now() - startedAt,
     ok: result.ok,
     error: result.ok ? null : `${result.error.code}: ${result.error.message}`,
+    tokensIn: result.ok ? (result.usage?.promptTokens ?? null) : null,
+    tokensOut: result.ok ? (result.usage?.completionTokens ?? null) : null,
   })
 
   // --- generation log (best-effort; success and failure both recorded) ---

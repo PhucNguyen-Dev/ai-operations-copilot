@@ -32,8 +32,10 @@ export type AiError = {
   retryable: boolean
 }
 
+export type AiUsage = { promptTokens: number | null; completionTokens: number | null }
+
 export type AiResult<T> =
-  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean }
+  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean; usage?: AiUsage | null }
   | { ok: false; error: AiError; durationMs: number }
 
 export type ValidationResult<T> =
@@ -237,11 +239,20 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     }
 
     const modelVersion = (json as { modelVersion?: string })?.modelVersion ?? model
+    const usageMeta = (json as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } })
+      ?.usageMetadata
+    const usage: AiUsage | null = usageMeta
+      ? {
+          promptTokens: typeof usageMeta.promptTokenCount === 'number' ? usageMeta.promptTokenCount : null,
+          completionTokens: typeof usageMeta.candidatesTokenCount === 'number' ? usageMeta.candidatesTokenCount : null,
+        }
+      : null
     const result2 = {
       ok: true as const,
       data: result.data,
       model: modelVersion.replace(/^models\//, ''),
       durationMs: Date.now() - startedAt,
+      usage,
     }
     lastGeneration = { tool: opts.tool, ok: true, durationMs: result2.durationMs, cached: false, at: new Date().toISOString() }
     cacheSet(key, result2.data)

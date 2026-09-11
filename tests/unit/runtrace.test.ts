@@ -34,7 +34,7 @@ describe('traceAiRun', () => {
     traceAiRun(baseTrace)
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('http://127.0.0.1:4747/api/runs')
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>)['x-api-key']).toBe('plk_x')

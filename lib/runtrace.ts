@@ -24,6 +24,9 @@ export type RunTrace = {
   ok: boolean
   /** Error code/message when ok=false. */
   error?: string | null
+  /** Token usage when the provider reported it (Gemini usageMetadata). */
+  tokensIn?: number | null
+  tokensOut?: number | null
 }
 
 const TRACE_TIMEOUT_MS = 3_000
@@ -41,6 +44,8 @@ export function traceAiRun(trace: RunTrace): void {
     input: trace.input,
     output: trace.output,
     latency_ms: trace.latencyMs,
+    tokens_in: trace.tokensIn ?? null,
+    tokens_out: trace.tokensOut ?? null,
     ok: trace.ok,
     error: trace.error ?? null,
   })
