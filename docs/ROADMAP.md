@@ -286,6 +286,72 @@ The code architecture is scale-ready; the deployment is the work. Honest map:
 
 No app rewrite is required for any of it — the swap points were built for
 exactly this. Until deployed, these stay documented decisions.
+
+---
+
+## Satellite platform — roadmap for future sessions (2026-09-07)
+
+The Copilot is the first consumer of a planned **platform of specialized
+AI services** that integrate over APIs — deliberately NOT shared-database
+satellites (schema coupling at scale is a nightmare). Each satellite is its
+own repo with its own DB; integration is versioned REST + API keys.
+
+### Tier 1 — platform core (build order)
+
+| # | Service | Purpose | API surface (draft) |
+|---|---|---|---|
+| A | **AI Gateway** (satellite #1 — planned, new repo `ai-gateway`) | Single metered entry point for every LLM call: multi-provider routing (gemini + openai-compatible), per-key quotas, cost metering, caching, prompt-version pinning. Productizes the Copilot's `lib/gemini.ts` convention | `POST /v1/generate` · `GET /v1/usage` · `GET /v1/health` |
+| B | **Eval & Replay Studio** | Golden-set regression: same input → old vs new model/prompt, diff schema-pass rate/latency/cost/quality, promote/rollback verdicts | `POST /v1/runs` · `POST /v1/compare` |
+| C | **Event Bus / Webhook Relay** | Durable inter-project events (lead.created, run.failed, approval.requested) with retries + DLQ — kills the tunnel-inbound fragility pattern | `POST /v1/events` · subscriptions API |
+| D | **HITL Approval Service** | Generic approve/reject + audit trail + timeout escalation, served via Telegram + web — unlocks real email sends safely | `POST /v1/approvals` · decision API |
+
+### Tier 2 — intelligence layer (reads Tier 1 streams)
+
+| # | Service | Purpose |
+|---|---|---|
+| E | **Failure Intelligence** | Consumes failure events; clusters patterns (429 storms, schema drift, auth rot); morning digest with suggested fixes |
+| F | **Ops Copilot (meta)** | An LLM answering ops questions over these APIs: "why did run X fail?", "which tool burned quota this week?" |
+| G | **Control Plane UI** | Fleet health, spend, eval reports, approvals inbox — thin dashboard over the APIs |
+
+### Tier 3 — delivery assets
+
+Demo Factory (use-case → n8n skeleton + sample data + diagram + ROI sheet) ·
+Local-First Sandbox (docker-compose: Ollama + Gateway + n8n + vector DB —
+trivial once the Gateway ships an `openai-compatible` adapter) ·
+Client Onboarding Kit.
+
+### AI Gateway build plan (satellite #1 — locked)
+
+New repo `ai-gateway`, public, portfolio-framed; **own Supabase project**
+(`api_keys`, `requests`, `routing`); Next.js API routes; stack and conventions
+identical to the Copilot (JSON mode, truncation-aware retry, schema gate,
+client-safe errors — ported from `lib/gemini.ts`).
+
+Stages: **G0** scaffold + own DB + `/v1/health` · **G1** Gemini adapter +
+routing table · **G2** API-key auth + request metering · **G3**
+`POST /v1/generate` + `GET /v1/usage` · **G4** Copilot migration (thin
+`lib/gateway-client.ts`, env-flag fallback — zero-risk rollout) · **G5** cost
+metering + usage dashboard · **G6** `openai-compatible` adapter (multi-LLM
+note fulfilled; Ollama-ready) · **G7** docs + consumer onboarding guide.
+Session-one scope: G0–G3. Scope guards: no streaming/A-B UI/multi-tenant/
+events in v1; n8n stays on direct Gemini.
+
+### Agentic function-calling — recommendation (not scheduled)
+
+The Copilot deliberately has NO tool calling / agent orchestration: every
+decision is deterministic code ("the model proposes, code disposes") —
+auditable and predictable by design. If agentic behavior is ever wanted,
+the **Telegram chatbot is the sandbox** (only surface with free-form input):
+register tools (`lookupCourses`, `checkLeadStatus`, `createTask`), let the
+model route, gate every tool result with the same schema discipline. Route
+it through the AI Gateway (`/v1/agent` + tool registry) so agent runs are
+metered. Do NOT add agentic routing to the pipeline or fixed tools.
+
+### Prerequisite note
+
+Token-usage capture: log Gemini `usageMetadata` (prompt/candidate counts —
+present in every response, currently discarded) into `ai_generations`.
+~15 lines; unlocks cost-per-run dashboards and cost-aware eval scoring.
 ## Key commands
 
 | Command | What it does |
