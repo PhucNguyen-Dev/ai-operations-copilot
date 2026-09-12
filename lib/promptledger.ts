@@ -91,12 +91,17 @@ function baseUrl(): string {
  * `{ source: 'live', ... }` or, when PromptLedger is not configured,
  * `{ source: 'committed' }`. Configured-but-broken throws
  * PromptLedgerError — the route decides how loudly to fail (fail closed).
+ *
+ * Pass `environment: 'staging'` to opt into the staging pointer for
+ * trials: when staging is unset the server falls back to live, so trial
+ * start/end requires zero consumer code changes.
  */
 export async function getSystemPrompt(args: {
   app: string
   name: string
+  environment?: 'staging'
 }): Promise<{ source: PromptSource; version: number | null; text: string }> {
-  const { app, name } = args
+  const { app, name, environment } = args
   const url = process.env.PROMPTLEDGER_URL
 
   if (!url) {
@@ -107,7 +112,7 @@ export async function getSystemPrompt(args: {
     return { source: 'committed', version: null, text: committedPrompt(name) }
   }
 
-  const cacheKey = `${app}/${name}`
+  const cacheKey = `${app}/${name}${environment ? `@${environment}` : ''}`
   const hit = cache.get(cacheKey)
   if (hit && hit.expiresAt >= Date.now()) {
     return { source: 'live', version: hit.value.version, text: hit.value.text }
@@ -116,10 +121,15 @@ export async function getSystemPrompt(args: {
   const apiKey = process.env.PROMPTLEDGER_API_KEY
   let res: Response
   try {
-    res = await fetch(`${baseUrl()}/api/prompts/${encodeURIComponent(app)}/${encodeURIComponent(name)}/live`, {
-      headers: apiKey ? { 'x-api-key': apiKey } : {},
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
+    res = await fetch(
+      `${baseUrl()}/api/prompts/${encodeURIComponent(app)}/${encodeURIComponent(name)}/live${
+        environment ? `?environment=${encodeURIComponent(environment)}` : ''
+      }`,
+      {
+        headers: apiKey ? { 'x-api-key': apiKey } : {},
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }
+    )
   } catch (e) {
     cache.delete(cacheKey)
     throw new PromptLedgerError(
