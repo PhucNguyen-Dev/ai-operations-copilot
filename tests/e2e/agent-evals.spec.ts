@@ -25,14 +25,16 @@ const FAKE_LEAD = '00000000-0000-0000-0000-000000000000'
 
 function loadEnv(): Record<string, string> {
   // NOTE: no import.meta here — it breaks Playwright's CJS transform.
-  // Optional: env vars from the environment (CI secrets) take precedence;
-  // a missing .env is fine.
+  // Precedence: process env (GitHub Actions secrets) > .env file > nothing.
   const env: Record<string, string> = {}
+  for (const key of ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GEMINI_API_KEY', 'GMAIL_AGENT_DRY_RUN']) {
+    if (process.env[key]) env[key] = process.env[key] as string
+  }
   try {
     const raw = readFileSync(resolve(process.cwd(), '.env'), 'utf8')
     for (const line of raw.split(/\r?\n/)) {
       const eq = line.indexOf('=')
-      if (eq > 0) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+      if (eq > 0 && !env[line.slice(0, eq).trim()]) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
     }
   } catch {
     /* no .env file — rely on process env */
