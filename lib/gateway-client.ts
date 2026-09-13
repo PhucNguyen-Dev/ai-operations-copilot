@@ -67,7 +67,7 @@ export async function gatewayGenerate<T>(
     temperature: opts.temperature,
     maxOutputTokens: opts.maxOutputTokens,
   })
-  const hit = cacheGet(key)
+  const hit = await cacheGet(key)
   if (hit.hit) {
     return {
       ok: true,
@@ -156,7 +156,7 @@ export async function gatewayGenerate<T>(
     durationMs: Date.now() - startedAt,
     cached: json.meta?.cached === true,
   }
-  cacheSet(key, result.data)
+  await cacheSet(key, result.data)
   return result
 }
 

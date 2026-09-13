@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Guardrail: bounded number of runs per user per window (9.6).
-  const limit = rateLimiter.check(`agent-run:${userId}`, 5, 60_000)
+  const limit = await rateLimiter.check(`agent-run:${userId}`, 5, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many agent runs — try again in ${limit.retryAfterSec}s.` },

@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Field "external_id" is required (the source system\'s stable lead id) — it is the idempotency key' }, { status: 422 })
   }
 
-  const limit = rateLimiter.check(`lead-webhook:${source}`, 60, 60_000)
+  const limit = await rateLimiter.check(`lead-webhook:${source}`, 60, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Rate limit exceeded — retry after ${limit.retryAfterSec}s` },

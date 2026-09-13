@@ -50,7 +50,7 @@ export async function runAiTool<T>(
   }
 
   // --- rate limit (R-05): every AI call is a paid Gemini request ---
-  const limit = rateLimiter.check(`ai:${userId}`, 10, 60_000)
+  const limit = await rateLimiter.check(`ai:${userId}`, 10, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many generations — try again in ${limit.retryAfterSec}s.` },

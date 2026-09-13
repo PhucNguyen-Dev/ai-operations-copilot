@@ -1,15 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { cacheGet, cacheKey, cacheSet, resetCache } from '@/lib/ai/cache'
 
+// Milestone H: cacheGet/cacheSet are async (Postgres or memory backend).
+// Unit tests pin the MEMORY implementation via CACHE_BACKEND=memory so
+// they never depend on env/database availability.
+
+process.env.CACHE_BACKEND = 'memory'
+
 describe('AI response cache (lib/ai/cache)', () => {
   beforeEach(() => resetCache())
   afterEach(() => vi.useRealTimers())
 
-  it('miss on empty store, hit after set', () => {
+  it('miss on empty store, hit after set', async () => {
     const key = cacheKey({ tool: 't', model: 'm', system: 's', user: 'u' })
-    expect(cacheGet(key).hit).toBe(false)
-    cacheSet(key, { a: 1 })
-    const res = cacheGet(key)
+    expect((await cacheGet(key)).hit).toBe(false)
+    await cacheSet(key, { a: 1 })
+    const res = await cacheGet(key)
     expect(res.hit).toBe(true)
     expect(res.value).toEqual({ a: 1 })
   })
@@ -29,24 +35,24 @@ describe('AI response cache (lib/ai/cache)', () => {
     expect(a).not.toBe(c)
   })
 
-  it('expired entries are treated as misses (TTL)', () => {
+  it('expired entries are treated as misses (TTL)', async () => {
     vi.useFakeTimers()
     const key = cacheKey({ tool: 't', model: 'm', system: 's', user: 'u' })
-    cacheSet(key, 'v')
+    await cacheSet(key, 'v')
     vi.setSystemTime(Date.now() + 10 * 60_000 + 1)
-    expect(cacheGet(key).hit).toBe(false)
+    expect((await cacheGet(key)).hit).toBe(false)
   })
 
-  it('evicts the oldest entry when the cap is reached', () => {
+  it('evicts the oldest entry when the cap is reached', async () => {
     const keys: string[] = []
     for (let i = 0; i < 50; i++) {
       const k = cacheKey({ tool: 't', model: 'm', system: 's', user: `u${i}` })
       keys.push(k)
-      cacheSet(k, i)
+      await cacheSet(k, i)
     }
     // Inserting #51 evicts keys[0] (oldest, never re-read)
-    cacheSet(cacheKey({ tool: 't', model: 'm', system: 's', user: 'overflow' }), 'x')
-    expect(cacheGet(keys[0]).hit).toBe(false)
-    expect(cacheGet(keys[1]).hit).toBe(true)
+    await cacheSet(cacheKey({ tool: 't', model: 'm', system: 's', user: 'overflow' }), 'x')
+    expect((await cacheGet(keys[0])).hit).toBe(false)
+    expect((await cacheGet(keys[1])).hit).toBe(true)
   })
 })

@@ -147,7 +147,7 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     temperature: opts.temperature,
     maxOutputTokens: opts.maxOutputTokens,
   })
-  const hit = cacheGet(key)
+  const hit = await cacheGet(key)
   if (hit.hit) {
     const durationMs = Date.now() - startedAt
     lastGeneration = { tool: opts.tool, ok: true, durationMs, cached: true, at: new Date().toISOString() }
@@ -255,7 +255,7 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
       usage,
     }
     lastGeneration = { tool: opts.tool, ok: true, durationMs: result2.durationMs, cached: false, at: new Date().toISOString() }
-    cacheSet(key, result2.data)
+    await cacheSet(key, result2.data)
     return result2
   }
 

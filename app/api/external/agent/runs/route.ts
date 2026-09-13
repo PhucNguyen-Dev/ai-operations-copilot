@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   const agent = getAgent(agentId)
   if (!agent) return NextResponse.json({ error: `Unknown agent "${agentId}"` }, { status: 400 })
 
-  const limit = rateLimiter.check(`ext-agent-run:${client.client_id}`, client.max_runs_per_hour, 3_600_000)
+  const limit = await rateLimiter.check(`ext-agent-run:${client.client_id}`, client.max_runs_per_hour, 3_600_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Rate limit exceeded (${client.max_runs_per_hour} runs/hour) — retry after ${limit.retryAfterSec}s` },
