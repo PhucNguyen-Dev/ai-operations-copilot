@@ -13,7 +13,10 @@
 import { readFileSync } from 'node:fs'
 import { chunkText, toPgVectorLiteral } from './knowledge-chunk.mjs'
 
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-004'
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'gemini-embedding-001'
+// Matches the knowledge_chunks column (vector(768)); the model natively
+// emits 3072 dims and truncates via outputDimensionality.
+const EMBEDDING_DIMS = 768
 const SIMILARITY_SANITY_MIN = -1 // sanity floor; no filtering at ingest time
 
 function loadEnv() {
@@ -34,7 +37,11 @@ async function embed(text, apiKey) {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`, {
     method: 'POST',
     headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: `models/${EMBEDDING_MODEL}`, content: { parts: [{ text: text.slice(0, 8000) }] } }),
+      body: JSON.stringify({
+        model: `models/${EMBEDDING_MODEL}`,
+        content: { parts: [{ text: text.slice(0, 8000) }] },
+        outputDimensionality: EMBEDDING_DIMS,
+      }),
     signal: AbortSignal.timeout(30_000),
   })
   if (!res.ok) throw new Error(`embedding HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)

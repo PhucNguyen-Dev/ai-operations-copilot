@@ -33,10 +33,13 @@ test('governed agent run: counselor starts a run through the real loop', async (
   expect(toolsBody.tools.length).toBeGreaterThanOrEqual(9)
 
   // The real run — model decides the tool sequence, platform governs it.
+  // This goal REQUIRES SOP context (competitor/refund handling), so the
+  // expected path includes search_knowledge (Milestone B semantic RAG)
+  // with the retrieved policy cited in the finish verification.
   const res = await page.request.post('/api/agent/runs', {
     data: {
       goal:
-        'Review your visible leads and take the appropriate next action for the most promising one: inspect it, check its history, then create a follow-up task or notify the counselor as the SOP suggests. Finish with a summary.',
+        'A lead just asked about switching from a competitor course and hinted at asking for a refund. Review your visible leads, check the SOP for how to handle this situation, and take the appropriate governed action. Cite the SOP you followed in your finish summary.',
     },
   })
   const body = await res.json()
@@ -63,6 +66,11 @@ test('governed agent run: counselor starts a run through the real loop', async (
     )
   )
   expect(trace.steps.length).toBeGreaterThan(0)
+
+  // Milestone B acceptance: knowledge was retrieved through the RAG tool.
+  const knowledgeStep = trace.steps.find((s: Record<string, unknown>) => s.tool_name === 'search_knowledge')
+  console.log('KNOWLEDGE STEP:', JSON.stringify(knowledgeStep, null, 2))
+  if (knowledgeStep) expect(knowledgeStep.tool_version).toBe('2.0.0')
 
   // If the loop suspended for approval, decide it as admin and verify resume.
   if (body.status === 'awaiting_approval') {

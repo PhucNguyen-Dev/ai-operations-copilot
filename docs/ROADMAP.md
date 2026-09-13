@@ -222,7 +222,7 @@ Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-
 | Milestone | Scope | Status |
 |---|---|---|
 | **A — Governed runtime + reference scenario** | Registry, run state, trace, permissions, guardrails/approval/kill switch, runtime loop, first tools, REST front door (spec items 9.1–9.6 built together) | 🚧 Code complete |
-| B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | Pending |
+| B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | ✅ Done (verified live 2026-09-13: SOP-citation run — semantic retrieval of the competitor/refund SOP drove a governed escalation; migration 011 + `npm run ingest:knowledge`) |
 | C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | Pending |
 | D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | Pending |
 | E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | Pending (REST) |
@@ -248,6 +248,16 @@ Key design decisions: runtime lives **inside the Next.js app** (no new service);
 4. Kill switch check (manual): `update agent_runtime_config set kill_switch = true;` → new runs fail with `KILL_SWITCH` before any model call.
 
 Gotcha fixed during verification: this Gemini generation returns `thought_signature` on functionCall parts and REQUIRES it echoed back on replay — the runtime therefore persists the RAW model parts per step (`feedback_snapshot.modelParts`) and replays them verbatim instead of rebuilding model turns from name+args.
+
+### Milestone B — governed RAG (done + verified live 2026-09-13)
+
+- **Migration `011_knowledge_rag.sql`**: pgvector, `knowledge_chunks` (`vector(768)`, HNSW cosine index, unique per doc+index), RLS mirroring the parent doc, and `match_knowledge_chunks(query_embedding, match_count, p_role)` — the role scope (`allowed_roles` contains 'all' or the caller's role) is enforced in SQL; the tool re-checks (defense in depth).
+- **`generateEmbedding()`** in `lib/gemini.ts` — `gemini-embedding-001` (the retired `text-embedding-004` is 404 on current keys) with `outputDimensionality: 768` pinned to the column; same error conventions as every AI call.
+- **`npm run ingest:knowledge`** (`scripts/ingest-knowledge.mjs` + pure `scripts/knowledge-chunk.mjs` shared with the unit tests): docs → ~800-char overlapping chunks → embed → replace doc's chunks. Re-runnable; fails loudly.
+- **`search_knowledge` v2.0.0** — same contract (role scope, citations, content-is-data), now semantic: embed query → cosine match ≥ 0.3 → top-3 cited chunks; the v1 ILIKE search remains as automatic keyword fallback when embeddings are unavailable or empty.
+- **Verified live**: agent goal mentioning competitor/refund → `search_knowledge` retrieved the exact SOP ("escalate when the lead mentions competitor comparison or refund") via vector match, then notified the counselor per the SOP and cited it in `finish.verification`. 7 steps, ~30k tokens.
+
+Gotchas: `text-embedding-004` no longer exists on current API keys — use `gemini-embedding-001` + `outputDimensionality: 768`. And Windows orphan lesson strikes again: a `TaskStop`/terminal close can leave `node.exe` holding :3000 — check `netstat -ano | grep :3000` and `taskkill //PID <pid> //F` before assuming the server restarted with fresh code.
 
 ---
 

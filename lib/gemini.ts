@@ -427,7 +427,9 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
 
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
-  const model = process.env.EMBEDDING_MODEL || 'text-embedding-004'
+  // gemini-embedding-001 natively emits 3072 dims; outputDimensionality
+  // truncates to the 768 the knowledge_chunks column was created with.
+  const model = process.env.EMBEDDING_MODEL || 'gemini-embedding-001'
 
   // The embedding API rejects very long inputs; chunks are ~800 chars,
   // queries are short — this cap is only a safety net.
@@ -441,7 +443,11 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
       response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`, {
         method: 'POST',
         headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: `models/${model}`, content: { parts: [{ text: input }] } }),
+        body: JSON.stringify({
+          model: `models/${model}`,
+          content: { parts: [{ text: input }] },
+          outputDimensionality: EMBEDDING_DIMENSIONS,
+        }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       })
     } catch (e) {
