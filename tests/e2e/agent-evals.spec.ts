@@ -25,11 +25,17 @@ const FAKE_LEAD = '00000000-0000-0000-0000-000000000000'
 
 function loadEnv(): Record<string, string> {
   // NOTE: no import.meta here — it breaks Playwright's CJS transform.
-  const raw = readFileSync(resolve(process.cwd(), '.env'), 'utf8')
+  // Optional: env vars from the environment (CI secrets) take precedence;
+  // a missing .env is fine.
   const env: Record<string, string> = {}
-  for (const line of raw.split(/\r?\n/)) {
-    const eq = line.indexOf('=')
-    if (eq > 0) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+  try {
+    const raw = readFileSync(resolve(process.cwd(), '.env'), 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const eq = line.indexOf('=')
+      if (eq > 0) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+    }
+  } catch {
+    /* no .env file — rely on process env */
   }
   return env
 }

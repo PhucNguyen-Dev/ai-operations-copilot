@@ -10,10 +10,16 @@
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
-// Minimal .env loader (no dependency needed)
-for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').split('\n')) {
-  const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/)
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+// Minimal .env loader (no dependency needed) — optional: env vars from
+// the environment (e.g. GitHub Actions secrets) take precedence, and a
+// missing .env is fine in CI.
+try {
+  for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/)
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+  }
+} catch {
+  /* no .env file — rely on process env */
 }
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
