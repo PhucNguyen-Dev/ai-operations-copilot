@@ -288,12 +288,15 @@ export type AgentTurnAiResult =
       ok: true
       calls: GeminiFunctionCall[]
       /**
-       * Raw model parts containing functionCall, IN ORDER (parallel to
-       * `calls`). These can carry provider fields like thought_signature
-       * that MUST be echoed back when the conversation is replayed —
-       * the runtime never rebuilds model turns from name+args alone.
+       * Requestable raw parts of the model's turn (functionCall parts
+       * plus plain text parts; thought-only parts excluded). These can
+       * carry provider fields like thought_signature that MUST be
+       * echoed back when the conversation is replayed — the runtime
+       * persists the FULL turn parts and replays them verbatim, never
+       * rebuilding model turns from name+args alone (signatures are
+       * sometimes attached to sibling parts, not the functionCall).
        */
-      callParts: Record<string, unknown>[]
+      turnParts: Record<string, unknown>[]
       text: string | null
       model: string
       durationMs: number
@@ -368,8 +371,14 @@ export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTu
       (json as { candidates?: { content?: { parts?: Record<string, unknown>[] } }[] })?.candidates?.[0]?.content
         ?.parts ?? []
     ) as Record<string, unknown>[]
-    const callParts = rawParts.filter(
-      (p) => p && typeof p === 'object' && (p as { functionCall?: unknown }).functionCall
+    // Requestable = has a functionCall, or is plain text (thought-only
+    // parts must not be sent back in request history).
+    const turnParts = rawParts.filter(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        ((p as { functionCall?: unknown }).functionCall ||
+          (typeof (p as { text?: unknown }).text === 'string' && !(p as { thought?: unknown }).thought))
     )
     const calls = extractFunctionCalls(json)
     const text = extractText(json)
@@ -392,7 +401,7 @@ export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTu
     return {
       ok: true,
       calls,
-      callParts,
+      turnParts,
       text: text?.trim() ? text : null,
       model: modelVersion,
       durationMs: Date.now() - startedAt,

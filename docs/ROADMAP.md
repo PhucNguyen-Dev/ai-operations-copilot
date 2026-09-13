@@ -223,7 +223,7 @@ Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-
 |---|---|---|
 | **A — Governed runtime + reference scenario** | Registry, run state, trace, permissions, guardrails/approval/kill switch, runtime loop, first tools, REST front door (spec items 9.1–9.6 built together) | 🚧 Code complete |
 | B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | ✅ Done (verified live 2026-09-13: SOP-citation run — semantic retrieval of the competitor/refund SOP drove a governed escalation; migration 011 + `npm run ingest:knowledge`) |
-| C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | Pending |
+| C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | ✅ Done (verified live 2026-09-13: 9/9 scenarios pass — `npm run evals:agent` → `test-results/agent-evals.json`) |
 | D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | Pending |
 | E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | Pending (REST) |
 | F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | Pending |
@@ -258,6 +258,15 @@ Gotcha fixed during verification: this Gemini generation returns `thought_signat
 - **Verified live**: agent goal mentioning competitor/refund → `search_knowledge` retrieved the exact SOP ("escalate when the lead mentions competitor comparison or refund") via vector match, then notified the counselor per the SOP and cited it in `finish.verification`. 7 steps, ~30k tokens.
 
 Gotchas: `text-embedding-004` no longer exists on current API keys — use `gemini-embedding-001` + `outputDimensionality: 768`. And Windows orphan lesson strikes again: a `TaskStop`/terminal close can leave `node.exe` holding :3000 — check `netstat -ano | grep :3000` and `taskkill //PID <pid> //F` before assuming the server restarted with fresh code.
+
+### Milestone C — agent behavior evaluation (done + verified live 2026-09-13)
+
+- **Versioned scenario set** `tests/e2e/agent-eval-scenarios.json` (v1.0.0, 9 cases): straightforward lead, missing-info no-invention, unknown-lead bounded stop, disabled-tool denial + re-plan, real-send approval flow (approve → resume → execute), prompt injection inside a retrieved doc, duplicate protection, kill switch, wrong-role 403. Assertions are tolerant of model variance: allowed/forbidden tool SETS + required final status, never exact sequences.
+- **Pure scorer** `tests/e2e/helpers/agent-eval-score.mjs` — maps a run trace to `{pass, violations[], toolCalls, tokens}`; unit-tested (162 suite green). Runner: `tests/e2e/agent-evals.spec.ts` (opt-in via `AGENT_EVALS=1`), fixtures created/torn down per run via service-key REST, results artifact `test-results/agent-evals.json` with scenario-set version + pass rate + token spend. **Run: `npm run evals:agent` — scheduled/on-demand, never per-PR.**
+- **Two runtime hardenings that fell out of the evals** (exactly what evals are for):
+  1. **Per-turn conversation replay**: Gemini sometimes returns a functionCall WITHOUT its `thought_signature` on the call part (the signature rides on sibling parts) — replaying only the call part gets HTTP 400. The runtime now persists the FULL requestable part list of each model turn (grouped by a `turnId` inside `feedback_snapshot`) and replays it verbatim.
+  2. **Repeat-call loop guard** (`REPEAT_CALL_LIMIT` in guardrails): the 3rd consecutive identical call (same tool + args) is refused with `REPEATED_CALL` feedback instead of executing — an eval run caught the model burning its step budget re-observing the same lead 4×.
+- Also: `POST /api/agent/runs` accepts `requireApproval: true` (requester opts INTO the approval gate for real-send mode — can only add governance, never remove it); eval runs upsert the kill-switch row to `false` at START (never trust the previous run's cleanup).
 
 ---
 

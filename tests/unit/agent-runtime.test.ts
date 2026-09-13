@@ -146,6 +146,27 @@ describe('agent runtime — governed loop (9.2)', () => {
     expect(run?.completed_at).toBeTruthy()
   })
 
+  it('refuses the third consecutive identical call and forces progress (9.6 loop guard)', async () => {
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'echo', args: { message: 'same' } }] },
+      { calls: [{ name: 'echo', args: { message: 'same' } }] },
+      { calls: [{ name: 'echo', args: { message: 'same' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'acted on results', verification: 'guard feedback observed' } }] },
+    ])
+
+    const out = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+
+    expect(out.status).toBe('completed')
+    const steps = await store.listSteps(out.runId)
+    const repeated = steps.filter((s) => s.status === 'denied' && (s.error ?? '').includes('REPEATED_CALL'))
+    expect(repeated.length).toBe(1)
+    // Only two identical calls were actually executed; the third was refused.
+    expect(steps.filter((s) => s.tool_name === 'echo' && s.status === 'success').length).toBe(2)
+    // The refusal was fed back and the model moved on to finish.
+    const fb = (repeated[0].feedback_snapshot as { response: { result: { reason: string } } }).response.result
+    expect(fb.reason).toContain('REPEATED_CALL')
+  })
+
   it('kill switch blocks execution before any model turn (9.6)', async () => {
     const { store, model, deps } = await happyDeps([{ calls: [] }])
     store.killSwitch = true

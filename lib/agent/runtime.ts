@@ -2,9 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { traceAiRun } from '@/lib/runtrace'
 import { getAgent, type AgentDefinition } from '@/lib/agent/agents'
 import {
+  callSignature,
   clampTurnCalls,
   DEFAULT_GUARDRAIL_LIMITS,
   evaluateRunGuards,
+  REPEAT_CALL_LIMIT,
   refusalFeedback,
   type GuardrailLimits,
 } from '@/lib/agent/guardrails'
@@ -185,7 +187,7 @@ export async function resumeAgentRun(
       return failRun(deps, run, `approved arguments no longer valid: ${revalidated.errors.join('; ')}`, state)
     }
     const ctx = buildCtx(deps, run, run.user_role)
-    const executed = await executeToolCall(deps, run, tool, revalidated.data as never, ctx, state, approval.id, [])
+    const executed = await executeToolCall(deps, run, tool, revalidated.data as never, ctx, state, approval.id, null, [])
     await deps.store.updateRun(run.id, { status: 'running' })
     if ('terminal' in executed) return executed.terminal
   }
@@ -240,16 +242,30 @@ async function driveRun(
     lastModel: null,
   }
   let textNudges = 0
+  let lastCallSignature: string | null = null
+  let repeatCount = 0
 
   // --- reconstruct the conversation from the durable trace (9.3:
-  // resume-safe). A fresh run has no steps, so both paths share this. ---
+  // resume-safe). A fresh run has no steps, so both paths share this.
+  // Steps are grouped by turnId: one model content (the FULL raw turn
+  // parts, thought_signature included) followed by each call's
+  // function response. ---
   const priorSteps = await store.listSteps(run.id)
   const contents: AgentContent[] = [userTextPart(run.goal)]
+  let lastTurnId: string | null = null
   for (const step of priorSteps) {
     if (step.kind !== 'tool_call' || !step.tool_name) continue
     const fb = asFeedback(step.feedback_snapshot)
     if (!fb) continue
-    if (fb.modelParts?.length) contents.push(modelPartsContent(fb.modelParts))
+    if (fb.turnId) {
+      if (fb.turnId !== lastTurnId) {
+        contents.push(modelPartsContent(fb.modelParts ?? []))
+        lastTurnId = fb.turnId
+      }
+    } else if (fb.modelParts?.length) {
+      // Legacy per-call shape (pre-turn-grouping rows).
+      contents.push(modelPartsContent(fb.modelParts))
+    }
     if (fb.response != null) contents.push(functionResponsePart(step.tool_name, fb.response))
   }
 
@@ -318,9 +334,10 @@ async function driveRun(
     }
     textNudges = 0
 
-    // Raw provider parts, parallel to turn.calls — replayed verbatim so
-    // provider fields (thought_signature) survive.
-    const callParts = turn.callParts ?? []
+    // One conversation group per model turn: the FULL raw requestable
+    // parts (thought_signature included) are replayed verbatim.
+    const turnId = crypto.randomUUID()
+    const turnParts = turn.turnParts ?? []
     const { honored, skipped } = clampTurnCalls(turn.calls, limits)
     if (skipped > 0) {
       await store.recordStep({
@@ -344,10 +361,45 @@ async function driveRun(
 
     for (let ci = 0; ci < honored.length; ci++) {
       const call = honored[ci]
-      const rawPart = callParts[ci] ?? { functionCall: { name: call.name, args: call.args } }
 
       if (state.stepCount >= run.max_steps) {
         return failRun(deps, run, `STEP_LIMIT: step limit reached (${run.max_steps})`, state)
+      }
+
+      // --- loop guard (9.6): refuse the (N+1)th consecutive identical
+      // call — observation loops burn budget without changing state. ---
+      const signature = callSignature(call.name, call.args)
+      if (signature === lastCallSignature) {
+        repeatCount += 1
+      } else {
+        repeatCount = 1
+        lastCallSignature = signature
+      }
+      if (repeatCount > REPEAT_CALL_LIMIT) {
+        const reason = `REPEATED_CALL: identical call to ${call.name} already made ${REPEAT_CALL_LIMIT} times — use the results you already have, take a different action, or finish/escalate`
+        const wrapper: FeedbackPayload = { modelParts: turnParts, turnId, response: refusalFeedback(reason) }
+        await store.recordStep({
+          run_id: run.id,
+          kind: 'tool_call',
+          tool_name: call.name,
+          tool_version: getTool(call.name, registry)?.version ?? null,
+          permission_decision: 'denied',
+          status: 'denied',
+          approval_id: null,
+          args_snapshot: call.args,
+          result_summary: null,
+          feedback_snapshot: wrapper,
+          error: reason,
+          latency_ms: null,
+          tokens_in: 0,
+          tokens_out: 0,
+          finished_at: new Date().toISOString(),
+        })
+        state.stepCount += 1
+        contents.push(modelPartsContent(turnParts))
+        contents.push(functionResponsePart(call.name, wrapper.response))
+        await persistProgress({})
+        continue
       }
 
       const tool = getTool(call.name, registry)
@@ -357,7 +409,7 @@ async function driveRun(
         const reason = tool
           ? `INVALID_ARGUMENTS: ${(validation as { errors: string[] }).errors.join('; ')}`
           : `UNKNOWN_TOOL: ${call.name} is not registered`
-        const wrapper: FeedbackPayload = { modelParts: [rawPart], response: refusalFeedback(reason) }
+        const wrapper: FeedbackPayload = { modelParts: turnParts, turnId, response: refusalFeedback(reason) }
         await store.recordStep({
           run_id: run.id,
           kind: 'tool_call',
@@ -376,7 +428,7 @@ async function driveRun(
           finished_at: new Date().toISOString(),
         })
         state.stepCount += 1
-        contents.push(modelPartsContent(wrapper.modelParts!))
+        contents.push(modelPartsContent(turnParts))
         contents.push(functionResponsePart(call.name, wrapper.response))
         await persistProgress({})
         continue
@@ -393,7 +445,7 @@ async function driveRun(
       })
 
       if (perm.decision === 'denied') {
-        const wrapper: FeedbackPayload = { modelParts: [rawPart], response: refusalFeedback(perm.reason) }
+        const wrapper: FeedbackPayload = { modelParts: turnParts, turnId, response: refusalFeedback(perm.reason) }
         await store.recordStep({
           run_id: run.id,
           kind: 'tool_call',
@@ -412,7 +464,7 @@ async function driveRun(
           finished_at: new Date().toISOString(),
         })
         state.stepCount += 1
-        contents.push(modelPartsContent(wrapper.modelParts!))
+        contents.push(modelPartsContent(turnParts))
         contents.push(functionResponsePart(call.name, wrapper.response))
         await persistProgress({})
         continue
@@ -427,7 +479,8 @@ async function driveRun(
           const resource = await tool.checkResource(ctx, validation.data)
           if (!resource.ok) {
             const wrapper: FeedbackPayload = {
-              modelParts: [rawPart],
+              modelParts: turnParts,
+              turnId,
               response: refusalFeedback(`RESOURCE_DENIED: ${resource.reason}`),
             }
             await store.recordStep({
@@ -448,14 +501,14 @@ async function driveRun(
               finished_at: new Date().toISOString(),
             })
             state.stepCount += 1
-            contents.push(modelPartsContent(wrapper.modelParts!))
+            contents.push(modelPartsContent(turnParts))
             contents.push(functionResponsePart(call.name, wrapper.response))
             await persistProgress({})
             continue
           }
         }
         // 9.6 protocol: propose → persist → suspend. The run resumes
-        // through resumeAgentRun after a human decision. The model-call
+        // through resumeAgentRun after a human decision. The full turn
         // parts are persisted now; the response is written by the
         // resume path (approved execution / rejection feedback).
         await store.recordStep({
@@ -468,7 +521,7 @@ async function driveRun(
           approval_id: null,
           args_snapshot: validation.data,
           result_summary: null,
-          feedback_snapshot: { modelParts: [rawPart], response: null } satisfies FeedbackPayload,
+          feedback_snapshot: { modelParts: turnParts, turnId, response: null } satisfies FeedbackPayload,
           error: null,
           latency_ms: null,
           tokens_in: 0,
@@ -505,10 +558,11 @@ async function driveRun(
         ctx,
         state,
         null,
-        [rawPart]
+        turnId,
+        turnParts
       )
       if ('terminal' in executed) return executed.terminal
-      contents.push(modelPartsContent([rawPart]))
+      contents.push(modelPartsContent(turnParts))
       contents.push(functionResponsePart(call.name, executed.response))
       await persistProgress({})
     }
@@ -535,7 +589,8 @@ async function executeToolCall(
   ctx: ToolContext,
   state: LoopState,
   approvalId: string | null,
-  modelParts: Record<string, unknown>[]
+  turnId: string | null,
+  turnParts: Record<string, unknown>[]
 ): Promise<ExecutionOutcome> {
   const store = deps.store
   state.stepCount += 1
@@ -546,6 +601,13 @@ async function executeToolCall(
     outcome = await withTimeout(tool.execute(ctx, args), tool.timeoutMs, false)
   }
   const latencyMs = Date.now() - started
+
+  const wrapper: FeedbackPayload = {
+    // turnId/turnParts are empty on the approved-resume path — the turn
+    // content is already persisted on the approval step.
+    ...(turnId ? { modelParts: turnParts, turnId } : {}),
+    response: null as unknown,
+  }
 
   const recordAndReturn = async (
     stepStatus: 'success' | 'failed',
@@ -563,7 +625,7 @@ async function executeToolCall(
       approval_id: approvalId,
       args_snapshot: args,
       result_summary: resultSummary,
-      feedback_snapshot: { modelParts, response } satisfies FeedbackPayload,
+      feedback_snapshot: { ...wrapper, response } satisfies FeedbackPayload,
       error,
       latency_ms: latencyMs,
       tokens_in: 0,
@@ -603,7 +665,7 @@ async function executeToolCall(
       args_snapshot: args,
       // Control tools carry their own outcome text — record the args.
       result_summary: args,
-      feedback_snapshot: { modelParts, response: { result: { ok: true, data: outValidation.data } } } satisfies FeedbackPayload,
+      feedback_snapshot: { ...wrapper, response: { result: { ok: true, data: outValidation.data } } } satisfies FeedbackPayload,
       error: null,
       latency_ms: latencyMs,
       tokens_in: 0,
@@ -644,7 +706,7 @@ async function executeToolCall(
     args_snapshot: args,
     result_summary: outValidation.data,
     feedback_snapshot: {
-      modelParts,
+      ...wrapper,
       response: { result: { ok: true, data: outValidation.data } },
     } satisfies FeedbackPayload,
     error: null,

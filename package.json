@@ -13,6 +13,7 @@
     "seed:users": "node scripts/seed-users.mjs",
     "n8n": "node scripts/start-n8n.mjs",
     "ingest:knowledge": "node scripts/ingest-knowledge.mjs",
+    "evals:agent": "node scripts/run-agent-evals.mjs",
     "bot": "node scripts/start-bot.mjs",
     "kill-stack": "node scripts/kill-stack.mjs",
     "push:n8n": "node scripts/validate-n8n.mjs && node scripts/push-workflow.mjs"

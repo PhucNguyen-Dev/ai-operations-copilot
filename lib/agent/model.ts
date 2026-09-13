@@ -26,8 +26,8 @@ export type AgentTurnOutput =
   | {
       ok: true
       calls: AgentFunctionCall[]
-      /** Raw provider parts per call, in order (preserves thought_signature etc.). */
-      callParts: Record<string, unknown>[]
+      /** Raw requestable parts of the WHOLE model turn (preserves thought_signature etc.). */
+      turnParts: Record<string, unknown>[]
       text: string | null
       model: string
       durationMs: number
@@ -54,7 +54,7 @@ export const geminiAgentModel: AgentModel = {
     return {
       ok: true,
       calls: result.calls,
-      callParts: result.callParts,
+      turnParts: result.turnParts,
       text: result.text,
       model: result.model,
       durationMs: result.durationMs,
@@ -66,17 +66,19 @@ export const geminiAgentModel: AgentModel = {
 }
 
 // -------------------------------------------------------------
-// Conversation building helpers. The runtime persists the raw model
-// call parts (thought_signature included) and the exact function
-// response in each step's feedback_snapshot, so a resumed run
-// rebuilds the conversation byte-for-byte faithfully.
+// Conversation building helpers. The runtime persists the FULL raw
+// parts of each model turn (thought_signature included) plus the
+// exact function responses in each step's feedback_snapshot, so a
+// resumed run rebuilds the conversation byte-for-byte faithfully.
 // NOTE: function responses ride on role 'user' in the v1beta REST
 // (roles are user|model only); this is the documented pattern.
 // -------------------------------------------------------------
 
 export type FeedbackPayload = {
-  /** Raw model functionCall parts (provider-native, order matters). */
+  /** Raw requestable parts of the model turn these steps belong to. */
   modelParts?: Record<string, unknown>[]
+  /** Identifies the model turn — steps of one turn share it. */
+  turnId?: string
   /** The functionResponse payload the model received (or will receive). */
   response: unknown
 }

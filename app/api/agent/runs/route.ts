@@ -42,9 +42,17 @@ export async function POST(request: NextRequest) {
   if ('response' in session) return session.response
   const { userId, role } = session
 
-  const body = (await request.json().catch(() => null)) as { goal?: unknown; agentId?: unknown } | null
+  const body = (await request.json().catch(() => null)) as {
+    goal?: unknown
+    agentId?: unknown
+    requireApproval?: unknown
+  } | null
   const goal = typeof body?.goal === 'string' ? body.goal.trim() : ''
   const agentId = typeof body?.agentId === 'string' && body.agentId ? body.agentId : 'admissions-followup'
+  // Requesters may opt INTO the approval gate (real-send mode) for
+  // high-risk tools — a flag that can only ADD governance, never
+  // remove it (the default stays dry-run-allowed).
+  const requireApproval = body?.requireApproval === true
   if (goal.length < 5 || goal.length > 2000) {
     return NextResponse.json({ error: 'Field "goal" is required (5-2000 chars)' }, { status: 400 })
   }
@@ -75,7 +83,10 @@ export async function POST(request: NextRequest) {
   if ('error' in deps) return deps.error
 
   try {
-    const output = await startAgentRun(deps, { agentId, userId, userRole: role, goal })
+    const output = await startAgentRun(
+      { ...deps, dryRunEmail: !requireApproval },
+      { agentId, userId, userRole: role, goal }
+    )
     return NextResponse.json(output, { status: 200 })
   } catch (e) {
     console.error('[api/agent/runs] POST failed:', e)

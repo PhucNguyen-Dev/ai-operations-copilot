@@ -61,3 +61,15 @@ export function clampTurnCalls<T>(calls: T[], limits: GuardrailLimits): { honore
 export function refusalFeedback(message: string): { result: { ok: false; refused: true; reason: string } } {
   return { result: { ok: false, refused: true, reason: message } }
 }
+
+/**
+ * Loop guard: how many CONSECUTIVE identical calls (same tool + args)
+ * are allowed before the runtime refuses with REPEATED_CALL feedback.
+ * Observation loops burn budget without changing state — the refusal
+ * forces the model to act on what it has or finish/escalate.
+ */
+export const REPEAT_CALL_LIMIT = 2
+
+export function callSignature(name: string, args: unknown): string {
+  return `${name}:${JSON.stringify(args ?? {})}`
+}

@@ -127,7 +127,7 @@ export class FakeAgentModel implements AgentModel {
     return {
       ok: true as const,
       calls,
-      callParts: calls.map((c) => ({ functionCall: { name: c.name, args: c.args } })),
+      turnParts: calls.map((c) => ({ functionCall: { name: c.name, args: c.args } })),
       text: turn.text ?? null,
       model: 'fake-model',
       durationMs: 1,
