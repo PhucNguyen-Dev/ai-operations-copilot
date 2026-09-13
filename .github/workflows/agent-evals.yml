@@ -1,0 +1,69 @@
+# =============================================================
+# Agent behavior evaluation — scheduled, NEVER per-PR (9.8).
+# The 9 real-Gemini scenarios (tests/e2e/agent-evals.spec.ts) run
+# against the real Supabase project: a failing scenario is a behavior
+# regression and turns the build red. Nightly + manual dispatch.
+# Cost note: each run spends ~60-100k Gemini tokens — that is exactly
+# why this is a schedule, not a pull-request gate.
+#
+# Required repo secrets:
+#   GEMINI_API_KEY, NEXT_PUBLIC_SUPABASE_URL,
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# =============================================================
+
+name: agent-evals
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # nightly 02:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: agent-evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      AI_MODEL: gemini-3.5-flash-lite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Seed demo users (idempotent)
+        run: npm run seed:users
+
+      - name: Start app
+        run: |
+          npm run dev &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/api/health > /dev/null; then echo "app up"; exit 0; fi
+            sleep 2
+          done
+          echo "app did not become healthy" && exit 1
+
+      - name: Run agent behavior evals
+        run: npm run evals:agent
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evals-results
+          path: test-results/agent-evals.json
+          if-no-files-found: warn
