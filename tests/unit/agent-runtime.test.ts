@@ -212,6 +212,59 @@ describe('agent runtime — governed loop (9.2)', () => {
   })
 })
 
+describe('agent runtime — multi-agent handoff (9.12)', () => {
+  it('delegates to a specialist and returns its outcome; child run is correlated to the parent', async () => {
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'delegate_to_agent', args: { agent_id: 'test-specialist', task: 'Report on the leads' } }] },
+      // The specialist consumes the NEXT turn while the parent is suspended inside the tool.
+      { calls: [{ name: 'echo', args: { message: 'report data' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'report: 3 leads', verification: 'echo observed' } }] },
+      // Back in the parent: it finishes with the delegated result.
+      { calls: [{ name: 'finish', args: { summary: 'used specialist report: report: 3 leads', verification: 'delegation result observed' } }] },
+    ])
+
+    const out = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+
+    expect(out.status).toBe('completed')
+    expect(out.finalOutcome).toContain('report: 3 leads')
+    const steps = await store.listSteps(out.runId)
+    const delegateStep = steps.find((s) => s.tool_name === 'delegate_to_agent')
+    expect(delegateStep?.status).toBe('success')
+    expect((delegateStep?.result_summary as { child_run_id: string; status: string }).status).toBe('completed')
+
+    // Child run exists, is correlated to the parent, and ran under the same principal.
+    const childRuns = [...store.runs.values()].filter((r) => r.agent_id === 'test-specialist')
+    expect(childRuns.length).toBe(1)
+    expect(childRuns[0].current_state).toMatchObject({ parent_run_id: out.runId })
+    expect(childRuns[0].user_id).toBe('user-1')
+  })
+
+  it('structurally blocks recursive delegation — the specialist has no delegation tool', async () => {
+    // The parent delegates; INSIDE the child run the specialist requests
+    // delegate_to_agent — a valid call, but the tool is not in the
+    // specialist's allowlist, so the permission engine denies it and the
+    // denial is fed back. The parent still finishes with the report.
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'delegate_to_agent', args: { agent_id: 'test-specialist', task: 'Report on the leads' } }] },
+      { calls: [{ name: 'delegate_to_agent', args: { agent_id: 'test-specialist', task: 'Delegate this onward please' } }] },
+      { calls: [{ name: 'echo', args: { message: 'specialist was denied' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'report: 3 leads', verification: 'echo observed' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'used specialist report: report: 3 leads', verification: 'delegation result observed' } }] },
+    ])
+
+    const out = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+    expect(out.status).toBe('completed')
+
+    // Inside the specialist's own run, the delegation attempt is recorded as denied.
+    const specialistRuns = [...store.runs.values()].filter((r) => r.agent_id === 'test-specialist')
+    expect(specialistRuns.length).toBe(1)
+    const specialistSteps = await store.listSteps(specialistRuns[0].id)
+    const denied = specialistSteps.find((s) => s.tool_name === 'delegate_to_agent')
+    expect(denied?.status).toBe('denied')
+    expect(denied?.error).toContain('AGENT_NOT_AUTHORIZED')
+  })
+})
+
 describe('agent runtime — approval protocol (9.6)', () => {
   it('suspends for approval, executes on approval, and stays fully traceable', async () => {
     const store = new MemoryAgentStore()

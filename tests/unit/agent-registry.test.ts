@@ -25,10 +25,20 @@ describe('tool registry integrity (9.1)', () => {
       'notify_counselor',
       'prepare_email',
       'search_knowledge',
+      'delegate_to_agent',
       'escalate_to_human',
       'finish',
     ]) {
       expect(AGENT_TOOLS[name], `missing tool ${name}`).toBeTruthy()
+    }
+  })
+
+  it('bounds delegation depth structurally (9.12): child agents cannot delegate', () => {
+    // Only the parent agent carries the delegation tool.
+    expect(AGENT_TOOLS['delegate_to_agent'].allowedAgents).toEqual(['admissions-followup'])
+    const childAgents = ['reporting-agent', 'external-lead-support']
+    for (const child of childAgents) {
+      expect(AGENTS[child].allowedTools).not.toContain('delegate_to_agent')
     }
   })
 

@@ -47,6 +47,18 @@ export type ToolContext = {
   adminClient: SupabaseClient
   /** When false, the prepare_email tool requires human approval (real-send mode). */
   dryRunEmail: boolean
+  /**
+   * Runtime-injected delegation capability (9.12) — only present for
+   * agents permitted to delegate; the runtime enforces the child
+   * allowlist, the parent/child correlation and the depth bound.
+   */
+  delegate?: (input: { agentId: string; task: string }) => Promise<{
+    ok: boolean
+    childRunId: string
+    status: string
+    outcome: string | null
+    error: string | null
+  }>
 }
 
 /**

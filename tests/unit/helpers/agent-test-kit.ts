@@ -160,7 +160,7 @@ export const echoTool: ToolDefinition<{ message: string }, { echo: string }> = {
   version: '1.0.0',
   description: 'Returns the message it was given.',
   riskLevel: 'read',
-  allowedAgents: ['test-agent'],
+  allowedAgents: ['test-agent', 'test-specialist'],
   allowedRoles: ['admissions'],
   parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
   validateInput(args) {
@@ -185,7 +185,7 @@ export const boomTool: ToolDefinition<Record<string, never>, Record<string, neve
   version: '1.0.0',
   description: 'Always fails permanently.',
   riskLevel: 'write',
-  allowedAgents: ['test-agent'],
+  allowedAgents: ['test-agent', 'test-specialist'],
   allowedRoles: ['admissions'],
   parameters: { type: 'object', properties: {} },
   validateInput: () => ({ ok: true, data: {} }),
@@ -202,7 +202,7 @@ export const draftTool: ToolDefinition<{ text: string }, { draft_id: string }> =
   version: '1.0.0',
   description: 'High-risk test tool that requires approval outside dry-run mode.',
   riskLevel: 'external_side_effect',
-  allowedAgents: ['test-agent'],
+  allowedAgents: ['test-agent', 'test-specialist'],
   allowedRoles: ['admissions'],
   parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
   validateInput(args) {
@@ -226,7 +226,7 @@ export const testEscalateTool: ToolDefinition<{ reason: string }, { notified_use
   version: '1.0.0',
   description: 'Escalation control tool (pure test double).',
   riskLevel: 'write',
-  allowedAgents: ['test-agent'],
+  allowedAgents: ['test-agent', 'test-specialist'],
   allowedRoles: ['admissions'],
   parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] },
   validateInput(args) {
@@ -252,7 +252,7 @@ export const testFinishTool: ToolDefinition<{ summary: string; verification: str
   version: '1.0.0',
   description: 'Finish control tool (pure test double, scoped to the test agent).',
   riskLevel: 'read',
-  allowedAgents: ['test-agent'],
+  allowedAgents: ['test-agent', 'test-specialist'],
   allowedRoles: ['admissions'],
   parameters: {
     type: 'object',
@@ -274,8 +274,39 @@ export const testFinishTool: ToolDefinition<{ summary: string; verification: str
   },
 }
 
+export const testDelegateTool: ToolDefinition<{ agent_id: string; task: string }, { child_run_id: string; status: string; outcome: string | null }> = {
+  name: 'delegate_to_agent',
+  version: '1.0.0',
+  description: 'Delegation control (pure test double backed by ctx.delegate).',
+  riskLevel: 'write',
+  allowedAgents: ['test-agent', 'test-specialist'],
+  allowedRoles: ['admissions'],
+  parameters: { type: 'object', properties: { agent_id: { type: 'string' }, task: { type: 'string' } }, required: ['agent_id', 'task'] },
+  validateInput(args) {
+    const a = (args ?? {}) as { agent_id?: unknown; task?: unknown }
+    if (a.agent_id !== 'test-specialist' || typeof a.task !== 'string' || a.task.length < 10) {
+      return { ok: false, errors: ['agent_id must be test-specialist and task 10-1000 chars'] }
+    }
+    return { ok: true, data: { agent_id: a.agent_id as string, task: a.task as string } }
+  },
+  validateOutput(result) {
+    const r = result as { child_run_id?: unknown; status?: unknown }
+    return typeof r?.child_run_id === 'string' && typeof r?.status === 'string'
+      ? { ok: true, data: r as { child_run_id: string; status: string; outcome: string | null } }
+      : { ok: false, errors: ['child_run_id and status required'] }
+  },
+  timeoutMs: 1_000,
+  idempotency: 'non_idempotent',
+  async execute(ctx, args) {
+    if (!ctx.delegate) return { ok: false, error: 'DELEGATION_UNAVAILABLE', retryable: false }
+    const child = await ctx.delegate({ agentId: args.agent_id, task: args.task })
+    if (!child.ok) return { ok: false, error: `DELEGATION_FAILED: ${child.status}`, retryable: false }
+    return { ok: true, result: { child_run_id: child.childRunId, status: child.status, outcome: child.outcome } }
+  },
+}
+
 export const TEST_TOOLS: Record<string, ToolDefinition<never, never>> = Object.fromEntries(
-  [echoTool, boomTool, draftTool, testEscalateTool, testFinishTool].map((t) => [t.name, t as unknown as ToolDefinition<never, never>])
+  [echoTool, boomTool, draftTool, testEscalateTool, testFinishTool, testDelegateTool].map((t) => [t.name, t as unknown as ToolDefinition<never, never>])
 )
 
 export const TEST_AGENT: AgentDefinition = {
@@ -283,8 +314,21 @@ export const TEST_AGENT: AgentDefinition = {
   displayName: 'Test Agent',
   description: 'Unit-test agent',
   allowedRoles: ['admissions'],
-  allowedTools: ['echo', 'boom', 'make_draft', 'escalate_to_human', 'finish'],
+  allowedTools: ['echo', 'boom', 'make_draft', 'escalate_to_human', 'finish', 'delegate_to_agent'],
   systemPrompt: 'test system prompt',
 }
 
-export const TEST_AGENTS: Record<string, AgentDefinition> = { 'test-agent': TEST_AGENT }
+/** The specialist child agent — deliberately has NO delegation tool. */
+export const TEST_SPECIALIST: AgentDefinition = {
+  id: 'test-specialist',
+  displayName: 'Test Specialist',
+  description: 'Unit-test child agent',
+  allowedRoles: [],
+  allowedTools: ['echo', 'finish'],
+  systemPrompt: 'test specialist prompt',
+}
+
+export const TEST_AGENTS: Record<string, AgentDefinition> = {
+  'test-agent': TEST_AGENT,
+  'test-specialist': TEST_SPECIALIST,
+}

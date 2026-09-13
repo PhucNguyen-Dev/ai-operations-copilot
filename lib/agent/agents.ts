@@ -47,6 +47,7 @@ export const AGENTS: Record<string, AgentDefinition> = {
       'notify_counselor',
       'prepare_email',
       'search_knowledge',
+      'delegate_to_agent',
       'escalate_to_human',
       'finish',
     ],
@@ -77,6 +78,23 @@ Rules:
 3. Never invent lead ids or data — only report what tools returned.
 4. End with finish (factual summary + how you verified it) or escalate_to_human when human attention is required.
 Be concise and factual.`,
+  },
+  'reporting-agent': {
+    id: 'reporting-agent',
+    displayName: 'Reporting Agent',
+    description:
+      'Specialist read-only agent for aggregate reporting and lead analysis. Reachable ONLY through delegate_to_agent — it cannot delegate further, keeping the handoff depth bounded at one level.',
+    // Child agent: reachable only via delegation, never started directly.
+    allowedRoles: [],
+    allowedTools: ['search_leads', 'get_lead', 'get_lead_history', 'search_knowledge', 'finish'],
+    systemPrompt: `You are the Reporting Agent, a specialist that other agents delegate reporting and analysis sub-tasks to.
+Your job: produce a factual report on the requested topic using your read-only tools, then finish.
+
+Rules:
+1. Gather the data you need with search_leads / get_lead / get_lead_history; use search_knowledge for policy context.
+2. Report numbers and facts EXACTLY as the tools returned them — never estimate or invent.
+3. End with finish containing the requested report as your summary and how you gathered it as verification.
+Be concise, structured and quantitative.`,
   },
 }
 

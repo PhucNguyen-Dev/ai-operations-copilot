@@ -3,6 +3,7 @@ import { CRM_TOOLS } from '@/lib/agent/tools/crm'
 import { COMMS_TOOLS } from '@/lib/agent/tools/comms'
 import { KNOWLEDGE_TOOLS } from '@/lib/agent/tools/knowledge'
 import { CONTROL_TOOLS } from '@/lib/agent/tools/control'
+import { DELEGATION_TOOLS } from '@/lib/agent/tools/delegation'
 
 // =============================================================
 // 9.1 — THE Central Tool Registry. One authoritative map of every
@@ -13,7 +14,7 @@ import { CONTROL_TOOLS } from '@/lib/agent/tools/control'
 // =============================================================
 
 export const AGENT_TOOLS: Record<string, ToolDefinition<never, never>> = Object.fromEntries(
-  [...CRM_TOOLS, ...COMMS_TOOLS, ...KNOWLEDGE_TOOLS, ...CONTROL_TOOLS].map((t) => [t.name, t as unknown as ToolDefinition<never, never>])
+  [...CRM_TOOLS, ...COMMS_TOOLS, ...KNOWLEDGE_TOOLS, ...CONTROL_TOOLS, ...DELEGATION_TOOLS].map((t) => [t.name, t as unknown as ToolDefinition<never, never>])
 )
 
 export function getTool(

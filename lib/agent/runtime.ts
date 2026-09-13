@@ -81,7 +81,15 @@ type LoopState = {
 
 export async function startAgentRun(
   deps: RuntimeDeps,
-  input: { agentId: string; userId: string; userRole: string; goal: string; clientId?: string }
+  input: {
+    agentId: string
+    userId: string
+    userRole: string
+    goal: string
+    clientId?: string
+    /** 9.12 multi-agent handoff: set on child runs for trace correlation. */
+    parentRunId?: string
+  }
 ): Promise<AgentRunOutput> {
   const agent = getAgent(input.agentId, deps.agents)
   if (!agent) return immediateFailure(input.agentId, `unknown agent ${input.agentId}`)
@@ -96,7 +104,7 @@ export async function startAgentRun(
       client_id: input.clientId ?? null,
       goal: input.goal,
       status: 'running',
-      current_state: {},
+      current_state: input.parentRunId ? { parent_run_id: input.parentRunId } : {},
       step_count: 0,
       max_steps: limits.maxSteps,
       tokens_in: 0,
@@ -214,6 +222,26 @@ function buildCtx(deps: RuntimeDeps, run: AgentRunRecord, userRole: string): Too
     userClient: deps.userClient,
     adminClient: deps.adminClient,
     dryRunEmail: deps.dryRunEmail ?? process.env.GMAIL_AGENT_DRY_RUN !== 'false',
+    // 9.12 — bounded delegation, injected only when this agent's
+    // allowlist includes delegate_to_agent. Recursion is structurally
+    // impossible: child agents do not carry the delegation tool, and
+    // the child run records its parent for trace correlation.
+    delegate: async (input: { agentId: string; task: string }) => {
+      const child = await startAgentRun(deps, {
+        agentId: input.agentId,
+        userId: run.user_id,
+        userRole,
+        goal: `[delegation from ${run.agent_id}] ${input.task}`,
+        parentRunId: run.id,
+      })
+      return {
+        ok: child.status === 'completed' || child.status === 'escalated',
+        childRunId: child.runId,
+        status: child.status,
+        outcome: child.finalOutcome,
+        error: child.error,
+      }
+    },
   }
 }
 
@@ -676,7 +704,7 @@ async function executeToolCall(
     await store.updateRun(run.id, {
       status: newStatus,
       final_outcome: outcomeText,
-      current_state: { last_tool: tool.name },
+      current_state: { ...run.current_state, last_tool: tool.name },
       completed_at: new Date().toISOString(),
       // Terminal paths bypass persistProgress — carry the final counters.
       step_count: state.stepCount,
@@ -716,7 +744,7 @@ async function executeToolCall(
     tokens_out: 0,
     finished_at: new Date().toISOString(),
   })
-  await store.updateRun(run.id, { current_state: { last_tool: tool.name } })
+  await store.updateRun(run.id, { current_state: { ...run.current_state, last_tool: tool.name } })
   return { response: { result: { ok: true, data: outValidation.data } } }
 }
 
