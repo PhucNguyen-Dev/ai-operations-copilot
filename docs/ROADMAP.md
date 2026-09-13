@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
-**Current status: Phase 7 done ✅ (governance, F-026-F-030) and Phase 8 done ✅ (E2E failure-case suite 8/8, docs consolidation, UX shell, a11y pass), plus the Telegram parent chatbot (n8n workflow + launcher stack - see docs/TELEGRAM-CHATBOT.md). All 30 features complete. Post-8 hardening landed (AI response cache, swap-ready rate limiter, health observability, generation-log fix); Playwright RLS matrix is the main open item (see backlog).**
+**Current status: Phases 0–8 all done ✅ (30 features, Telegram chatbot, post-8 hardening). Phase 9 (Agentic Core Upgrade, `PHASE_9_AGENTIC_CORE_UPGRADE.md`) is in progress: Milestone A — the governed agent runtime (tool registry, durable run state, execution trace, permission engine, guardrails/approval/kill switch, first tool set, REST front door) — is code-complete with 142 unit tests green; runtime verification needs migration 010 + `SUPABASE_SERVICE_ROLE_KEY` (see the Phase 9 section below). Milestones B–H pending.**
 
 ---
 
@@ -21,6 +21,7 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 | 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | ✅ Done (verified) |
 | 8 - Polish & verification | E2E failure-case suite (8/8), docs consolidation + post-mortems, UX shell (sidebar, icons, tokens), a11y pass | - | ✅ Done |
 | + Telegram parent chatbot | Lead-capture chatbot: n8n workflow + launcher stack (tunnel, self-registration, watchdog) + live lead channel | - | ✅ Done (demo-grade, see TELEGRAM-CHATBOT.md) |
+| 9 — Agentic Core (Milestone A) | Governed agent runtime: central tool registry, durable run state, execution trace, permission engine, guardrails + approval + kill switch, first governed tool set, REST front door | — | ✅ Done (verified live 2026-09-13: completed 9-step run — search → inspect 3 leads → create_task → finish; 142 unit tests green) |
 
 ---
 
@@ -211,6 +212,42 @@ deliberately deferred there.
 UX/UI redesign + streaming AI responses — these change how the product
 *feels*. Everything else in this backlog is infrastructure that only becomes
 necessary at deploy time (see **Path to production**).
+
+---
+
+## Phase 9 — Agentic Core Upgrade (in progress)
+
+Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-09-13):
+
+| Milestone | Scope | Status |
+|---|---|---|
+| **A — Governed runtime + reference scenario** | Registry, run state, trace, permissions, guardrails/approval/kill switch, runtime loop, first tools, REST front door (spec items 9.1–9.6 built together) | 🚧 Code complete |
+| B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | Pending |
+| C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | Pending |
+| D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | Pending |
+| E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | Pending (REST) |
+| F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | Pending |
+| G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | Pending |
+| H — Persistent infrastructure hardening | Move rate-limiter/cache state into Postgres (spec 9.13) | Pending |
+
+### Milestone A — what landed (2026-09-13)
+
+- **Migration `supabase/migrations/010_agent_core.sql`**: `agent_runs`, `agent_run_steps` (the trace + resume log; `feedback_snapshot` stores the exact model-visible functionResponse so runs reconstruct from DB alone), `agent_approvals`, `agent_runtime_config` (kill switch), `agent_tool_config` (per-tool enable), `knowledge_docs` (seeded SOP set for Milestone-B upgrade). RLS: users read own runs (ops/admin all) — **no user write policies**; runtime writes go through the service-role client so the audit trail is user-tamper-proof (same trust model as n8n).
+- **`lib/agent/`**: `registry.ts` (central registry + integrity check), `agents.ts` (agent identity as principal + allowlists + system prompt), `permissions.ts` (user role × agent × tool × policy, pure), `guardrails.ts` (step/time/token caps, per-turn call cap), `store.ts` (durable `AgentStateStore`, Supabase impl), `model.ts` (swappable `AgentModel`), `runtime.ts` (the governed loop: permission check before EVERY execution, approval suspension + resume, denied-call feedback, `finish`/`escalate_to_human` as the only successful terminations, no chain-of-thought persisted).
+- **Tools (registry entries, versioned)**: `get_lead`, `search_leads`, `get_lead_history`, `create_task`, `notify_counselor`, `prepare_email` (dry-run record; approval required when `GMAIL_AGENT_DRY_RUN=false`), `search_knowledge` (role-scoped ILIKE over `knowledge_docs` until Milestone B), `escalate_to_human`, `finish`.
+- **API**: `POST/GET /api/agent/runs`, `GET /api/agent/runs/[id]` (run + steps + approvals, RLS-scoped), `POST /api/agent/approvals/[id]` (ops/admin decision → auto-resume), `GET /api/agent/tools` (registry introspection).
+- **Tests**: 42 new unit tests (registry integrity, permission matrix, guardrails, full loop scenarios incl. approval approve/reject resume, kill switch, step cap) — suite 142/142 green, typecheck strict.
+
+Key design decisions: runtime lives **inside the Next.js app** (no new service); tool args/results validated by hand-rolled pure validators (repo convention — no Zod); reads run under the **requester's RLS client**, governed writes under the service-role client **after** resource visibility is proven against the requester's scope; resumed loops always re-evaluate permissions under the **original requester's persisted `user_role`** (never the approver's); agent turns bypass the AI Gateway (JSON-mode only) via `generateAgentTurn` in `lib/gemini.ts`.
+
+### Milestone A runbook (verified live 2026-09-13)
+
+1. ~~Run `supabase/migrations/010_agent_core.sql` in the Supabase SQL Editor (idempotent).~~ ✅ applied
+2. `.env` already carries `SUPABASE_SERVICE_ROLE_KEY` (same secret the seed/e2e scripts have always used) — the agent runtime reads that exact variable via `lib/supabase/admin.ts`. Nothing to add. Optionally set `GMAIL_AGENT_DRY_RUN=false` to force the email approval flow. ✅ present
+3. Live verification: `AGENT_VERIFY=1 npx playwright test tests/e2e/agent-verify.spec.ts` — logs in as `counselor@demo.dev`, fires a real goal through `POST /api/agent/runs`, prints the trace, and auto-approves via admin if the loop suspends. First verified run: **completed, 9 steps** (`search_leads` → inspect 3 leads → `create_task` → verified `finish`), ~40k tokens in (cap 60k), all permissions `allowed`, counselor-scoped.
+4. Kill switch check (manual): `update agent_runtime_config set kill_switch = true;` → new runs fail with `KILL_SWITCH` before any model call.
+
+Gotcha fixed during verification: this Gemini generation returns `thought_signature` on functionCall parts and REQUIRES it echoed back on replay — the runtime therefore persists the RAW model parts per step (`feedback_snapshot.modelParts`) and replays them verbatim instead of rebuilding model turns from name+args.
 
 ---
 
