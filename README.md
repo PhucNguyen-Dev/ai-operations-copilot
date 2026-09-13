@@ -46,6 +46,13 @@ One system with four parts:
   automation log viewer + run detail timelines, five AI tools, admin overview.
 - **P2 — governance (F-026–F-030):** AI Tool Lab, AI Tool Evaluation, Employee AI Training, Internal AI
   Workshop, SOP collection. Full inventory: [docs/FEATURES.md](docs/FEATURES.md).
+- **Phase 9 — governed agentic core (A–H):** tool-using agents where the LLM decides what happens next and
+  the platform enforces whether it is allowed — central tool registry, permission engine, durable run state,
+  execution traces (no chain-of-thought), guardrails + human approvals + kill switch, governed RAG with
+  citations, nightly behavior evals in CI, an Ask X employee chat, a signed external lead webhook, a
+  scoped external REST API, and bounded multi-agent handoff. Run and verify it yourself:
+  **[docs/RUNBOOK.md](docs/RUNBOOK.md)** · spec: [docs/PHASE_9_AGENTIC_CORE_UPGRADE.md](docs/PHASE_9_AGENTIC_CORE_UPGRADE.md)
+  · external integrators: [docs/EXTERNAL_API.md](docs/EXTERNAL_API.md).
 
 ## Architecture
 
