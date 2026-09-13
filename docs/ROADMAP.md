@@ -224,7 +224,7 @@ Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-
 | **A — Governed runtime + reference scenario** | Registry, run state, trace, permissions, guardrails/approval/kill switch, runtime loop, first tools, REST front door (spec items 9.1–9.6 built together) | 🚧 Code complete |
 | B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | ✅ Done (verified live 2026-09-13: SOP-citation run — semantic retrieval of the competitor/refund SOP drove a governed escalation; migration 011 + `npm run ingest:knowledge`) |
 | C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | ✅ Done (verified live 2026-09-13: 9/9 scenarios pass — `npm run evals:agent` → `test-results/agent-evals.json`) |
-| D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | Pending |
+| D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | ✅ Done (verified live 2026-09-13: question → governed run → answer with visible tool-call trace; admissions/admin only, RLS matrix 6/6 still green) |
 | E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | Pending (REST) |
 | F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | Pending |
 | G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | Pending |
@@ -267,6 +267,12 @@ Gotchas: `text-embedding-004` no longer exists on current API keys — use `gemi
   1. **Per-turn conversation replay**: Gemini sometimes returns a functionCall WITHOUT its `thought_signature` on the call part (the signature rides on sibling parts) — replaying only the call part gets HTTP 400. The runtime now persists the FULL requestable part list of each model turn (grouped by a `turnId` inside `feedback_snapshot`) and replays it verbatim.
   2. **Repeat-call loop guard** (`REPEAT_CALL_LIMIT` in guardrails): the 3rd consecutive identical call (same tool + args) is refused with `REPEATED_CALL` feedback instead of executing — an eval run caught the model burning its step budget re-observing the same lead 4×.
 - Also: `POST /api/agent/runs` accepts `requireApproval: true` (requester opts INTO the approval gate for real-send mode — can only add governance, never remove it); eval runs upsert the kill-switch row to `false` at START (never trust the previous run's cleanup).
+
+### Milestone D — "Ask X" employee chat (done + verified live 2026-09-13)
+
+- `/agent` page (admissions/admin only — nav item appears for exactly those roles, matching `AGENTS['admissions-followup'].allowedRoles`): conversational access to the governed runtime. No direct DB access from the chat — every answer comes from registered tools through the permission engine, and every answer card embeds the run's full tool-call trace (tool, status, permission decision, errors) plus token spend, per 9.4's "understandable without chain-of-thought".
+- Approval-suspended runs surface an explicit "awaiting human approval" state with the run id (9.6 protocol visible to employees). A "Recent agent runs" list (RLS-scoped) shows the last 8 runs with status and outcome.
+- Verified live: counselor question ("What is the early-bird discount policy…") → governed run → `completed` answer with visible trace; the auth/RLS matrix e2e suite (6/6) still passes with the nav change.
 
 ---
 

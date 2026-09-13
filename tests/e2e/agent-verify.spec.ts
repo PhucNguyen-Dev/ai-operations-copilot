@@ -84,3 +84,20 @@ test('governed agent run: counselor starts a run through the real loop', async (
     expect(['completed', 'escalated', 'failed']).toContain(decisionBody.run.status)
   }
 })
+
+test('Ask X chat UI: question through the page produces an answer with a visible trace', async ({ page }) => {
+  test.setTimeout(300_000)
+  await login(page, COUNSELOR)
+  await page.goto('/agent')
+  await expect(page.getByRole('heading', { name: /ask x/i })).toBeVisible()
+
+  await page.getByLabel('Ask the agent').fill('What is the early-bird discount policy for full-time programs?')
+  await page.getByRole('button', { name: /ask/i }).click()
+
+  const chat = page.getByTestId('chat')
+  // The answer card shows a terminal status badge and the run trace once the run finishes.
+  await expect(chat.getByText(/run trace/i).first()).toBeVisible({ timeout: 240_000 })
+  const badge = await chat.locator('span', { hasText: /^completed$|^escalated$|^awaiting approval$/ }).first().textContent()
+  console.log('CHAT UI ANSWER STATUS:', badge)
+  expect(['completed', 'escalated', 'awaiting approval']).toContain((badge ?? '').trim())
+})
