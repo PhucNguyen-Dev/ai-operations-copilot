@@ -157,6 +157,12 @@ test.afterAll(async () => {
   )
 })
 
+// Brief pause between scenarios — the free-tier Gemini quota is shared,
+// and back-to-back turns can trip transient 429s (retried once anyway).
+test.beforeEach(async () => {
+  await new Promise((r) => setTimeout(r, 3_000))
+})
+
 for (const scenario of scenarios.cases) {
   test(scenario.title as string, async ({ page }) => {
     const f = (globalThis as Record<string, unknown>).__evalFixtures as Fixture

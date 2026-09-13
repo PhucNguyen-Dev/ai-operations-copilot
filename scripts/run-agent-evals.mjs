@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 
 const isWindows = process.platform === 'win32'
 const npx = isWindows ? 'npx.cmd' : 'npx'
-const result = spawnSync(npx, ['playwright', 'test', 'tests/e2e/agent-evals.spec.ts', '--workers=1'], {
+const result = spawnSync(npx, ['playwright', 'test', 'tests/e2e/agent-evals.spec.ts', '--workers=1', '--retries=1'], {
   stdio: 'inherit',
   env: { ...process.env, AGENT_EVALS: '1' },
   shell: isWindows,
