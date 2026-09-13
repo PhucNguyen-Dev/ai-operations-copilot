@@ -43,8 +43,24 @@ function normalizeLead(payload: Record<string, unknown>): Record<string, unknown
   const flat: Record<string, unknown> = {}
   const walk = (obj: Record<string, unknown>) => {
     for (const [k, v] of Object.entries(obj)) {
-      if (v !== null && typeof v === 'object' && !Array.isArray(v)) walk(v as Record<string, unknown>)
-      else if (!(k in flat)) flat[k.toLowerCase()] = v
+      if (Array.isArray(v)) {
+        // Facebook Lead Ads shape: [{ name, values: [...] }] — flatten
+        // each entry to key = name, value = first value.
+        for (const item of v) {
+          if (item && typeof item === 'object' && !Array.isArray(item) && typeof (item as { name?: unknown }).name === 'string') {
+            const values = (item as { values?: unknown[] }).values
+            const value = Array.isArray(values) ? values[0] : undefined
+            const key = String((item as { name: string }).name).toLowerCase()
+            if (!(key in flat) && typeof value === 'string') flat[key] = value
+          } else if (item && typeof item === 'object') {
+            walk(item as Record<string, unknown>)
+          }
+        }
+      } else if (v !== null && typeof v === 'object') {
+        walk(v as Record<string, unknown>)
+      } else if (!(k.toLowerCase() in flat)) {
+        flat[k.toLowerCase()] = v
+      }
     }
   }
   walk(payload)

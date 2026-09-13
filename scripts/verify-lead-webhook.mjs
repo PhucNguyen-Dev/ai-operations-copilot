@@ -70,9 +70,19 @@ const second = await sendLead(payload)
 console.log('re-delivery:', second.status, JSON.stringify(second.body))
 if (!second.body.duplicate || second.body.leadId !== first.body.leadId) throw new Error('re-delivery should be a duplicate ack for the SAME lead')
 
-// 3. Tampered payload rejected
-const tampered = await sendLead({ ...payload, external_id: 'evil' }, SECRET)
-console.log('tampered payload:', tampered.status, tampered.status === 401 ? 'OK (signature mismatch)' : 'FAIL')
+// 3. Tampered payload rejected — sign the ORIGINAL, swap the payload
+// in the envelope afterwards (real tampering), expect 401.
+{
+  const timestamp = Date.now()
+  const signature = await hmacHex(`${timestamp}.${JSON.stringify(payload)}`, SECRET)
+  const tampered = await fetch(`${BASE}/api/webhooks/lead`, {
+    method: 'POST',
+    headers: { 'x-webhook-secret': SECRET, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timestamp, signature, payload: { ...payload, external_id: 'evil-rewritten' } }),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+  console.log('tampered payload:', tampered.status, tampered.status === 401 ? 'OK (signature mismatch)' : 'FAIL')
+  if (tampered.status !== 401) throw new Error('tampered payload should be rejected')
+}
 
 // 4. Governed triage run — poll agent_runs for the goal tag
 const goalTag = `[lead-webhook:${SOURCE}]`
