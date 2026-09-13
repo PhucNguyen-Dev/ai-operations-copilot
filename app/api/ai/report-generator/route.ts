@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runAiTool } from '@/lib/ai/route-handler'
 import { validateOpsReport } from '@/lib/ai/schemas'
+import { getSystemPrompt, PromptLedgerError, type PromptSource } from '@/lib/promptledger'
 
 const RANGES = ['7', '30', '90'] as const
 
@@ -22,6 +23,11 @@ type Aggregates = {
  * F-024 — AI Report Generator (operations): real Supabase aggregates for
  * the selected date range become the prompt context; Gemini writes the
  * executive report from actual numbers (labeled as such, never invented).
+ *
+ * The system prompt is NOT hardcoded here: it is fetched live from
+ * PromptLedger (ops-copilot/report-generator) on every run (60s TTL),
+ * falling back to the committed copy only when PROMPTLEDGER_URL is unset.
+ * This route is the reference for wiring the other owned tools.
  */
 export async function POST(request: NextRequest) {
   const body = (await request.clone().json().catch(() => null)) as Record<string, unknown> | null
@@ -109,15 +115,37 @@ export async function POST(request: NextRequest) {
   const notes = typeof body?.notes === 'string' ? body.notes.trim().slice(0, 1000) : ''
   aggregates.notes = notes ? `Manager notes to consider: ${notes}` : aggregates.notes
 
-  return runAiTool(request, 'F-024', () => {
-    const system = [
-      'You are an operations analyst writing an internal executive report for the management of a language school.',
-      'You are given REAL aggregate numbers from the school systems — treat them as ground truth and never invent numbers.',
-      'Respond with ONLY a single JSON object with exactly these keys:',
-      '{ "executive_summary": <2-4 sentence executive summary>, "key_metrics": <array of 3-6 strings, each stating a metric with its number>, "problems": <array of 1-6 strings, concrete issues visible in the data>, "trends": <array of 1-6 strings>, "recommendations": <array of 1-6 strings, concrete operational actions> }',
-      'If the dataset is too small to show a trend, say so honestly in the relevant item. No markdown, no commentary.',
-    ].join('\n')
+  // --- system prompt from the registry (PromptLedger): the LIVE version
+  // decides what this tool says; promoting a new version there changes
+  // behavior on the next run. Fail closed when configured-but-broken:
+  // no Gemini call, no silent stale prompt. ---
+  let system: string
+  let promptSource: PromptSource
+  let promptVersion: number | null
+  try {
+    const pl = await getSystemPrompt({ app: 'ops-copilot', name: 'report-generator' })
+    system = pl.text
+    promptSource = pl.source
+    promptVersion = pl.version
+  } catch (e) {
+    if (e instanceof PromptLedgerError) {
+      console.error(`[ai:F-024] prompt fetch failed (${e.code}): ${e.message}`)
+      return NextResponse.json(
+        {
+          error:
+            e.code === 'PL_NO_LIVE'
+              ? 'This tool\'s prompt is not published yet — contact the admin.'
+              : 'Prompt management service is unavailable — try again shortly.',
+          code: 'PROMPT_UNAVAILABLE',
+          detail: { pl_code: e.code },
+        },
+        { status: 502 }
+      )
+    }
+    throw e
+  }
 
+  return runAiTool(request, 'F-024', () => {
     const user = [
       `Reporting period: last ${rangeDays} days (${sinceIso.slice(0, 10)} to today).`,
       `Leads created: ${aggregates.leadsTotal}`,
@@ -136,7 +164,19 @@ export async function POST(request: NextRequest) {
       validate: validateOpsReport,
       temperature: 0.3,
       maxOutputTokens: 1500,
-      inputSummary: { range_days: rangeDays, leads: aggregates.leadsTotal, runs: aggregates.runsTotal, notes_chars: notes.length },
+      trace: {
+        name: 'report-generator',
+        promptVersion,
+        promptSource,
+      },
+      inputSummary: {
+        range_days: rangeDays,
+        leads: aggregates.leadsTotal,
+        runs: aggregates.runsTotal,
+        notes_chars: notes.length,
+        prompt_source: promptSource,
+        prompt_version: promptVersion,
+      },
     }
   })
 }

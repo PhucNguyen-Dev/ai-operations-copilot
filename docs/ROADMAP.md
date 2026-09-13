@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
-**Current status: Phase 7 done ✅ (governance, F-026-F-030) and Phase 8 done ✅ (E2E failure-case suite 8/8, docs consolidation, UX shell, a11y pass), plus the Telegram parent chatbot (n8n workflow + launcher stack - see docs/TELEGRAM-CHATBOT.md). All 30 features complete. Post-8 hardening landed (AI response cache, swap-ready rate limiter, health observability, generation-log fix); Playwright RLS matrix is the main open item (see backlog).**
+**Current status: Phases 0–8 all done ✅ (30 features, Telegram chatbot, post-8 hardening). Phase 9 — Agentic Core Upgrade — is COMPLETE ✅ (2026-09-13): all milestones A–H built and verified live on branch `agentic-core-aggressive-mode` (governed runtime, governed RAG, 9/9 behavior evals, Ask X chat, external REST API, real signed lead trigger, multi-agent handoff, Postgres-backed rate limiting + cache). 170 unit tests green; production build green; main preserved at the pre-agent commit. See the Phase 9 section below for the milestone table and runbooks; the external surface is documented in `docs/EXTERNAL_API.md`.**
 
 ---
 
@@ -21,6 +21,7 @@ Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list
 | 7 — Governance | AI Tool Lab, AI Tool Evaluation, employee training / workshop / SOP pages (+ their two tables) | F-026–F-030 | ✅ Done (verified) |
 | 8 - Polish & verification | E2E failure-case suite (8/8), docs consolidation + post-mortems, UX shell (sidebar, icons, tokens), a11y pass | - | ✅ Done |
 | + Telegram parent chatbot | Lead-capture chatbot: n8n workflow + launcher stack (tunnel, self-registration, watchdog) + live lead channel | - | ✅ Done (demo-grade, see TELEGRAM-CHATBOT.md) |
+| 9 — Agentic Core (Milestone A) | Governed agent runtime: central tool registry, durable run state, execution trace, permission engine, guardrails + approval + kill switch, first governed tool set, REST front door | — | ✅ Done (verified live 2026-09-13: completed 9-step run — search → inspect 3 leads → create_task → finish; 142 unit tests green) |
 
 ---
 
@@ -214,6 +215,67 @@ necessary at deploy time (see **Path to production**).
 
 ---
 
+## Phase 9 — Agentic Core Upgrade (in progress)
+
+Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-09-13):
+
+| Milestone | Scope | Status |
+|---|---|---|
+| **A — Governed runtime + reference scenario** | Registry, run state, trace, permissions, guardrails/approval/kill switch, runtime loop, first tools, REST front door (spec items 9.1–9.6 built together) | 🚧 Code complete |
+| B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | ✅ Done (verified live 2026-09-13: SOP-citation run — semantic retrieval of the competitor/refund SOP drove a governed escalation; migration 011 + `npm run ingest:knowledge`) |
+| C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | ✅ Done (verified live 2026-09-13: 9/9 scenarios pass — `npm run evals:agent` → `test-results/agent-evals.json`) |
+| D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | ✅ Done (verified live 2026-09-13: question → governed run → answer with visible tool-call trace; admissions/admin only, RLS matrix 6/6 still green) |
+| E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | ✅ Done (REST — verified live; MCP deferred as planned. `docs/EXTERNAL_API.md`) |
+| F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | ✅ Done (verified live 2026-09-13: signed Facebook-shaped webhook → normalized lead → governed 7-step triage run; duplicate re-delivery idempotent; tampered payload 401 — `scripts/verify-lead-webhook.mjs`) |
+| G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | ✅ Done (`delegate_to_agent` capability; read-only `reporting-agent` child; recursion structurally impossible; unit-tested full chain) |
+| H — Persistent infrastructure hardening | Move rate-limiter/cache state into Postgres (spec 9.13) | ✅ Done (verified live: atomic `rate_limit_hit()` RPC + `ai_response_cache` table behind the existing swap points; health reports `postgres` backend — `scripts/verify-persistent-infra.mjs`) |
+
+### Milestone A — what landed (2026-09-13)
+
+- **Migration `supabase/migrations/010_agent_core.sql`**: `agent_runs`, `agent_run_steps` (the trace + resume log; `feedback_snapshot` stores the exact model-visible functionResponse so runs reconstruct from DB alone), `agent_approvals`, `agent_runtime_config` (kill switch), `agent_tool_config` (per-tool enable), `knowledge_docs` (seeded SOP set for Milestone-B upgrade). RLS: users read own runs (ops/admin all) — **no user write policies**; runtime writes go through the service-role client so the audit trail is user-tamper-proof (same trust model as n8n).
+- **`lib/agent/`**: `registry.ts` (central registry + integrity check), `agents.ts` (agent identity as principal + allowlists + system prompt), `permissions.ts` (user role × agent × tool × policy, pure), `guardrails.ts` (step/time/token caps, per-turn call cap), `store.ts` (durable `AgentStateStore`, Supabase impl), `model.ts` (swappable `AgentModel`), `runtime.ts` (the governed loop: permission check before EVERY execution, approval suspension + resume, denied-call feedback, `finish`/`escalate_to_human` as the only successful terminations, no chain-of-thought persisted).
+- **Tools (registry entries, versioned)**: `get_lead`, `search_leads`, `get_lead_history`, `create_task`, `notify_counselor`, `prepare_email` (dry-run record; approval required when `GMAIL_AGENT_DRY_RUN=false`), `search_knowledge` (role-scoped ILIKE over `knowledge_docs` until Milestone B), `escalate_to_human`, `finish`.
+- **API**: `POST/GET /api/agent/runs`, `GET /api/agent/runs/[id]` (run + steps + approvals, RLS-scoped), `POST /api/agent/approvals/[id]` (ops/admin decision → auto-resume), `GET /api/agent/tools` (registry introspection).
+- **Tests**: 42 new unit tests (registry integrity, permission matrix, guardrails, full loop scenarios incl. approval approve/reject resume, kill switch, step cap) — suite 142/142 green, typecheck strict.
+
+Key design decisions: runtime lives **inside the Next.js app** (no new service); tool args/results validated by hand-rolled pure validators (repo convention — no Zod); reads run under the **requester's RLS client**, governed writes under the service-role client **after** resource visibility is proven against the requester's scope; resumed loops always re-evaluate permissions under the **original requester's persisted `user_role`** (never the approver's); agent turns bypass the AI Gateway (JSON-mode only) via `generateAgentTurn` in `lib/gemini.ts`.
+
+### Milestone A runbook (verified live 2026-09-13)
+
+1. ~~Run `supabase/migrations/010_agent_core.sql` in the Supabase SQL Editor (idempotent).~~ ✅ applied
+2. `.env` already carries `SUPABASE_SERVICE_ROLE_KEY` (same secret the seed/e2e scripts have always used) — the agent runtime reads that exact variable via `lib/supabase/admin.ts`. Nothing to add. Optionally set `GMAIL_AGENT_DRY_RUN=false` to force the email approval flow. ✅ present
+3. Live verification: `AGENT_VERIFY=1 npx playwright test tests/e2e/agent-verify.spec.ts` — logs in as `counselor@demo.dev`, fires a real goal through `POST /api/agent/runs`, prints the trace, and auto-approves via admin if the loop suspends. First verified run: **completed, 9 steps** (`search_leads` → inspect 3 leads → `create_task` → verified `finish`), ~40k tokens in (cap 60k), all permissions `allowed`, counselor-scoped.
+4. Kill switch check (manual): `update agent_runtime_config set kill_switch = true;` → new runs fail with `KILL_SWITCH` before any model call.
+
+Gotcha fixed during verification: this Gemini generation returns `thought_signature` on functionCall parts and REQUIRES it echoed back on replay — the runtime therefore persists the RAW model parts per step (`feedback_snapshot.modelParts`) and replays them verbatim instead of rebuilding model turns from name+args.
+
+### Milestone B — governed RAG (done + verified live 2026-09-13)
+
+- **Migration `011_knowledge_rag.sql`**: pgvector, `knowledge_chunks` (`vector(768)`, HNSW cosine index, unique per doc+index), RLS mirroring the parent doc, and `match_knowledge_chunks(query_embedding, match_count, p_role)` — the role scope (`allowed_roles` contains 'all' or the caller's role) is enforced in SQL; the tool re-checks (defense in depth).
+- **`generateEmbedding()`** in `lib/gemini.ts` — `gemini-embedding-001` (the retired `text-embedding-004` is 404 on current keys) with `outputDimensionality: 768` pinned to the column; same error conventions as every AI call.
+- **`npm run ingest:knowledge`** (`scripts/ingest-knowledge.mjs` + pure `scripts/knowledge-chunk.mjs` shared with the unit tests): docs → ~800-char overlapping chunks → embed → replace doc's chunks. Re-runnable; fails loudly.
+- **`search_knowledge` v2.0.0** — same contract (role scope, citations, content-is-data), now semantic: embed query → cosine match ≥ 0.3 → top-3 cited chunks; the v1 ILIKE search remains as automatic keyword fallback when embeddings are unavailable or empty.
+- **Verified live**: agent goal mentioning competitor/refund → `search_knowledge` retrieved the exact SOP ("escalate when the lead mentions competitor comparison or refund") via vector match, then notified the counselor per the SOP and cited it in `finish.verification`. 7 steps, ~30k tokens.
+
+Gotchas: `text-embedding-004` no longer exists on current API keys — use `gemini-embedding-001` + `outputDimensionality: 768`. And Windows orphan lesson strikes again: a `TaskStop`/terminal close can leave `node.exe` holding :3000 — check `netstat -ano | grep :3000` and `taskkill //PID <pid> //F` before assuming the server restarted with fresh code.
+
+### Milestone C — agent behavior evaluation (done + verified live 2026-09-13)
+
+- **Versioned scenario set** `tests/e2e/agent-eval-scenarios.json` (v1.0.0, 9 cases): straightforward lead, missing-info no-invention, unknown-lead bounded stop, disabled-tool denial + re-plan, real-send approval flow (approve → resume → execute), prompt injection inside a retrieved doc, duplicate protection, kill switch, wrong-role 403. Assertions are tolerant of model variance: allowed/forbidden tool SETS + required final status, never exact sequences.
+- **Pure scorer** `tests/e2e/helpers/agent-eval-score.mjs` — maps a run trace to `{pass, violations[], toolCalls, tokens}`; unit-tested (162 suite green). Runner: `tests/e2e/agent-evals.spec.ts` (opt-in via `AGENT_EVALS=1`), fixtures created/torn down per run via service-key REST, results artifact `test-results/agent-evals.json` with scenario-set version + pass rate + token spend. **Run: `npm run evals:agent` — scheduled/on-demand, never per-PR.**
+- **Two runtime hardenings that fell out of the evals** (exactly what evals are for):
+  1. **Per-turn conversation replay**: Gemini sometimes returns a functionCall WITHOUT its `thought_signature` on the call part (the signature rides on sibling parts) — replaying only the call part gets HTTP 400. The runtime now persists the FULL requestable part list of each model turn (grouped by a `turnId` inside `feedback_snapshot`) and replays it verbatim.
+  2. **Repeat-call loop guard** (`REPEAT_CALL_LIMIT` in guardrails): the 3rd consecutive identical call (same tool + args) is refused with `REPEATED_CALL` feedback instead of executing — an eval run caught the model burning its step budget re-observing the same lead 4×.
+- Also: `POST /api/agent/runs` accepts `requireApproval: true` (requester opts INTO the approval gate for real-send mode — can only add governance, never remove it); eval runs upsert the kill-switch row to `false` at START (never trust the previous run's cleanup).
+
+### Milestone D — "Ask X" employee chat (done + verified live 2026-09-13)
+
+- `/agent` page (admissions/admin only — nav item appears for exactly those roles, matching `AGENTS['admissions-followup'].allowedRoles`): conversational access to the governed runtime. No direct DB access from the chat — every answer comes from registered tools through the permission engine, and every answer card embeds the run's full tool-call trace (tool, status, permission decision, errors) plus token spend, per 9.4's "understandable without chain-of-thought".
+- Approval-suspended runs surface an explicit "awaiting human approval" state with the run id (9.6 protocol visible to employees). A "Recent agent runs" list (RLS-scoped) shows the last 8 runs with status and outcome.
+- Verified live: counselor question ("What is the early-bird discount policy…") → governed run → `completed` answer with visible trace; the auth/RLS matrix e2e suite (6/6) still passes with the nav change.
+
+---
+
 
 ---
 
@@ -286,6 +348,74 @@ The code architecture is scale-ready; the deployment is the work. Honest map:
 
 No app rewrite is required for any of it — the swap points were built for
 exactly this. Until deployed, these stay documented decisions.
+
+---
+
+## Satellite platform — roadmap for future sessions (2026-09-07)
+
+The Copilot is the first consumer of a live **platform of specialized
+AI services** that integrate over APIs — deliberately NOT shared-database
+satellites (schema coupling at scale is a nightmare). Each satellite is its
+own repo with its own DB; integration is versioned REST + API keys.
+
+### Tier 1 — platform core (build order)
+
+| # | Service | Purpose | API surface (draft) |
+|---|---|---|---|
+| A | **AI Gateway** (satellite #1 — BUILT (separate repo; Copilot adapter wired, dormant via commented AI_GATEWAY_URL)) | Single metered entry point for every LLM call: multi-provider routing (gemini + openai-compatible), per-key quotas, cost metering, caching, prompt-version pinning. Productizes the Copilot's `lib/gemini.ts` convention | `POST /v1/generate` · `GET /v1/usage` · `GET /v1/health` |
+| B | **PromptLedger** (satellite #2 - BUILT & LIVE) | Registry-owned prompts: every AI tool route, the pipeline qualification prompt, and the email/chat prompts fetch their LIVE system prompt at runtime (lib/promptledger.ts + prompts/ fallbacks); fail-closed on registry errors; run traces + token usage emitted to POST /api/runs | GET /v1/prompts/:tool · run-trace sink |
+| B | **Eval & Replay Studio** | Golden-set regression: same input → old vs new model/prompt, diff schema-pass rate/latency/cost/quality, promote/rollback verdicts | `POST /v1/runs` · `POST /v1/compare` |
+| C | **Event Bus / Webhook Relay** | Durable inter-project events (lead.created, run.failed, approval.requested) with retries + DLQ — kills the tunnel-inbound fragility pattern | `POST /v1/events` · subscriptions API |
+| D | **HITL Approval Service** | Generic approve/reject + audit trail + timeout escalation, served via Telegram + web — unlocks real email sends safely | `POST /v1/approvals` · decision API |
+
+### Tier 2 — intelligence layer (reads Tier 1 streams)
+
+| # | Service | Purpose |
+|---|---|---|
+| E | **Failure Intelligence** | Consumes failure events; clusters patterns (429 storms, schema drift, auth rot); morning digest with suggested fixes |
+| F | **Ops Copilot (meta)** | An LLM answering ops questions over these APIs: "why did run X fail?", "which tool burned quota this week?" |
+| G | **Control Plane UI** | Fleet health, spend, eval reports, approvals inbox — thin dashboard over the APIs |
+
+### Tier 3 — delivery assets
+
+Demo Factory (use-case → n8n skeleton + sample data + diagram + ROI sheet) ·
+Local-First Sandbox (docker-compose: Ollama + Gateway + n8n + vector DB —
+trivial once the Gateway ships an `openai-compatible` adapter) ·
+Client Onboarding Kit.
+
+### AI Gateway build plan (satellite #1 — locked)
+
+New repo `ai-gateway`, public, portfolio-framed; **own Supabase project**
+(`api_keys`, `requests`, `routing`); Next.js API routes; stack and conventions
+identical to the Copilot (JSON mode, truncation-aware retry, schema gate,
+client-safe errors — ported from `lib/gemini.ts`).
+
+Stages: **G0** scaffold + own DB + `/v1/health` · **G1** Gemini adapter +
+routing table · **G2** API-key auth + request metering · **G3**
+`POST /v1/generate` + `GET /v1/usage` · **G4** Copilot migration - DONE (thin
+`lib/gateway-client.ts`, env-flag fallback — zero-risk rollout) · **G5** cost
+metering + usage dashboard · **G6** `openai-compatible` adapter (multi-LLM
+routing fulfilled AT THE GATEWAY layer - the Copilot stays
+provider-agnostic by design) · **G7** docs + consumer onboarding guide.
+Session-one scope: G0–G3. Scope guards: no streaming/A-B UI/multi-tenant/
+events in v1; n8n stays on direct Gemini.
+
+### Agentic function-calling — recommendation (not scheduled)
+
+The Copilot deliberately has NO tool calling / agent orchestration: every
+decision is deterministic code ("the model proposes, code disposes") —
+auditable and predictable by design. If agentic behavior is ever wanted,
+the **Telegram chatbot is the sandbox** (only surface with free-form input):
+register tools (`lookupCourses`, `checkLeadStatus`, `createTask`), let the
+model route, gate every tool result with the same schema discipline. Route
+it through the AI Gateway (`/v1/agent` + tool registry) so agent runs are
+metered. Do NOT add agentic routing to the pipeline or fixed tools.
+
+### Prerequisite note
+
+Token-usage capture: log Gemini `usageMetadata` (prompt/candidate counts —
+present in every response) - CAPTURED into run traces (ac1a687)) into `ai_generations`.
+~15 lines; unlocks cost-per-run dashboards and cost-aware eval scoring.
 ## Key commands
 
 | Command | What it does |
@@ -345,3 +475,20 @@ debts — each is a decision awaiting deployment need.
 The remaining honest limitation: free/local infrastructure (single n8n
 instance, free-tier Gemini, in-memory caches). The swap points and the scale
 map above make that a deployment checklist, not a rewrite.
+
+---
+
+## Phase 9 addendum — Milestones G + H (done + verified live 2026-09-13)
+
+### Milestone G — multi-agent handoff (9.12)
+
+- **`delegate_to_agent`** is a registered tool: the runtime injects a bounded `delegate` capability on the ToolContext, which starts a child run under the SAME requester principal and guardrails, with the goal tagged `[delegation from <parent>]` and parent/child correlation in the child's `current_state.parent_run_id` (visible through the run API — no schema change needed).
+- **Structurally bounded**: `allowedAgents` on the tool admits only the admissions agent, and the child (`reporting-agent`, read-only specialist for aggregate reporting) does NOT carry the delegation tool — recursion cannot happen. A unit test proves the permission engine denies a child's delegation attempt (`AGENT_NOT_AUTHORIZED`) while the parent still finishes with the child's report.
+- The handoff full chain (parent → child → parent, correlation, principal inheritance) is unit-tested; the child run appears in the trace API alongside the parent.
+
+### Milestone H — persistent infrastructure hardening (9.13)
+
+- **`rate_limit_hit()`** (migration 014): an atomic Postgres fixed-window counter — a single upsert statement, correct across instances and restarts. The swap-ready `RateLimiter` interface now has a Postgres implementation as the default wherever the service-role key exists (in-memory remains for unit tests / bare envs; `RATE_LIMIT_BACKEND=memory` forces it). Fails open with a loud log on RPC errors.
+- **`ai_response_cache`** (migration 014): the AI response cache moved to a shared TTL'd table (lazy eviction), same fallback rule (`CACHE_BACKEND=memory`). `cacheGet/cacheSet`/`RateLimiter.check` are async now; every call site awaits (AI tool routes, leads, agent runs, external API, lead webhook, gateway client).
+- Acceptance (9.13) now holds end-to-end: rate limiting, cache, agent execution state, approvals and audit state are ALL durable in Postgres — nothing relies on one process's memory.
+- Verified live: RPC blocks the 3rd hit over a limit of 2 with `retry_after_sec`, key isolation holds, counters persist as DB rows (restart-proof), cache round-trips through the table, `/api/health` reports `rateLimiter.backend: "postgres"`.

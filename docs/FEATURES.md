@@ -61,3 +61,16 @@ Priority legend: **P0** = core/must be fully functional, **P1** = important/func
 - P2 = governance evidence (tool experimentation, tool adoption decisions, training design, workshop design, SOP documentation). These are intentionally scoped as records/documentation rather than interactive systems.
 - F-026 (AI Tool Lab) and F-027 (AI Tool Evaluation) are related but distinct: F-026 is experimentation, F-027 is an adoption decision. F-027 may reference F-026 findings but does not depend on a specific tool count or format from it.
 - "Status" values should be updated as work proceeds (`Planned` → `In Progress` → `Done`). No feature has started implementation as of this Phase 0 document.
+
+---
+
+## Phase 9 additions (post-Phase-0 scope — Agentic Core)
+
+These extend the Phase 0 inventory; they follow the spec in `PHASE_9_AGENTIC_CORE_UPGRADE.md` and are tracked by milestone in `ROADMAP.md`.
+
+| ID | Feature | Description | Status |
+|---|---|---|---|
+| F-031 | Governed Agent Runtime (Milestone A) | Agent loop where the model selects among registered tools but the platform authorizes and executes everything: permission engine (user role × agent identity × tool × resource scope), durable run state, execution trace (no chain-of-thought), guardrails (step/time/token caps, per-turn call cap, kill switch), human approval protocol for high-risk actions with approve/reject resume, escalation | Code complete (Milestone A), runtime verification pending |
+| F-032 | Central Tool Registry + REST front door | One authoritative registry (schemas, risk levels, permissions, versions, idempotency) behind `POST /api/agent/runs`; registry introspection at `GET /api/agent/tools`; decisions and tool versions recorded on every step | Code complete (Milestone A) |
+
+Milestones B–H (RAG upgrade, behavior evaluation, "Ask X" chat UI, external REST/MCP surface, real lead trigger, multi-agent handoff, infrastructure hardening) will be added here as they start.

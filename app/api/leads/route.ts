@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { rateLimiter } from '@/lib/rate-limit'
 import { signPayload } from '@/lib/webhook-signing'
 
 /** GET /api/leads — list leads under the caller's RLS scope. */
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   }
 
   // R-05: each submission triggers a paid AI call — cap per user.
-  const limit = checkRateLimit(`lead:${user.id}`, 10, 60_000)
+  const limit = await rateLimiter.check(`lead:${user.id}`, 10, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many leads submitted — try again in ${limit.retryAfterSec}s.` },

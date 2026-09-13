@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runAiTool } from '@/lib/ai/route-handler'
 import { validateCampaignInsights } from '@/lib/ai/schemas'
+import { getSystemPrompt, PromptLedgerError, type PromptSource } from '@/lib/promptledger'
 
 /**
  * F-021 — Campaign Analyzer (marketing): pasted campaign metrics (manual
@@ -19,19 +20,40 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // --- system prompt from the registry (PromptLedger): the LIVE version
+  // decides what this tool says; promoting a new version there changes
+  // behavior on the next run. Fail closed when configured-but-broken:
+  // no Gemini call, no silent stale prompt (F-024 pattern). ---
+  let system: string
+  let promptSource: PromptSource
+  let promptVersion: number | null
+  try {
+    const pl = await getSystemPrompt({ app: 'ops-copilot', name: 'campaign-analyzer' })
+    system = pl.text
+    promptSource = pl.source
+    promptVersion = pl.version
+  } catch (e) {
+    if (e instanceof PromptLedgerError) {
+      console.error(`[ai:F-021] prompt fetch failed (${e.code}): ${e.message}`)
+      return NextResponse.json(
+        {
+          error:
+            e.code === 'PL_NO_LIVE'
+              ? 'This tool\'s prompt is not published yet — contact the admin.'
+              : 'Prompt management service is unavailable — try again shortly.',
+          code: 'PROMPT_UNAVAILABLE',
+          detail: { pl_code: e.code },
+        },
+        { status: 502 }
+      )
+    }
+    throw e
+  }
+
   return runAiTool(request, 'F-021', ({ body }) => {
     const campaignName = typeof body.campaign_name === 'string' ? body.campaign_name.trim().slice(0, 200) : ''
     const metrics = typeof body.metrics === 'string' ? body.metrics.trim().slice(0, 20_000) : ''
     const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 1_000) : ''
-
-    const system = [
-      'You are a marketing performance analyst for a language school.',
-      'You analyze pasted campaign metrics (which may be CSV, key-value lines, or free text) and extract actionable insights.',
-      'Respond with ONLY a single JSON object with exactly these keys:',
-      '{ "summary": <one-paragraph performance summary>, "strong_segments": <array of 1-6 strings, what performed well and why>, "weak_segments": <array of 1-6 strings, what underperformed and why>, "trends": <array of 1-6 strings, notable patterns across the data>, "recommendations": <array of 1-6 strings, concrete next actions> }',
-      'Ground every statement in the provided numbers — do not invent metrics. If data is ambiguous, say what is missing in the relevant item instead of guessing.',
-      'No markdown, no commentary.',
-    ].join('\n')
 
     const user = [
       campaignName ? `Campaign: ${campaignName}` : 'Campaign: (unnamed)',
@@ -46,11 +68,18 @@ export async function POST(request: NextRequest) {
       validate: validateCampaignInsights,
       temperature: 0.4,
       maxOutputTokens: 1200,
+      trace: {
+        name: 'campaign-analyzer',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         campaign_name_chars: campaignName.length,
         metrics_chars: metrics.length,
         notes_chars: notes.length,
         looks_like_csv: metrics.includes(',') && metrics.includes('\n'),
+        prompt_source: promptSource,
+        prompt_version: promptVersion,
       },
     }
   })

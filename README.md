@@ -75,6 +75,15 @@ One AI convention (`lib/gemini.ts` + mirrored n8n nodes): pinned Gemini model (c
 JSON mode everywhere, per-use-case schema gates, transient-retry/permanent-fail classification, usage
 logging. Prompts, contracts, and the failure philosophy: [docs/AI_DESIGN.md](docs/AI_DESIGN.md).
 
+**Prompt registry ([PromptLedger](../PromptLedger))** — the system prompts of owned tools live in a
+versioned registry, not in the code. `lib/promptledger.ts` fetches the **live** version at run time
+(60s TTL) when `PROMPTLEDGER_URL` is set: promoting a new version in the registry changes tool
+behavior on the next run, no redeploy. Fail-closed: registry down / no live version → the tool
+returns a structured `PROMPT_UNAVAILABLE` error instead of silently running a stale prompt.
+Unset → tools run on the committed prompts in `prompts/` (single-sourced with
+`scripts/seed-promptledger.mjs`, which registers them in the registry). Report Generator (F-024)
+shows the pattern; `prompt_source`/`prompt_version` land in each `ai_generations` row.
+
 ## Screenshots
 
 | | |
@@ -104,6 +113,7 @@ Next.js 15 (App Router, TypeScript, Tailwind v4) · Supabase (Postgres + Auth + 
 ```bash
 npm install
 cp .env.example .env    # fill: Supabase URL/keys, GEMINI_API_KEY (free at aistudio.google.com)
+                        # optional: PROMPTLEDGER_URL/KEY to serve prompts from the registry
 # Supabase SQL editor: run supabase/migrations/001..009, then seed.sql (+ seed_governance.sql)
 npm run seed:users      # 5 demo logins (password demo1234)
 npm run push:n8n        # import workflows (n8n stopped), then Activate in the UI

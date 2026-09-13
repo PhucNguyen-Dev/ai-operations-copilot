@@ -4,6 +4,17 @@ import { getApiUser } from '@/lib/auth-server'
 import { canUseTool, AI_TOOLS } from '@/lib/roles'
 import { rateLimiter } from '@/lib/rate-limit'
 import { generateJSON, logGeneration, type GenerateJsonOptions } from '@/lib/gemini'
+import { traceAiRun } from '@/lib/runtrace'
+
+/** Run-trace identity supplied by each route (which registry prompt this call used). */
+export type RunTraceInfo = {
+  /** Registry prompt name, e.g. 'report-generator'. */
+  name: string
+  /** Version served by getSystemPrompt (null when on the committed fallback). */
+  promptVersion: number | null
+  /** 'live' | 'committed' — which source served the text. */
+  promptSource: string | null
+}
 
 /**
  * Shared handler for every Phase 6 AI tool route. Encapsulates the
@@ -18,7 +29,11 @@ export async function runAiTool<T>(
     userId: string
     /** Parsed JSON body of the request. */
     body: Record<string, unknown>
-  }) => Omit<GenerateJsonOptions<T>, 'tool'> & { inputSummary: Record<string, unknown> }
+  }) => Omit<GenerateJsonOptions<T>, 'tool'> & {
+    inputSummary: Record<string, unknown>
+    /** Optional PromptLedger run-trace identity (omitted = no trace). */
+    trace?: RunTraceInfo
+  }
 ) {
   const startedAt = Date.now()
 
@@ -35,7 +50,7 @@ export async function runAiTool<T>(
   }
 
   // --- rate limit (R-05): every AI call is a paid Gemini request ---
-  const limit = rateLimiter.check(`ai:${userId}`, 10, 60_000)
+  const limit = await rateLimiter.check(`ai:${userId}`, 10, 60_000)
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many generations — try again in ${limit.retryAfterSec}s.` },
@@ -50,8 +65,26 @@ export async function runAiTool<T>(
   }
 
   const spec = build({ userId, body })
-  const { inputSummary, ...aiOptions } = spec
+  const { inputSummary, trace, ...aiOptions } = spec
   const result = await generateJSON<T>({ ...aiOptions, tool: toolId })
+
+  // --- PromptLedger run trace (fire-and-forget; records the exact prompt
+  // version served, model, latency, outcome — full input/output capture).
+  // Never throws, never blocks the response. ---
+  traceAiRun({
+    app: 'ops-copilot',
+    name: trace?.name ?? toolId,
+    promptVersion: trace?.promptVersion ?? null,
+    promptSource: trace?.promptSource ?? null,
+    model: result.ok ? result.model : null,
+    input: aiOptions.user,
+    output: result.ok ? JSON.stringify(result.data) : '',
+    latencyMs: result.ok ? result.durationMs : Date.now() - startedAt,
+    ok: result.ok,
+    error: result.ok ? null : `${result.error.code}: ${result.error.message}`,
+    tokensIn: result.ok ? (result.usage?.promptTokens ?? null) : null,
+    tokensOut: result.ok ? (result.usage?.completionTokens ?? null) : null,
+  })
 
   // --- generation log (best-effort; success and failure both recorded) ---
   const supabase = await createClient()

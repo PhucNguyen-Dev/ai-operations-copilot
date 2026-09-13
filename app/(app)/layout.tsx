@@ -1,6 +1,11 @@
 import { requireUser, canUseTool, canViewAutomation, canSubmitLeads } from '@/lib/auth'
 import Sidebar, { type SidebarGroup } from '@/components/sidebar'
 
+/** Roles whose requests the Ask-X agent accepts (mirrors lib/agent/agents.ts). */
+function canAskAgent(role: string): boolean {
+  return role === 'admissions' || role === 'admin'
+}
+
 /**
  * App shell for every authenticated page: fixed left sidebar (grouped by
  * department, collapsible) + content area. Login lives outside this group.
@@ -39,6 +44,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         label: role === 'admin' ? 'Simulate incoming lead' : 'New Test Lead',
         icon: 'plus',
       }],
+    })
+  }
+
+  if (canAskAgent(role)) {
+    groups.push({
+      label: 'AI Assistant',
+      items: [{ href: '/agent', label: 'Ask X', icon: 'chat' }],
     })
   }
 

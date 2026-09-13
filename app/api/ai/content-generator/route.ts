@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runAiTool } from '@/lib/ai/route-handler'
 import { validateContentDraft } from '@/lib/ai/schemas'
+import { getSystemPrompt, PromptLedgerError, type PromptSource } from '@/lib/promptledger'
 
 const PLATFORMS = ['facebook', 'instagram', 'tiktok', 'google', 'website', 'print'] as const
 const TONES = ['professional', 'friendly', 'urgent', 'playful', 'inspirational'] as const
@@ -17,6 +18,36 @@ function field(body: Record<string, unknown>, key: string, maxLen: number): stri
  * ad copy, CTA variations. Draft only — the marketer reviews everything.
  */
 export async function POST(request: NextRequest) {
+  // --- system prompt from the registry (PromptLedger): the LIVE version
+  // decides what this tool says; promoting a new version there changes
+  // behavior on the next run. Fail closed when configured-but-broken:
+  // no Gemini call, no silent stale prompt (F-024 pattern). ---
+  let system: string
+  let promptSource: PromptSource
+  let promptVersion: number | null
+  try {
+    const pl = await getSystemPrompt({ app: 'ops-copilot', name: 'content-generator' })
+    system = pl.text
+    promptSource = pl.source
+    promptVersion = pl.version
+  } catch (e) {
+    if (e instanceof PromptLedgerError) {
+      console.error(`[ai:F-020] prompt fetch failed (${e.code}): ${e.message}`)
+      return NextResponse.json(
+        {
+          error:
+            e.code === 'PL_NO_LIVE'
+              ? 'This tool\'s prompt is not published yet — contact the admin.'
+              : 'Prompt management service is unavailable — try again shortly.',
+          code: 'PROMPT_UNAVAILABLE',
+          detail: { pl_code: e.code },
+        },
+        { status: 502 }
+      )
+    }
+    throw e
+  }
+
   return runAiTool(request, 'F-020', ({ body }) => {
     const campaign = field(body, 'campaign', 300) ?? ''
     const audience = field(body, 'audience', 200) ?? ''
@@ -27,14 +58,6 @@ export async function POST(request: NextRequest) {
     // Whitelist enums server-side; unknown → neutral default.
     const platform = (PLATFORMS as readonly string[]).includes(platformRaw) ? platformRaw : 'website'
     const tone = (TONES as readonly string[]).includes(toneRaw) ? toneRaw : 'friendly'
-
-    const system = [
-      'You are a senior marketing copywriter for a language school (English test prep, business English).',
-      'You write short, high-converting ad copy for the specified platform and tone.',
-      'Respond with ONLY a single JSON object with exactly these keys:',
-      '{ "headlines": <array of 3-5 distinct headline strings, each under 60 characters>, "ad_copy": <string, 2-4 short paragraphs separated by blank lines>, "ctas": <array of 2-4 short call-to-action strings> }',
-      'No markdown, no commentary, no placeholders — write real, specific copy.',
-    ].join('\n')
 
     const user = [
       `Campaign: ${campaign}`,
@@ -50,12 +73,19 @@ export async function POST(request: NextRequest) {
       validate: validateContentDraft,
       temperature: 0.8,
       maxOutputTokens: 800,
+      trace: {
+        name: 'content-generator',
+        promptVersion,
+        promptSource,
+      },
       inputSummary: {
         platform,
         tone,
         campaign_chars: campaign.length,
         audience_chars: audience.length,
         objective_chars: objective.length,
+        prompt_source: promptSource,
+        prompt_version: promptVersion,
       },
     }
   })

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cacheGet, cacheKey, cacheSet } from '@/lib/ai/cache'
+import { gatewayConfigured, gatewayGenerate } from '@/lib/gateway-client'
+import { TOOL_SCHEMAS } from '@/lib/ai/json-schemas'
 
 // =============================================================
 // R-02 — THE one AI-call convention. Every Gemini feature in this app
@@ -30,8 +32,10 @@ export type AiError = {
   retryable: boolean
 }
 
+export type AiUsage = { promptTokens: number | null; completionTokens: number | null }
+
 export type AiResult<T> =
-  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean }
+  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean; usage?: AiUsage | null }
   | { ok: false; error: AiError; durationMs: number }
 
 export type ValidationResult<T> =
@@ -112,6 +116,22 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     return { ok: false, error: clientSafe(error), durationMs: Date.now() - startedAt }
   }
 
+  // --- AI Gateway dispatch (platform service #1): when configured, the
+  // Gateway owns routing/retries/metering; the local validator still runs
+  // as the final gate inside gatewayGenerate. Static switch, no runtime
+  // auto-failover (deliberate — see lib/gateway-client.ts). ---
+  if (gatewayConfigured()) {
+    const result = await gatewayGenerate({ ...opts, schema: TOOL_SCHEMAS[opts.tool] })
+    lastGeneration = {
+      tool: opts.tool,
+      ok: result.ok,
+      durationMs: result.durationMs,
+      cached: result.ok && result.cached === true,
+      at: new Date().toISOString(),
+    }
+    return result
+  }
+
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
 
@@ -127,7 +147,7 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     temperature: opts.temperature,
     maxOutputTokens: opts.maxOutputTokens,
   })
-  const hit = cacheGet(key)
+  const hit = await cacheGet(key)
   if (hit.hit) {
     const durationMs = Date.now() - startedAt
     lastGeneration = { tool: opts.tool, ok: true, durationMs, cached: true, at: new Date().toISOString() }
@@ -219,17 +239,248 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
     }
 
     const modelVersion = (json as { modelVersion?: string })?.modelVersion ?? model
+    const usageMeta = (json as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } })
+      ?.usageMetadata
+    const usage: AiUsage | null = usageMeta
+      ? {
+          promptTokens: typeof usageMeta.promptTokenCount === 'number' ? usageMeta.promptTokenCount : null,
+          completionTokens: typeof usageMeta.candidatesTokenCount === 'number' ? usageMeta.candidatesTokenCount : null,
+        }
+      : null
     const result2 = {
       ok: true as const,
       data: result.data,
       model: modelVersion.replace(/^models\//, ''),
       durationMs: Date.now() - startedAt,
+      usage,
     }
     lastGeneration = { tool: opts.tool, ok: true, durationMs: result2.durationMs, cached: false, at: new Date().toISOString() }
-    cacheSet(key, result2.data)
+    await cacheSet(key, result2.data)
     return result2
   }
 
+  return fail(lastError)
+}
+
+// -------------------------------------------------------------
+// Agent loop turn (Phase 9). Function-calling mode: the model picks
+// among REGISTERED tool declarations; the agent runtime owns every
+// execution decision. Deliberately NOT routed through the AI Gateway
+// (it speaks JSON-mode only) and never cached (the conversation
+// changes every turn) — same conventions otherwise: classification,
+// retry transient only, uniform error normalization.
+// -------------------------------------------------------------
+
+export type GeminiFunctionCall = { name: string; args: Record<string, unknown> }
+
+export type AgentTurnOptions = {
+  /** Log/trace identity, e.g. 'agent:admissions-followup'. */
+  tool: string
+  system: string
+  /** Full conversation so far (user/model turns with functionCall/functionResponse parts). */
+  contents: unknown[]
+  declarations: { name: string; description: string; parameters: object }[]
+  temperature?: number
+}
+
+export type AgentTurnAiResult =
+  | {
+      ok: true
+      calls: GeminiFunctionCall[]
+      /**
+       * Requestable raw parts of the model's turn (functionCall parts
+       * plus plain text parts; thought-only parts excluded). These can
+       * carry provider fields like thought_signature that MUST be
+       * echoed back when the conversation is replayed — the runtime
+       * persists the FULL turn parts and replays them verbatim, never
+       * rebuilding model turns from name+args alone (signatures are
+       * sometimes attached to sibling parts, not the functionCall).
+       */
+      turnParts: Record<string, unknown>[]
+      text: string | null
+      model: string
+      durationMs: number
+      usage: AiUsage | null
+    }
+  | { ok: false; error: AiError; durationMs: number }
+
+/** Extract functionCall parts from a generateContent response. */
+export function extractFunctionCalls(response: unknown): GeminiFunctionCall[] {
+  const r = response as {
+    candidates?: { content?: { parts?: { functionCall?: { name?: string; args?: Record<string, unknown> } }[] } }[]
+  }
+  const parts = r?.candidates?.[0]?.content?.parts ?? []
+  return parts
+    .filter((p) => p.functionCall && typeof p.functionCall.name === 'string')
+    .map((p) => ({ name: p.functionCall!.name as string, args: p.functionCall!.args ?? {} }))
+}
+
+export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTurnAiResult> {
+  const startedAt = Date.now()
+  const fail = (error: AiError): AgentTurnAiResult => ({
+    ok: false,
+    error: clientSafe(error),
+    durationMs: Date.now() - startedAt,
+  })
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
+  const model = process.env.AI_MODEL || DEFAULT_MODEL
+
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: opts.system }] },
+    contents: opts.contents,
+    tools: [{ functionDeclarations: opts.declarations }],
+    generationConfig: { temperature: opts.temperature ?? 0 },
+  })
+
+  // Loop turns are expensive; retry transient failures once, then stop.
+  const maxAttempts = 2
+  let lastError: AiError = { code: 'AI_BAD_OUTPUT', message: 'no attempts made', retryable: false }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) await new Promise((r) => setTimeout(r, BACKOFF_MS))
+
+    let response: Response
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+          body,
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        }
+      )
+    } catch (e) {
+      lastError = { code: 'AI_UNREACHABLE', message: String(e), retryable: true }
+      continue
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 300)
+      const cls = classifyHttpStatus(response.status)
+      console.error(`[ai:${opts.tool}] turn HTTP ${response.status} on attempt ${attempt}: ${detail}`)
+      lastError = { ...cls, message: `Gemini HTTP ${response.status}` }
+      if (!cls.retryable) break
+      continue
+    }
+
+    const json = (await response.json().catch(() => null)) as unknown
+    const rawParts = (
+      (json as { candidates?: { content?: { parts?: Record<string, unknown>[] } }[] })?.candidates?.[0]?.content
+        ?.parts ?? []
+    ) as Record<string, unknown>[]
+    // Requestable = has a functionCall, or is plain text (thought-only
+    // parts must not be sent back in request history).
+    const turnParts = rawParts.filter(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        ((p as { functionCall?: unknown }).functionCall ||
+          (typeof (p as { text?: unknown }).text === 'string' && !(p as { thought?: unknown }).thought))
+    )
+    const calls = extractFunctionCalls(json)
+    const text = extractText(json)
+
+    if (calls.length === 0 && !text?.trim()) {
+      lastError = { code: 'AI_BAD_OUTPUT', message: 'empty response', retryable: false }
+      break
+    }
+
+    const modelVersion = ((json as { modelVersion?: string })?.modelVersion ?? model).replace(/^models\//, '')
+    const usageMeta = (
+      json as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }
+    )?.usageMetadata
+    const usage: AiUsage | null = usageMeta
+      ? {
+          promptTokens: typeof usageMeta.promptTokenCount === 'number' ? usageMeta.promptTokenCount : null,
+          completionTokens: typeof usageMeta.candidatesTokenCount === 'number' ? usageMeta.candidatesTokenCount : null,
+        }
+      : null
+    return {
+      ok: true,
+      calls,
+      turnParts,
+      text: text?.trim() ? text : null,
+      model: modelVersion,
+      durationMs: Date.now() - startedAt,
+      usage,
+    }
+  }
+
+  return fail(lastError)
+}
+
+// -------------------------------------------------------------
+// Embeddings (Phase 9 Milestone B — governed RAG). Same convention as
+// every AI call in this app: this is the only module that talks to the
+// provider, failures are normalized AiResults, transient errors retry
+// once. Not cached (embedding lookups are cheap and queries differ).
+// -------------------------------------------------------------
+
+export const EMBEDDING_DIMENSIONS = 768
+
+export type EmbeddingResult =
+  | { ok: true; embedding: number[]; model: string; durationMs: number }
+  | { ok: false; error: AiError; durationMs: number }
+
+/** Embed one text (query or chunk) for vector retrieval. */
+export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
+  const startedAt = Date.now()
+  const fail = (error: AiError): EmbeddingResult => ({
+    ok: false,
+    error: clientSafe(error),
+    durationMs: Date.now() - startedAt,
+  })
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
+  // gemini-embedding-001 natively emits 3072 dims; outputDimensionality
+  // truncates to the 768 the knowledge_chunks column was created with.
+  const model = process.env.EMBEDDING_MODEL || 'gemini-embedding-001'
+
+  // The embedding API rejects very long inputs; chunks are ~800 chars,
+  // queries are short — this cap is only a safety net.
+  const input = text.slice(0, 8_000)
+
+  let lastError: AiError = { code: 'AI_BAD_OUTPUT', message: 'no attempts made', retryable: false }
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) await new Promise((r) => setTimeout(r, BACKOFF_MS))
+    let response: Response
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`, {
+        method: 'POST',
+        headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: `models/${model}`,
+          content: { parts: [{ text: input }] },
+          outputDimensionality: EMBEDDING_DIMENSIONS,
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch (e) {
+      lastError = { code: 'AI_UNREACHABLE', message: String(e), retryable: true }
+      continue
+    }
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 300)
+      const cls = classifyHttpStatus(response.status)
+      console.error(`[ai:embedding] HTTP ${response.status} on attempt ${attempt}: ${detail}`)
+      lastError = { ...cls, message: `Gemini HTTP ${response.status}` }
+      if (!cls.retryable) break
+      continue
+    }
+    const json = (await response.json().catch(() => null)) as {
+      embedding?: { values?: unknown }
+    } | null
+    const values = json?.embedding?.values
+    if (!Array.isArray(values) || values.length === 0 || !values.every((v) => typeof v === 'number')) {
+      lastError = { code: 'AI_BAD_OUTPUT', message: 'malformed embedding', retryable: false }
+      break
+    }
+    return { ok: true, embedding: values as number[], model, durationMs: Date.now() - startedAt }
+  }
   return fail(lastError)
 }
 
