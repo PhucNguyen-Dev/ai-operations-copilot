@@ -104,6 +104,8 @@ export type AgentRunRecord = {
   user_id: string
   /** Invoking employee's role at run start — resumes re-use this principal. */
   user_role: string
+  /** External API client that started the run (null for employee runs). */
+  client_id: string | null
   goal: string
   status: AgentRunStatus
   current_state: Record<string, unknown>

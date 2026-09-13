@@ -1,7 +1,7 @@
 // Pure role predicates (R-01: testable without Next.js/Supabase imports).
 // lib/auth.ts re-exports these alongside the session helper.
 
-export type Role = 'admin' | 'admissions' | 'operations' | 'marketing' | 'teacher' | 'unknown'
+export type Role = 'admin' | 'admissions' | 'operations' | 'marketing' | 'teacher' | 'external' | 'unknown'
 
 const OPS_ADMIN: Role[] = ['operations', 'admin']
 const ADMISSIONS_ADMIN: Role[] = ['admissions', 'admin']

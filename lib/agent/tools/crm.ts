@@ -92,8 +92,8 @@ export const getLeadTool: ToolDefinition<{ lead_id: string }, GetLeadResult> = {
   description:
     'Load one admissions lead with its latest AI analysis by id. Fails when the id does not exist or the lead is outside your visible scope.',
   riskLevel: 'read',
-  allowedAgents: [NAME],
-  allowedRoles: ['admissions'],
+  allowedAgents: [NAME, 'external-lead-support'],
+  allowedRoles: ['admissions', 'external'],
   parameters: {
     type: 'object',
     properties: { lead_id: { type: 'string', description: 'Lead id (uuid)' } },
@@ -142,8 +142,8 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
   description:
     'Search leads visible to you, newest first. Optional filters: status (new/contacted/converted/lost), category (HOT/WARM/COLD from the latest analysis). Returns at most 20.',
   riskLevel: 'read',
-  allowedAgents: [NAME],
-  allowedRoles: ['admissions'],
+  allowedAgents: [NAME, 'external-lead-support'],
+  allowedRoles: ['admissions', 'external'],
   parameters: {
     type: 'object',
     properties: {
@@ -199,8 +199,8 @@ export const getLeadHistoryTool: ToolDefinition<{ lead_id: string }, LeadHistory
   description:
     'Load the operational history of one lead you can see: past AI analyses, follow-up tasks and recorded emails. Use before creating a task or preparing an email to avoid duplicates.',
   riskLevel: 'read',
-  allowedAgents: [NAME],
-  allowedRoles: ['admissions'],
+  allowedAgents: [NAME, 'external-lead-support'],
+  allowedRoles: ['admissions', 'external'],
   parameters: {
     type: 'object',
     properties: { lead_id: { type: 'string', description: 'Lead id (uuid)' } },

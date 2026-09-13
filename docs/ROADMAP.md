@@ -225,7 +225,7 @@ Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-
 | B — Governed RAG | pgvector + Gemini embeddings, chunking, permission-filtered retrieval with citations (upgrades `search_knowledge`) | ✅ Done (verified live 2026-09-13: SOP-citation run — semantic retrieval of the competitor/refund SOP drove a governed escalation; migration 011 + `npm run ingest:knowledge`) |
 | C — Agent behavior evaluation | Scripted-fake-model unit evals in CI + ~10 real-Gemini scenarios on a **schedule** (not per-PR — cost/flakiness), machine-readable results | ✅ Done (verified live 2026-09-13: 9/9 scenarios pass — `npm run evals:agent` → `test-results/agent-evals.json`) |
 | D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | ✅ Done (verified live 2026-09-13: question → governed run → answer with visible tool-call trace; admissions/admin only, RLS matrix 6/6 still green) |
-| E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | Pending (REST) |
+| E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | ✅ Done (REST — verified live; MCP deferred as planned. `docs/EXTERNAL_API.md`) |
 | F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | Pending |
 | G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | Pending |
 | H — Persistent infrastructure hardening | Move rate-limiter/cache state into Postgres (spec 9.13) | Pending |

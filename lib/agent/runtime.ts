@@ -81,7 +81,7 @@ type LoopState = {
 
 export async function startAgentRun(
   deps: RuntimeDeps,
-  input: { agentId: string; userId: string; userRole: string; goal: string }
+  input: { agentId: string; userId: string; userRole: string; goal: string; clientId?: string }
 ): Promise<AgentRunOutput> {
   const agent = getAgent(input.agentId, deps.agents)
   if (!agent) return immediateFailure(input.agentId, `unknown agent ${input.agentId}`)
@@ -93,6 +93,7 @@ export async function startAgentRun(
       agent_id: agent.id,
       user_id: input.userId,
       user_role: input.userRole,
+      client_id: input.clientId ?? null,
       goal: input.goal,
       status: 'running',
       current_state: {},

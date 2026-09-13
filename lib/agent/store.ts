@@ -36,6 +36,7 @@ export class SupabaseAgentStateStore implements AgentStateStore {
         agent_id: run.agent_id,
         user_id: run.user_id,
         user_role: run.user_role,
+        client_id: run.client_id ?? null,
         goal: run.goal,
         status: run.status,
         current_state: run.current_state,

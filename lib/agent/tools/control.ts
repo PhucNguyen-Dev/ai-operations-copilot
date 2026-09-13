@@ -25,8 +25,8 @@ export const finishTool: ToolDefinition<FinishArgs, Record<string, never>> = {
   description:
     'End the run because the goal is achieved. summary = what you did, factually. verification = how you confirmed the outcome (tool results you observed). Call exactly once, only when no further action is needed.',
   riskLevel: 'read',
-  allowedAgents: [NAME],
-  allowedRoles: ['admissions', 'marketing', 'teacher', 'operations'],
+  allowedAgents: [NAME, 'external-lead-support'],
+  allowedRoles: ['admissions', 'marketing', 'teacher', 'operations', 'external'],
   parameters: {
     type: 'object',
     properties: {
@@ -65,8 +65,8 @@ export const escalateTool: ToolDefinition<EscalateArgs, EscalateResult> = {
   description:
     'Hand the situation to a human and end the run. Use when you are blocked, an action was denied and no alternative is authorized, or the situation needs human judgment. The lead\'s counselor is notified (or you, the requester, when no lead is involved).',
   riskLevel: 'write',
-  allowedAgents: [NAME],
-  allowedRoles: ['admissions', 'marketing', 'teacher', 'operations'],
+  allowedAgents: [NAME, 'external-lead-support'],
+  allowedRoles: ['admissions', 'marketing', 'teacher', 'operations', 'external'],
   parameters: {
     type: 'object',
     properties: {
