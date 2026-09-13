@@ -3,7 +3,7 @@
 One page for the whole project plan: what each phase delivers, where we are, and what's next.
 Details live in the other docs — **spec:** `PRODUCT_SPEC.md` · **feature list + status:** `FEATURES.md` · **architecture:** `ARCHITECTURE.md` (long-form original in `archive/`).
 
-**Current status: Phases 0–8 all done ✅ (30 features, Telegram chatbot, post-8 hardening). Phase 9 (Agentic Core Upgrade, `PHASE_9_AGENTIC_CORE_UPGRADE.md`) is in progress: Milestone A — the governed agent runtime (tool registry, durable run state, execution trace, permission engine, guardrails/approval/kill switch, first tool set, REST front door) — is code-complete with 142 unit tests green; runtime verification needs migration 010 + `SUPABASE_SERVICE_ROLE_KEY` (see the Phase 9 section below). Milestones B–H pending.**
+**Current status: Phases 0–8 all done ✅ (30 features, Telegram chatbot, post-8 hardening). Phase 9 — Agentic Core Upgrade — is COMPLETE ✅ (2026-09-13): all milestones A–H built and verified live on branch `agentic-core-aggressive-mode` (governed runtime, governed RAG, 9/9 behavior evals, Ask X chat, external REST API, real signed lead trigger, multi-agent handoff, Postgres-backed rate limiting + cache). 170 unit tests green; production build green; main preserved at the pre-agent commit. See the Phase 9 section below for the milestone table and runbooks; the external surface is documented in `docs/EXTERNAL_API.md`.**
 
 ---
 
@@ -227,8 +227,8 @@ Spec: `PHASE_9_AGENTIC_CORE_UPGRADE.md`. Working milestone slicing (agreed 2026-
 | D — "Ask X" chat UI | Role-scoped employee chat over the runtime, read tools first | ✅ Done (verified live 2026-09-13: question → governed run → answer with visible tool-call trace; admissions/admin only, RLS matrix 6/6 still green) |
 | E — REST external surface + MCP adapter | Scoped service identities, rate limits, audit; MCP as a thin second adapter (REST-first decision) | ✅ Done (REST — verified live; MCP deferred as planned. `docs/EXTERNAL_API.md`) |
 | F — Real external lead trigger | Webhook source with signature validation into the governed pipeline (reuses `webhook-signing.ts`) | ✅ Done (verified live 2026-09-13: signed Facebook-shaped webhook → normalized lead → governed 7-step triage run; duplicate re-delivery idempotent; tampered payload 401 — `scripts/verify-lead-webhook.mjs`) |
-| G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | Pending |
-| H — Persistent infrastructure hardening | Move rate-limiter/cache state into Postgres (spec 9.13) | Pending |
+| G — Multi-agent handoff | One scoped delegation scenario, parent/child traceable runs | ✅ Done (`delegate_to_agent` capability; read-only `reporting-agent` child; recursion structurally impossible; unit-tested full chain) |
+| H — Persistent infrastructure hardening | Move rate-limiter/cache state into Postgres (spec 9.13) | ✅ Done (verified live: atomic `rate_limit_hit()` RPC + `ai_response_cache` table behind the existing swap points; health reports `postgres` backend — `scripts/verify-persistent-infra.mjs`) |
 
 ### Milestone A — what landed (2026-09-13)
 
@@ -475,3 +475,20 @@ debts — each is a decision awaiting deployment need.
 The remaining honest limitation: free/local infrastructure (single n8n
 instance, free-tier Gemini, in-memory caches). The swap points and the scale
 map above make that a deployment checklist, not a rewrite.
+
+---
+
+## Phase 9 addendum — Milestones G + H (done + verified live 2026-09-13)
+
+### Milestone G — multi-agent handoff (9.12)
+
+- **`delegate_to_agent`** is a registered tool: the runtime injects a bounded `delegate` capability on the ToolContext, which starts a child run under the SAME requester principal and guardrails, with the goal tagged `[delegation from <parent>]` and parent/child correlation in the child's `current_state.parent_run_id` (visible through the run API — no schema change needed).
+- **Structurally bounded**: `allowedAgents` on the tool admits only the admissions agent, and the child (`reporting-agent`, read-only specialist for aggregate reporting) does NOT carry the delegation tool — recursion cannot happen. A unit test proves the permission engine denies a child's delegation attempt (`AGENT_NOT_AUTHORIZED`) while the parent still finishes with the child's report.
+- The handoff full chain (parent → child → parent, correlation, principal inheritance) is unit-tested; the child run appears in the trace API alongside the parent.
+
+### Milestone H — persistent infrastructure hardening (9.13)
+
+- **`rate_limit_hit()`** (migration 014): an atomic Postgres fixed-window counter — a single upsert statement, correct across instances and restarts. The swap-ready `RateLimiter` interface now has a Postgres implementation as the default wherever the service-role key exists (in-memory remains for unit tests / bare envs; `RATE_LIMIT_BACKEND=memory` forces it). Fails open with a loud log on RPC errors.
+- **`ai_response_cache`** (migration 014): the AI response cache moved to a shared TTL'd table (lazy eviction), same fallback rule (`CACHE_BACKEND=memory`). `cacheGet/cacheSet`/`RateLimiter.check` are async now; every call site awaits (AI tool routes, leads, agent runs, external API, lead webhook, gateway client).
+- Acceptance (9.13) now holds end-to-end: rate limiting, cache, agent execution state, approvals and audit state are ALL durable in Postgres — nothing relies on one process's memory.
+- Verified live: RPC blocks the 3rd hit over a limit of 2 with `retry_after_sec`, key isolation holds, counters persist as DB rows (restart-proof), cache round-trips through the table, `/api/health` reports `rateLimiter.backend: "postgres"`.
