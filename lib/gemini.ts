@@ -404,6 +404,72 @@ export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTu
 }
 
 // -------------------------------------------------------------
+// Embeddings (Phase 9 Milestone B — governed RAG). Same convention as
+// every AI call in this app: this is the only module that talks to the
+// provider, failures are normalized AiResults, transient errors retry
+// once. Not cached (embedding lookups are cheap and queries differ).
+// -------------------------------------------------------------
+
+export const EMBEDDING_DIMENSIONS = 768
+
+export type EmbeddingResult =
+  | { ok: true; embedding: number[]; model: string; durationMs: number }
+  | { ok: false; error: AiError; durationMs: number }
+
+/** Embed one text (query or chunk) for vector retrieval. */
+export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
+  const startedAt = Date.now()
+  const fail = (error: AiError): EmbeddingResult => ({
+    ok: false,
+    error: clientSafe(error),
+    durationMs: Date.now() - startedAt,
+  })
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
+  const model = process.env.EMBEDDING_MODEL || 'text-embedding-004'
+
+  // The embedding API rejects very long inputs; chunks are ~800 chars,
+  // queries are short — this cap is only a safety net.
+  const input = text.slice(0, 8_000)
+
+  let lastError: AiError = { code: 'AI_BAD_OUTPUT', message: 'no attempts made', retryable: false }
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) await new Promise((r) => setTimeout(r, BACKOFF_MS))
+    let response: Response
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`, {
+        method: 'POST',
+        headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: `models/${model}`, content: { parts: [{ text: input }] } }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch (e) {
+      lastError = { code: 'AI_UNREACHABLE', message: String(e), retryable: true }
+      continue
+    }
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 300)
+      const cls = classifyHttpStatus(response.status)
+      console.error(`[ai:embedding] HTTP ${response.status} on attempt ${attempt}: ${detail}`)
+      lastError = { ...cls, message: `Gemini HTTP ${response.status}` }
+      if (!cls.retryable) break
+      continue
+    }
+    const json = (await response.json().catch(() => null)) as {
+      embedding?: { values?: unknown }
+    } | null
+    const values = json?.embedding?.values
+    if (!Array.isArray(values) || values.length === 0 || !values.every((v) => typeof v === 'number')) {
+      lastError = { code: 'AI_BAD_OUTPUT', message: 'malformed embedding', retryable: false }
+      break
+    }
+    return { ok: true, embedding: values as number[], model, durationMs: Date.now() - startedAt }
+  }
+  return fail(lastError)
+}
+
+// -------------------------------------------------------------
 // Generation logging (H5 — ai_generations). Best-effort: a logging
 // failure must never break the tool response.
 // -------------------------------------------------------------
