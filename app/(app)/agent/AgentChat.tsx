@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRef, useState } from 'react'
 
 // =============================================================
@@ -60,7 +61,7 @@ const SUGGESTIONS = [
   'What is the early-bird discount policy?',
 ]
 
-export default function AgentChat() {
+export default function AgentChat({ canDecide = false }: { canDecide?: boolean }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -181,7 +182,14 @@ export default function AgentChat() {
 
                 {msg.pendingApproval && (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    ⏸ Awaiting human approval — the agent paused instead of acting on its own (run {msg.runId?.slice(0, 8)}).
+                    ⏸ Awaiting human approval — the agent paused instead of acting on its own (run {msg.runId?.slice(0, 8)}).{' '}
+                    {canDecide ? (
+                      <Link href="/agent/approvals" className="font-medium underline hover:text-amber-900">
+                        Review decisions
+                      </Link>
+                    ) : (
+                      <>Operations/Admin will review it — watch this card for the outcome.</>
+                    )}
                   </p>
                 )}
 

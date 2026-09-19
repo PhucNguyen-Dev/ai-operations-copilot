@@ -59,6 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Automation',
       items: [
         { href: '/runs', label: 'Automation Logs', icon: 'layers' },
+        { href: '/agent/approvals', label: 'Agent Approvals', icon: 'check' },
         { href: '/admin', label: 'Overview', icon: 'gauge' },
       ],
     })

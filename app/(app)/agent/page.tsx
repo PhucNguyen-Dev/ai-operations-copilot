@@ -1,4 +1,4 @@
-import { requireUser } from '@/lib/auth'
+import { requireUser, canViewAutomation } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import SiteHeader from '@/components/site-header'
 import NotAllowed from '@/components/not-allowed'
@@ -15,6 +15,7 @@ export default async function AgentPage() {
   if (role !== 'admissions' && role !== 'admin') {
     return <NotAllowed role={role} what="The Ask X agent" />
   }
+  const canDecide = canViewAutomation(role)
 
   const supabase = await createClient()
   const { data: runs } = await supabase
@@ -29,7 +30,7 @@ export default async function AgentPage() {
         title="Ask X"
         subtitle="Ask operational questions in plain language. Answers are produced by the governed agent runtime — every tool call is authorized, executed and traced by the platform, never by the model."
       />
-      <AgentChat />
+      <AgentChat canDecide={canDecide} />
       <section className="mt-10">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Recent agent runs</h2>
         <ul className="divide-y rounded-lg border bg-white shadow-sm">

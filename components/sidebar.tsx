@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import LogoutButton from '@/components/logout-button'
 
 export type SidebarIconName =
-  | 'grid' | 'pencil' | 'chart' | 'book' | 'quiz' | 'doc' | 'layers' | 'gauge' | 'plus' | 'shield' | 'chat'
+  | 'grid' | 'pencil' | 'chart' | 'book' | 'quiz' | 'doc' | 'layers' | 'gauge' | 'plus' | 'shield' | 'chat' | 'check'
 
 export type SidebarGroup = {
   label: string
@@ -79,6 +79,12 @@ const ICONS: Record<SidebarIconName, ReactNode> = {
     <>
       <path d="M8 1.8 13.5 4v4.2c0 3.2-2.4 5.4-5.5 6.2-3.1-.8-5.5-3-5.5-6.2V4z" />
       <path d="m5.8 7.9 1.6 1.6 2.8-2.9" />
+    </>
+  ),
+  check: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <path d="m5.5 8.3 1.8 1.8 3.4-3.8" />
     </>
   ),
 }

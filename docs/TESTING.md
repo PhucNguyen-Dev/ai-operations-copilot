@@ -1,6 +1,6 @@
 # Testing and evidence
 
-Commands are taken from `package.json:5`. Final local result reported firsthand by the primary: **273/273 unit tests across 23 files, typecheck, n8n validation (4 workflows, 3 existing Gmail variable warnings) and `npm run build` all pass** on baseline `c8506e4` plus uncommitted changes, 2026-09-17. **28/28 isolated SQL checks pass** with `PGLITE_MODULE_PATH` set. No checks were rerun for this docs update; hosted migration, live MCP/integrations, remote CI and captures remain pending. Dated provenance and reproduction requirements are in [LOCAL_VERIFICATION](evidence/LOCAL_VERIFICATION.md) and the [execution report](EXECUTION_REPORT.md).
+Commands are taken from `package.json:5`. Final local result reported firsthand by the primary: **280/280 unit tests across 24 files, typecheck, n8n validation (4 workflows, 3 existing Gmail variable warnings) and `npm run build` all pass** on the committed revision, 2026-09-19 (the prior 273/273 checkpoint on 2026-09-17 plus seven approval-inbox client tests). **28/28 isolated SQL checks pass** with `PGLITE_MODULE_PATH` set. No checks were rerun for this docs update; hosted migration, live MCP/integrations, remote CI and captures remain pending. Dated provenance and reproduction requirements are in [LOCAL_VERIFICATION](evidence/LOCAL_VERIFICATION.md) and the [execution report](EXECUTION_REPORT.md).
 
 ## Offline checks
 
