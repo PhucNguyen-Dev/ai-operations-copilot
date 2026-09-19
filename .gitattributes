@@ -1,0 +1,13 @@
+# Normalize line endings: LF in the repository and on checkout on all platforms.
+* text=auto eol=lf
+
+# Explicitly binary assets — never normalize or diff.
+# (-eol because the `binary` macro alone does not clear the eol set above.)
+*.png binary -eol
+*.jpg binary -eol
+*.jpeg binary -eol
+*.gif binary -eol
+*.ico binary -eol
+*.webp binary -eol
+*.woff binary -eol
+*.woff2 binary -eol
