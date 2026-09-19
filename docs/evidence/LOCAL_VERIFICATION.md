@@ -2,6 +2,10 @@
 
 **Revision:** baseline commit `c8506e4` **plus an uncommitted working tree** containing implementation, tests, migration and documentation changes. This is not verification of a new commit, a clean release or a remote deployment. No commit was created by the documentation work.
 
+## 2026-09-19 re-verification (committed revision, rerun firsthand)
+
+The follow-up revision (line-ending hygiene via `.gitattributes`, the previously uncommitted work committed in logical chunks through `a42b37d`, and a new ESLint gate) reran the offline checks firsthand on the final committed tree: `npm run lint` (new setup, zero findings after fixes) and `npm run typecheck -- --incremental false` PASS, **273/273 unit tests across 23 files PASS**, `node scripts/validate-n8n.mjs` reports **4 workflows valid with the same 3 pre-existing Gmail variable warnings**, and `npm run build` PASSes on **Next.js 15.5.25 with 27 static pages**. `git diff --check` is clean and no `.env` is tracked. This supersedes the "reported by the primary, not rerun" framing for the offline gate only — hosted migration 015, multi-connection concurrency, live integrations/MCP, remote CI and captures remain pending exactly as recorded below.
+
 ## Final checkpoint
 
 The primary's final firsthand results, supplied for this consistency update, are **273/273 unit tests across 23 files (including 36 MCP adapter cases), typecheck, build and 4-workflow validation PASS**, with **3 pre-existing Gmail variable warnings**. **28/28 isolated SQL checks PASS** after setting `PGLITE_MODULE_PATH` to the temporary dependency install. One invocation without that path failed `MODULE_NOT_FOUND` before SQL execution: a dependency-resolution/reproducibility issue, **not a migration failure**. For reproduction, point the variable to the temporary install root containing `node_modules`, as shown in the execution report.
@@ -32,7 +36,7 @@ The unit runner emitted a Vite native-config-loader compatibility warning for `v
 - **Hosted migration rollout still pending.** The SQL of 001/002/010/011/015 (including the `search_path = public, extensions` requester wrapper) is now verified against an isolated in-memory PostgreSQL (PGlite), but no hosted/managed Supabase project has had migration 015 applied. No real multi-connection concurrency test exists; the claim-once check used a single connection. Migrations 003–009 and 012–014 were not part of this isolated pass.
 - No live Gemini, Supabase, Telegram, tunnel, browser workflow, external partner or remote CI verification. Both MCP profiles are implemented/offline-verified, but live MCP/Inspector, Gateway and deployed-service acceptance remain unverified; no real user data was touched or produced.
 - The saved harness lives at `scripts/verify-approval-sql.mjs`; it resolves `@electric-sql/pglite`, `@electric-sql/pglite/contrib/pgcrypto` and `@electric-sql/pglite-pgvector` from `PGLITE_MODULE_PATH` when set (recommended for temp-directory installs), otherwise from the workspace. No workspace package changes were made; these remain optional, undocumented-in-package temp dependencies.
-- No lint command is defined in the inspected package scripts; do not treat typecheck as lint.
+- Lint gap **closed 2026-09-19**: ESLint 9 flat config (`eslint.config.mjs`, next/core-web-vitals + next/typescript, strict unused-vars/no-explicit-any), `npm run lint`, and a CI lint step; all 27 initial findings fixed. Typecheck and build remain separate gates, not lint substitutes.
 - No school deployment, real users, interviews, training delivery or measured business results. Services for the planned scenario are absent; [case-study](../case-study/README.md) remains a skeleton.
 
 ## What the tests do and do not establish

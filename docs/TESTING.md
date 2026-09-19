@@ -7,14 +7,13 @@ Commands are taken from `package.json:5`. Final local result reported firsthand 
 Run from the repository root with existing dependencies:
 
 ```sh
+npm run lint
 npm run typecheck -- --incremental false
 npm test
 node scripts/validate-n8n.mjs
 ```
 
-The latest unit/type checks passed on the hardened working tree, including five approval-route tests; the Vite config-loader warning remains non-fatal. The n8n validator passed with only missing-credential-name warnings (`GOOGLE_CLIENT_ID`/`SECRET`/`REFRESH_TOKEN`); it loads local `.env` when present, and this record contains no secret values. A standalone SQL verification exists: `node scripts/verify-approval-sql.mjs` runs the unchanged 001/002/010/011/015 migrations (plus a 015 rerun) against in-memory PGlite and reports 28 checks (79 queries / 27 execs); see [LOCAL_VERIFICATION](evidence/LOCAL_VERIFICATION.md) for the `PGLITE_MODULE_PATH` note and its single-connection limits. It does not replace hosted migration application or live checks below.
-
-There is no lint script in the inspected package manifest; the passing `npm run build` is a build/compile result, not an ESLint success. Confirm the intended lint command with the maintainer rather than inventing one or installing tooling.
+The latest lint/type/unit checks were rerun firsthand on the committed revision (2026-09-19): lint clean on the new ESLint 9 flat config, typecheck clean, and 273/273 unit tests pass, including five approval-route tests. The Vite config-loader warning remains non-fatal. The n8n validator passed with only missing-credential-name warnings (`GOOGLE_CLIENT_ID`/`SECRET`/`REFRESH_TOKEN`); it loads local `.env` when present, and this record contains no secret values. A standalone SQL verification exists: `node scripts/verify-approval-sql.mjs` runs the unchanged 001/002/010/011/015 migrations (plus a 015 rerun) against in-memory PGlite and reports 28 checks (79 queries / 27 execs); see [LOCAL_VERIFICATION](evidence/LOCAL_VERIFICATION.md) for the `PGLITE_MODULE_PATH` note and its single-connection limits. It does not replace hosted migration application or live checks below.
 
 ## MCP offline verification and live boundary
 
@@ -57,7 +56,7 @@ Run the local app separately with `npm run dev` and confirm the intended instanc
 
 ## CI is configuration, not current evidence
 
-`.github/workflows/ci.yml:3` runs on pull requests and pushes to `main`: install, typecheck, unit tests, n8n validation and build. `.github/workflows/agent-evals.yml:14` separately defines scheduled 02:00 UTC and manual agent evaluations, fixture seeding and artifact upload. It does not establish that repository secrets exist, migrations are applied, the latest run succeeded, or the final code was evaluated. Current CI/live results were **not verified** here. Review an actual run and its revision before reporting a result; inspect skipped scenarios and cleanup failures as well as process exit status.
+`.github/workflows/ci.yml:3` runs on pull requests and pushes to `main`: install, lint, typecheck, unit tests, n8n validation and build. `.github/workflows/agent-evals.yml:14` separately defines scheduled 02:00 UTC and manual agent evaluations, fixture seeding and artifact upload. It does not establish that repository secrets exist, migrations are applied, the latest run succeeded, or the final code was evaluated. Current CI/live results were **not verified** here. Review an actual run and its revision before reporting a result; inspect skipped scenarios and cleanup failures as well as process exit status.
 
 ## Reporting results safely
 

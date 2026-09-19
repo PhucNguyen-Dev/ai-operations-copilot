@@ -2,7 +2,7 @@
 
 A portfolio prototype for a **simulated Vietnamese education company**: admissions automation, staff AI drafting tools, role-scoped dashboards, governance materials, and a governed tool-using agent runtime.
 
-**Status (final checkpoint, 2026-09-17):** classic workflows, agent hardening and both MCP profiles are implemented with offline verification; **273/273 unit tests across 23 files, typecheck, build and validation of 4 n8n workflows pass** (3 existing Gmail variable warnings). **28/28 isolated SQL checks pass** with `PGLITE_MODULE_PATH` set for temporary dependencies. Results were reported firsthand by the primary on `c8506e4` plus the uncommitted working tree, not rerun for this docs update. Hosted migration 015, real multi-connection concurrency, live MCP/other integrations, remote CI and new captures remain pending. This is not production-ready or a completed customer deployment. See the [execution report](docs/EXECUTION_REPORT.md), [local evidence](docs/evidence/LOCAL_VERIFICATION.md) and [remaining gates](docs/ROADMAP.md).
+**Status (revision, 2026-09-19):** all previously uncommitted work is committed in logical chunks; classic workflows, agent hardening and both MCP profiles remain implemented with offline verification. **273/273 unit tests across 23 files, typecheck, lint (ESLint 9, all findings fixed), build and validation of 4 n8n workflows pass — rerun firsthand on the committed revision** (3 existing Gmail variable warnings). **28/28 isolated SQL checks** were previously recorded with `PGLITE_MODULE_PATH` set for temporary dependencies. Hosted migration 015, real multi-connection concurrency, live MCP/other integrations, remote CI and new captures remain pending. This is not production-ready or a completed customer deployment. See the [execution report](docs/EXECUTION_REPORT.md) and its [2026-09-19 addendum](docs/EXECUTION_REPORT.md#7-addendum--2026-09-19-revision-and-firsthand-re-verification), [local evidence](docs/evidence/LOCAL_VERIFICATION.md) and [remaining gates](docs/ROADMAP.md).
 
 ![Dashboard](docs/screenshots/01-dashboard-admin.png)
 
@@ -44,6 +44,7 @@ The app is intended at `http://localhost:3000`. The agent core does not require 
 ## Verify
 
 ```sh
+npm run lint
 npm run typecheck -- --incremental false
 npm test
 ```
