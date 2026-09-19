@@ -19,6 +19,7 @@ export type AgentRunStatus =
   | 'failed'
   | 'escalated'
   | 'cancelled'
+  | 'clarification_required'
 
 export type AgentStepStatus =
   | 'success'
@@ -99,7 +100,7 @@ export type ToolDefinition<TArgs = Record<string, unknown>, TResult = unknown> =
    * Control tools terminate the run (finish/escalate). The runtime
    * intercepts them before execute() and applies the run transition.
    */
-  control?: 'finish' | 'escalate'
+  control?: 'finish' | 'escalate' | 'clarify'
   execute: (ctx: ToolContext, args: TArgs) => Promise<ToolOutcome<TResult>>
 }
 
@@ -119,6 +120,7 @@ export type AgentRunRecord = {
   user_role: string
   /** External API client that started the run (null for employee runs). */
   client_id: string | null
+  session_id: string | null
   goal: string
   status: AgentRunStatus
   current_state: Record<string, unknown>

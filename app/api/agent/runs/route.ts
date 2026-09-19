@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
     goal?: unknown
     agentId?: unknown
     requireApproval?: unknown
+    sessionId?: unknown
+    ephemeralContext?: unknown
   } | null
   const goal = typeof body?.goal === 'string' ? body.goal.trim() : ''
   const agentId = typeof body?.agentId === 'string' && body.agentId ? body.agentId : 'admissions-followup'
@@ -53,6 +55,8 @@ export async function POST(request: NextRequest) {
   // high-risk tools — a flag that can only ADD governance, never
   // remove it (the default stays dry-run-allowed).
   const requireApproval = body?.requireApproval === true
+  const sessionId = typeof body?.sessionId === 'string' && /^[0-9a-f-]{36}$/i.test(body.sessionId) ? body.sessionId : null
+  const ephemeralContext = typeof body?.ephemeralContext === 'string' ? body.ephemeralContext.slice(0, 4000) : undefined
   if (goal.length < 5 || goal.length > 2000) {
     return NextResponse.json({ error: 'Field "goal" is required (5-2000 chars)' }, { status: 400 })
   }
@@ -79,11 +83,18 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = await createClient()
+  if (sessionId) {
+    const admin = createAdminClient()
+    const { data: sessionRun } = await admin.from('agent_runs').select('user_id').eq('session_id', sessionId).limit(1)
+    if (sessionRun?.length && sessionRun[0].user_id !== userId) {
+      return NextResponse.json({ error: 'Session does not belong to this user' }, { status: 403 })
+    }
+  }
   const deps = buildDeps(supabase)
   if ('error' in deps) return deps.error
 
   try {
-    const output = await startAgentRun(deps, { agentId, userId, userRole: role, goal, requireApproval })
+    const output = await startAgentRun(deps, { agentId, userId, userRole: role, goal, sessionId, ephemeralContext, requireApproval })
     return NextResponse.json(output, { status: 200 })
   } catch (e) {
     console.error('[api/agent/runs] POST failed:', e)
@@ -98,7 +109,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('agent_runs')
-    .select('id, agent_id, goal, status, step_count, final_outcome, error, started_at, completed_at')
+    .select('id, agent_id, session_id, goal, status, step_count, final_outcome, error, started_at, completed_at')
     .order('started_at', { ascending: false })
     .limit(50)
   if (error) {

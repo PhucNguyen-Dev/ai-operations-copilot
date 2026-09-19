@@ -115,4 +115,17 @@ export const escalateTool: ToolDefinition<EscalateArgs, EscalateResult> = {
   },
 }
 
-export const CONTROL_TOOLS = [finishTool, escalateTool]
+// ask_clarification — non-mutating assistant turn. The runtime records the
+// question and pauses without escalation or side effects.
+export type ClarificationArgs = { question: string; context: string | null }
+export const askClarificationTool: ToolDefinition<ClarificationArgs, Record<string, never>> = {
+  name: 'ask_clarification', version: '1.0.0',
+  description: 'Pause and ask the user one precise clarification question when a target or requested action is ambiguous. Never use this after a mutation.',
+  riskLevel: 'read', allowedAgents: [NAME], allowedRoles: ['admissions'],
+  parameters: { type:'object', properties:{ question:{type:'string',description:'Question, 1-500 chars'}, context:{type:'string',description:'Optional safe context, max 500 chars'} }, required:['question'] },
+  validateInput(args){const a=(args??{}) as Partial<ClarificationArgs>;if(!isNonEmptyStr(a.question,500))return {ok:false,errors:['question is required (1-500 chars)']};return {ok:true,data:{question:a.question,context:a.context??null}}},
+  validateOutput:()=>({ok:true,data:{}}), timeoutMs:1000, idempotency:'idempotent', control:'clarify',
+  async execute():Promise<ToolOutcome<Record<string,never>>>{return {ok:true,result:{}}},
+}
+
+export const CONTROL_TOOLS = [finishTool, escalateTool, askClarificationTool]
