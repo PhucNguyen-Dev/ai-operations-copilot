@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { loadVisibleLead } from '@/lib/agent/tools/crm'
 import { testContext } from './helpers/agent-test-kit'
-import { startAgentRun, resumeAgentRun, type RuntimeDeps } from '@/lib/agent/runtime'
+import { startAgentRun, resumeAgentRun, requireBoundedPeriodSearch, type RuntimeDeps } from '@/lib/agent/runtime'
 import { FakeAgentModel, MemoryAgentStore, TEST_AGENTS, TEST_TOOLS } from './helpers/agent-test-kit'
 
 // =============================================================
@@ -465,6 +465,18 @@ describe('approval resume safety', () => {
     expect(out.error).toContain('RESOURCE_DENIED')
   })
 })
+
+describe('agent runtime — reporting date bounds', () => {
+  it('refuses an unbounded search_leads when a relative-period report is requested', () => {
+    expect(requireBoundedPeriodSearch({ agent_id: 'reporting-agent', goal: 'Summarize leads of this week' }, 'search_leads', {})).toContain('PERIOD_BOUNDS_REQUIRED')
+    expect(requireBoundedPeriodSearch({ agent_id: 'reporting-agent', goal: 'Summarize leads of this week' }, 'search_leads', { created_after: '2026-09-14T00:00:00Z', created_before: '2026-09-21T00:00:00Z' })).toBeNull()
+    expect(requireBoundedPeriodSearch({ agent_id: 'reporting-agent', goal: 'Summarize all leads' }, 'search_leads', {})).toBeNull()
+    expect(requireBoundedPeriodSearch({ agent_id: 'reporting-agent', goal: 'Summarize leads of this week' }, 'get_lead', {})).toBeNull()
+  })
+
+  it('does not police non-reporting agents even for period goals', () => {
+    expect(requireBoundedPeriodSearch({ agent_id: 'admissions-followup', goal: 'leads of this week' }, 'search_leads', {})).toBeNull()
+  })})
 
 describe('agent runtime — approval protocol (9.6)', () => {
   it('suspends for approval, executes on approval, and stays fully traceable', async () => {

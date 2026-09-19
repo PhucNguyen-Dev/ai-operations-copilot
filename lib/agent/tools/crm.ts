@@ -153,6 +153,8 @@ export const getLeadTool: ToolDefinition<{ lead_id: string }, GetLeadResult> = {
 export type SearchLeadsArgs = {
   status?: 'new' | 'contacted' | 'converted' | 'lost'
   category?: 'HOT' | 'WARM' | 'COLD'
+  created_after?: string
+  created_before?: string
   limit: number
 }
 
@@ -169,6 +171,8 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
     properties: {
       status: { type: 'string', enum: ['new', 'contacted', 'converted', 'lost'] },
       category: { type: 'string', enum: ['HOT', 'WARM', 'COLD'] },
+      created_after: { type: 'string', description: 'Inclusive ISO timestamp lower bound for created_at' },
+      created_before: { type: 'string', description: 'Exclusive ISO timestamp upper bound for created_at' },
       limit: { type: 'integer', description: '1-20, default 10' },
     },
   },
@@ -183,7 +187,11 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
     if (a.limit !== undefined && (!Number.isInteger(a.limit) || a.limit < 1 || a.limit > 20)) {
       return { ok: false, errors: ['limit must be an integer between 1 and 20'] }
     }
-    return { ok: true, data: { status: a.status, category: a.category, limit: a.limit ?? 10 } }
+    for (const [key, value] of [['created_after', a.created_after], ['created_before', a.created_before] as const]) {
+      if (value !== undefined && (typeof value !== 'string' || Number.isNaN(Date.parse(value)))) return { ok: false, errors: [`${key} must be a valid ISO timestamp`] }
+    }
+    if (a.created_after && a.created_before && Date.parse(a.created_after) >= Date.parse(a.created_before)) return { ok: false, errors: ['created_after must be earlier than created_before'] }
+    return { ok: true, data: { status: a.status, category: a.category, created_after: a.created_after, created_before: a.created_before, limit: a.limit ?? 10 } }
   },
   validateOutput: validateLeadList,
   timeoutMs: 8_000,
@@ -192,7 +200,7 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
     if (ctx.requesterRead) {
       try {
         const rows = await ctx.requesterRead('search_leads', {
-          status: args.status ?? null, category: args.category ?? null, limit: args.limit,
+          status: args.status ?? null, category: args.category ?? null, created_after: args.created_after ?? null, created_before: args.created_before ?? null, limit: args.limit,
         }) as Record<string, unknown>[] | null
         return { ok: true, result: { count: rows?.length ?? 0, leads: rows ?? [] } }
       } catch (e) {
@@ -206,6 +214,8 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
       .limit(args.limit)
     if (args.status) query = query.eq('status', args.status)
     if (args.category) query = query.eq('lead_analyses.category', args.category)
+    if (args.created_after) query = query.gte('created_at', args.created_after)
+    if (args.created_before) query = query.lt('created_at', args.created_before)
     const { data, error } = await query
     if (error) return { ok: false, error: `lead search failed: ${error.message}`, retryable: false }
     return { ok: true, result: { count: data.length, leads: data } }
