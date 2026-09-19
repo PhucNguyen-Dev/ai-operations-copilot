@@ -82,7 +82,7 @@ export default async function LeadDetailPage({
          lead_analyses(score, category, intent, course, timeline, summary,
                        recommended_action, model, created_at),
          tasks(id, title, details, priority, status, due_at, created_at, created_by),
-         sent_emails(id, to_address, subject, body, status, sent_at, created_at),
+         sent_emails(id, to_address, subject, body, status, sent_at, created_at, dispatched_at, dispatch_error),
          profiles!leads_assigned_counselor_id_fkey(full_name, email)`
       )
       .eq('id', id)
@@ -340,19 +340,25 @@ export default async function LeadDetailPage({
               {emails.map((e) => {
                 const emailDecision = decisions.find((d) => d.target === 'email_draft' && d.email_id === e.id) ?? null
                 const dryRun = e.status === 'dry_run'
+                const dispatched = e.status === 'sent' || e.status === 'sent_simulated'
+                const failed = e.status === 'failed'
                 return (
                   <li key={e.id} className="rounded border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium">{e.subject} {dryRun && <AiTag />}</p>
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${dryRun ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                        {e.status}
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        e.status === 'sent' ? 'bg-green-100 text-green-700'
+                        : e.status === 'sent_simulated' ? 'bg-blue-100 text-blue-700'
+                        : failed ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-600'}`}>
+                        {e.status === 'sent_simulated' ? 'dispatched (simulated)' : e.status}
                       </span>
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{e.body}</p>
                     <p className="mt-1 text-xs text-gray-400">
-                      to {e.to_address} · {e.sent_at ? `sent ${timeAgo(e.sent_at)}` : `recorded ${timeAgo(e.created_at)}`}
+                      to {e.to_address} · {e.dispatched_at ? `dispatched ${timeAgo(e.dispatched_at)}` : `recorded ${timeAgo(e.created_at)}`}
                     </p>
-                    {dryRun && !e.sent_at && (
+                    {dryRun && (
                       <ActionReview
                         leadId={lead.id}
                         target="email_draft"
@@ -371,8 +377,13 @@ export default async function LeadDetailPage({
                         }
                       />
                     )}
-                    {e.sent_at && (
-                      <p className="mt-2 text-xs font-medium text-green-700">✓ Email sent · {new Date(e.sent_at).toLocaleString()}</p>
+                    {dispatched && (
+                      <p className="mt-2 text-xs font-medium text-green-700">
+                        ✓ {e.status === 'sent' ? 'Sent via Brevo' : 'Dispatched (simulated) — configure Brevo to send for real'} · {new Date(e.dispatched_at ?? e.created_at).toLocaleString()}
+                      </p>
+                    )}
+                    {failed && e.dispatch_error && (
+                      <p className="mt-2 text-xs font-medium text-red-700">✗ Dispatch failed: {e.dispatch_error} — retry by approving again.</p>
                     )}
                   </li>
                 )

@@ -122,6 +122,19 @@ The briefing is deterministic: numbers come from SQL via `lib/ops/snapshot` and 
 
 If a scheduled briefing fails, check: client enabled + scope present, target user role is admin/operations, migration 020 applied (`compute_daily_briefing` exists).
 
+## 7. Email dispatch (Brevo) and the approval loop
+
+Approving an email draft on Lead Detail now EXECUTES: the draft is claimed atomically and dispatched via Brevo when configured, or honestly simulated (status sent_simulated) when not. Approved recommended actions create a follow-up task (HOT -> high priority, due tomorrow).
+
+| Task | How |
+|---|---|
+| Enable real sending | Set BREVO_API_KEY and BREVO_FROM_EMAIL in .env (or host env) and restart |
+| Get the key | app.brevo.com -> SMTP & API -> API Keys (v3 key) |
+| Verify the sender | app.brevo.com -> Senders -> add + verify BREVO_FROM_EMAIL; unverified senders are rejected by Brevo |
+| Free tier | 300 emails/day - ample for admissions follow-ups; 401/429 errors mean bad key or exceeded quota |
+| Failed dispatch | Draft shows status failed + reason on Lead Detail; approve again to retry (the claim guard allows it because status returned to failed, not sent) |
+| Deployment note | Migration 021 must be applied (email_status sent_simulated + dispatched_at/dispatched_by/dispatch_error columns) |
+
 ## Troubleshooting
 
 | Symptom | Check / next action |

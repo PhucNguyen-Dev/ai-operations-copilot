@@ -4,9 +4,11 @@ import { useState } from 'react'
 // =============================================================
 // ActionReview — the human approval gate on AI output (client island).
 // Approve / Edit / Reject against POST /api/leads/[id]/decisions.
-// Honest states only: after approval the UI shows "Approved by …";
-// "sent" language NEVER renders unless the caller passes sentAt —
-// the platform has no send path by governance.
+// Approval EXECUTES: the route dispatches approved email drafts
+// (Brevo, or honest simulation when unconfigured) and creates tasks
+// for approved recommendations. The execution outcome comes back in
+// `execution` and renders as a second line — sent / simulated /
+// failed states are all explicit, never implied.
 // =============================================================
 
 type Decision = { decision: string; decidedBy: string; createdAt: string; note: string | null }
@@ -27,6 +29,7 @@ export default function ActionReview({
   compact?: boolean
 }) {
   const [decision, setDecision] = useState<Decision | null>(existing)
+  const [execution, setExecution] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draftBody, setDraftBody] = useState(body ?? '')
   const [note, setNote] = useState('')
@@ -52,6 +55,7 @@ export default function ActionReview({
         return
       }
       setDecision({ decision: kind, decidedBy: 'you', createdAt: out.decidedAt, note: kind === 'edited' ? null : note || null })
+      setExecution(typeof out.execution === 'string' ? out.execution : null)
       setEditing(false)
     } finally {
       setBusy(false)
@@ -67,10 +71,12 @@ export default function ActionReview({
     return (
       <div className={compact ? 'mt-1' : 'mt-3'}>
         <p className="text-xs font-medium text-green-700">✓ {label} by {decision.decidedBy} · {at}</p>
-        {decision.note && <p className="mt-0.5 text-xs text-gray-500">note: {decision.note}</p>}
-        {target === 'email_draft' && decision.decision === 'approved' && (
-          <p className="text-xs text-gray-500">Approved, pending send — the platform stays in dry-run until governance enables real sending.</p>
+        {execution && (
+          <p className={`mt-0.5 text-xs font-medium ${
+            execution.startsWith('Dispatch failed') ? 'text-red-700' : 'text-gray-700'
+          }`}>{execution}</p>
         )}
+        {decision.note && <p className="mt-0.5 text-xs text-gray-500">note: {decision.note}</p>}
       </div>
     )
   }
