@@ -6,7 +6,7 @@ import type {
   ToolContext,
   ToolDefinition,
 } from '@/lib/agent/types'
-import type { AgentContent, AgentFunctionCall, AgentModel, AgentTurnRequest } from '@/lib/agent/model'
+import type { AgentFunctionCall, AgentModel, AgentTurnRequest } from '@/lib/agent/model'
 import type { AgentDefinition } from '@/lib/agent/agents'
 import type { SupabaseClient } from '@supabase/supabase-js'
 

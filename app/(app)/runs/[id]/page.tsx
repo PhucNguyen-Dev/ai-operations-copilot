@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser, canViewAutomation } from '@/lib/auth'
@@ -49,7 +50,7 @@ export default async function RunDetailPage({
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
-          <a href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</a>
+          <Link href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</Link>
           <span className="mx-1">/</span>
           <span className="text-gray-700">Run detail</span>
         </nav>
@@ -71,7 +72,7 @@ export default async function RunDetailPage({
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
-        <a href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</a>
+        <Link href="/runs" className="hover:text-gray-800 hover:underline">Automation Logs</Link>
         <span className="mx-1">/</span>
         <span className="text-gray-700">Run {run.id.slice(0, 8)}</span>
       </nav>
@@ -91,7 +92,7 @@ export default async function RunDetailPage({
           · duration <Duration started={run.started_at} finished={run.finished_at} />
         </span>
         {run.lead_id && (
-          <a href={`/leads/${run.lead_id}`} className="text-sm underline">open lead</a>
+          <Link href={`/leads/${run.lead_id}`} className="text-sm underline">open lead</Link>
         )}
       </div>
 

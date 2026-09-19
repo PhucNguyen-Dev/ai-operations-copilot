@@ -102,15 +102,15 @@ class PostgresRateLimiter implements RateLimiter {
   }
 }
 
-function usePostgres(): boolean {
+function usingPostgres(): boolean {
   return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.RATE_LIMIT_BACKEND !== 'memory'
 }
 
 /** The single swap point. All call sites go through this object. */
-export const rateLimiter: RateLimiter = usePostgres() ? new PostgresRateLimiter() : new MemoryRateLimiter()
+export const rateLimiter: RateLimiter = usingPostgres() ? new PostgresRateLimiter() : new MemoryRateLimiter()
 
 /** Introspection for the health endpoint. */
 export function rateLimiterStats(): { backend: 'postgres' | 'in-memory'; keys: number } {
-  if (usePostgres()) return { backend: 'postgres', keys: buckets.size }
+  if (usingPostgres()) return { backend: 'postgres', keys: buckets.size }
   return { backend: 'in-memory', keys: buckets.size }
 }

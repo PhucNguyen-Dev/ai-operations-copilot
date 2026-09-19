@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getApiUser } from '@/lib/auth-server'
 import { canViewAutomation } from '@/lib/roles'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateCredentials } from '@/lib/agent/external-auth'
 import { getAgent } from '@/lib/agent/agents'

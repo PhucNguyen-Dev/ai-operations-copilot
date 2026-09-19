@@ -1,5 +1,4 @@
 import type { ToolDefinition, ToolOutcome } from '@/lib/agent/types'
-import type { ValidationResult } from '@/lib/gemini'
 
 // =============================================================
 // 9.12 — Multi-agent handoff, implemented as a registered tool. The

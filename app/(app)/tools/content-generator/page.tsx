@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/server'
 import SiteHeader from '@/components/site-header'
 import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
@@ -10,9 +9,6 @@ export default async function ContentGeneratorPage() {
   if (!canUseTool(role, 'F-020')) {
     return <NotAllowed role={role} what="The AI Content Generator" />
   }
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">

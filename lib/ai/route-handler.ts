@@ -65,7 +65,7 @@ export async function runAiTool<T>(
   }
 
   const spec = build({ userId, body })
-  const { inputSummary, trace, ...aiOptions } = spec
+  const { inputSummary: _inputSummary, trace, ...aiOptions } = spec
   const result = await generateJSON<T>({ ...aiOptions, tool: toolId })
 
   // --- PromptLedger run trace (fire-and-forget; records the exact prompt

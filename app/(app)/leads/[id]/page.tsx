@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser, canViewAutomation } from '@/lib/auth'
@@ -59,7 +60,7 @@ export default async function LeadDetailPage({
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
-          <a href="/" className="hover:text-gray-800 hover:underline">Dashboard</a>
+          <Link href="/" className="hover:text-gray-800 hover:underline">Dashboard</Link>
           <span className="mx-1">/</span>
           <span className="text-gray-700">Lead Detail</span>
         </nav>
@@ -96,7 +97,7 @@ export default async function LeadDetailPage({
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <nav className="mb-3 text-xs text-gray-500" aria-label="Breadcrumb">
-        <a href="/" className="hover:text-gray-800 hover:underline">Dashboard</a>
+        <Link href="/" className="hover:text-gray-800 hover:underline">Dashboard</Link>
         <span className="mx-1">/</span>
         <span className="text-gray-700">{lead.name}</span>
       </nav>
@@ -205,7 +206,7 @@ export default async function LeadDetailPage({
           {canViewAutomation(role) && (
             <p className="mt-4 text-xs text-gray-400">
               {runId
-                ? <>Pipeline run: <a className="underline" href={`/runs/${runId}`}>view execution log</a></>
+                ? <>Pipeline run: <Link className="underline" href={`/runs/${runId}`}>view execution log</Link></>
                 : 'No pipeline run linked to this lead.'}
             </p>
           )}

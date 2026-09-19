@@ -1,5 +1,4 @@
 import type { ToolDefinition, ToolOutcome } from '@/lib/agent/types'
-import type { ValidationResult } from '@/lib/gemini'
 import { isNonEmptyStr, loadVisibleLead } from '@/lib/agent/tools/crm'
 
 // =============================================================
@@ -100,7 +99,7 @@ export const escalateTool: ToolDefinition<EscalateArgs, EscalateResult> = {
       if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
       recipient = (visible.lead.assigned_counselor_id as string | null) ?? ctx.userId
     }
-    const { data, error } = await ctx.adminClient
+    const { error } = await ctx.adminClient
       .from('notifications')
       .insert({
         recipient_id: recipient,

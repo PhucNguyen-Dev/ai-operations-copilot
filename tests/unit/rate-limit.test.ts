@@ -6,7 +6,9 @@ describe('checkRateLimit (R-05)', () => {
 
   it('allows hits under the limit and counts down remaining', () => {
     const r1 = checkRateLimit('u1', 3, 60_000)
-    const r2 = checkRateLimit('u1', 3, 60_000)
+    // Kept (underscored) for its rate-limit side effect: without this
+    // hit, r3's remaining would be 1, not 0.
+    const _r2 = checkRateLimit('u1', 3, 60_000)
     const r3 = checkRateLimit('u1', 3, 60_000)
     expect(r1.ok).toBe(true)
     expect(r1.remaining).toBe(2)

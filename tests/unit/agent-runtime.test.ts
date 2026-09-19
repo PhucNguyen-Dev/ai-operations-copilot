@@ -406,7 +406,7 @@ describe('approval resume safety', () => {
     const claimed = await store.claimApproval(input.runId, input.approvalId)
     expect(claimed?.status).toBe('running')
     await store.updateRun(input.runId, { status: 'completed' })
-    const out = await resumeAgentRun(deps, input)
+    const _out = await resumeAgentRun(deps, input)
     expect(execute).not.toHaveBeenCalled()
     expect((await store.getRun(input.runId))?.status).toBe('completed')
   })
@@ -457,7 +457,7 @@ describe('approval resume safety', () => {
   })
 
   it('fails closed when an approved action loses resource scope during the wait', async () => {
-    const { store, deps, input } = await suspendedRun()
+    const { deps, input } = await suspendedRun()
     const execute = vi.fn(TEST_TOOLS.make_draft.execute)
     deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, checkResource: async () => ({ ok: false, reason: 'lead reassigned' }), execute } }
     const out = await resumeAgentRun(deps, input)

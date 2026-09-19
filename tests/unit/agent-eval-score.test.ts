@@ -9,7 +9,7 @@ const baseScenario = { id: 's1', title: 'Test scenario', expect: { finalStatus: 
 
 const output = (over: Record<string, unknown> = {}) => ({ runId: 'r1', status: 'completed', error: null, ...over })
 const step = (tool: string, status: string, over: Record<string, unknown> = {}) => ({ kind: 'tool_call', tool_name: tool, status, ...over })
-const trace = (steps: ReturnType<typeof step>[], over: Record<string, any> = {}) => ({
+const trace = (steps: ReturnType<typeof step>[], over: { run?: Record<string, unknown> } & Record<string, unknown> = {}) => ({
   run: { tokens_in: 100, tokens_out: 10, ...over.run },
   steps,
   approvals: [],

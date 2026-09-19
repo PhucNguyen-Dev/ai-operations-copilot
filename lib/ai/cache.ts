@@ -37,7 +37,7 @@ export function cacheKey(parts: {
   return `${parts.tool}:${createHash('sha256').update(payload).digest('hex')}`
 }
 
-function usePostgres(): boolean {
+function usingPostgres(): boolean {
   return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.CACHE_BACKEND !== 'memory'
 }
 
@@ -49,7 +49,7 @@ function admin(): SupabaseClient {
 
 /** Returns the cached value when present and unexpired (lazy eviction). */
 export async function cacheGet(key: string): Promise<{ hit: boolean; value?: unknown }> {
-  if (usePostgres()) {
+  if (usingPostgres()) {
     try {
       const { data, error } = await admin()
         .from('ai_response_cache')
@@ -85,7 +85,7 @@ export async function cacheGet(key: string): Promise<{ hit: boolean; value?: unk
 }
 
 export async function cacheSet(key: string, value: unknown): Promise<void> {
-  if (usePostgres()) {
+  if (usingPostgres()) {
     try {
       const { error } = await admin().from('ai_response_cache').upsert({
         key,

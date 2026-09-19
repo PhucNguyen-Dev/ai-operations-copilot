@@ -18,7 +18,6 @@ test.skip(process.env.AGENT_EVALS !== '1', 'agent behavior evals are opt-in (AGE
 
 const PASSWORD = 'demo1234'
 const COUNSELOR = 'counselor@demo.dev'
-const MARKETING = 'marketing@demo.dev'
 const ADMIN = 'admin@demo.dev'
 const SOURCE_TAG = 'eval-agent-v1'
 const FAKE_LEAD = '00000000-0000-0000-0000-000000000000'
@@ -166,7 +165,7 @@ test.beforeEach(async () => {
 for (const scenario of scenarios.cases) {
   test(scenario.title as string, async ({ page }) => {
     const f = (globalThis as Record<string, unknown>).__evalFixtures as Fixture
-    const s = scenario as Record<string, any>
+    const s = scenario as Record<string, unknown>
     const goal = (s.goal as string).replace('{leadId}', (f as Record<string, string>)[s.fixture as string] ?? FAKE_LEAD)
     const loginAs = (s.loginAs as string) ?? COUNSELOR
 
@@ -211,7 +210,7 @@ for (const scenario of scenarios.cases) {
     }
 
     // --- observe + score from the durable trace ---
-    let trace: Record<string, any> | null = null
+    let trace: Record<string, unknown> | null = null
     if (output.runId && output.status !== 'not_started') {
       const t = await traceOf(page, output.runId)
       if (t?.run) trace = t

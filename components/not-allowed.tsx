@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 /**
  * Shared "you cannot see this" screen for role-gated pages. Cosmetic
  * defense-in-depth: the database (RLS) enforces the real policy.
@@ -9,9 +11,9 @@ export default function NotAllowed({ role, what }: { role: string; what: string 
       <p className="mt-2 text-sm text-gray-500">
         {what} is restricted to Operations managers and admins (your role: {role}).
       </p>
-      <a href="/" className="mt-4 inline-block rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+      <Link href="/" className="mt-4 inline-block rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
         Back to dashboard
-      </a>
+      </Link>
     </main>
   )
 }

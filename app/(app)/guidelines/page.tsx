@@ -66,7 +66,7 @@ export default async function GuidelinesPage() {
             <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">90 minutes</span>
           </div>
           <p className="mt-1 text-sm text-gray-600">
-            “AI for Everyday Work” — prompting basics, your department's use cases, a live automation demo,
+            “AI for Everyday Work” — prompting basics, your department&apos;s use cases, a live automation demo,
             and a hands-on exercise with your own review checklist.
           </p>
         </a>
