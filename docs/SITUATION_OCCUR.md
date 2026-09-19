@@ -141,4 +141,24 @@ The feeling is also incomplete: Ask X accepts open-ended goals and compiles them
 
 ---
 
+## #8 — "Approve does nothing after approving" — approval-loop execution (2026-09-20)
+
+**Question:** approving an email draft or recommended action dead-ended at "Approved, pending send" — the governed-automation chain had no execution link.
+
+**Discussion/decision:** user chose Brevo as the email provider. Built the execution layer: migration 021 (`sent_simulated` status + dispatch bookkeeping), a dependency-free Brevo HTTP adapter (`lib/email/dispatch.ts` — real send when `BREVO_API_KEY` + `BREVO_FROM_EMAIL` are set, honest simulated dispatch when not), atomic draft claim (double-click races lose), approved recommended actions create a follow-up task (HOT → high priority, due tomorrow, assigned to the lead's counselor, written via service client per the deterministic-writes trust model). Live-verified both paths on a real lead; task-creation RLS failure caught and fixed during verification.
+
+**Pending user action:** create free Brevo account → API key + verified sender → add `BREVO_API_KEY`/`BREVO_FROM_EMAIL` to `.env` → restart. First real test must use Simulate Incoming Lead with the user's own real email (existing drafts point at fake `example.com` addresses — real sends there bounce and hurt sender reputation). Free tier 300/day. **Status: IMPLEMENTED + LIVE-VERIFIED (simulated) / REAL SEND PENDING USER'S BREVO KEY.**
+
+---
+
+## #9 — Morning-briefing push channel exploration (2026-09-20)
+
+**Question:** could briefings auto-send to a person from just their phone number / Instagram / TikTok / YouTube username?
+
+**Discussion:** no free channel allows cold-push by identifier — Telegram/WhatsApp/Instagram all require one-time recipient opt-in (press Start / DM first), TikTok and YouTube have no usable DM API at all, and YouTube community posts are public (data-breach risk for ops data). Only paid SMS truly pushes from a number. Also surfaced a real design concern: pushing internal briefings into the parent-facing bot mixes personas (user uses their phone to role-play parents).
+
+**User decision:** drop external push entirely for now — delivery stays in-app (pinned ☀ Briefing session). Telegram push nodes removed from the n8n workflow (commit `f411184`); re-enabling later = dedicated ops bot + per-recipient opt-in, documented in workflow notes. **Status: RESOLVED / DEFERRED BY DESIGN.**
+
+---
+
 *Next entries: append above this line, newest first.*
