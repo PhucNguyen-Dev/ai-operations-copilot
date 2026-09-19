@@ -36,3 +36,4 @@ npm-debug.log*
 # playwright
 test-results/
 playwright-report/
+.next-dev.log
