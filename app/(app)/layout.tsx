@@ -1,5 +1,6 @@
 import { requireUser, canUseTool, canViewAutomation, canSubmitLeads } from '@/lib/auth'
 import Sidebar, { type SidebarGroup } from '@/components/sidebar'
+import AgentBubble from '@/components/chat/AgentBubble'
 
 /** Roles whose requests the Ask-X agent accepts (mirrors lib/agent/agents.ts). */
 function canAskAgent(role: string): boolean {
@@ -78,6 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <Sidebar groups={groups} fullName={fullName} role={role} />
       <div className="app-content">{children}</div>
+      <AgentBubble canUse={canAskAgent(role)} />
     </>
   )
 }

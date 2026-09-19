@@ -15,7 +15,30 @@
   --ink-3: #64748b;
   --ink-4: #94a3b8;
   --ring: #3b82f6;
+  --surface-2: #f1f5f9;
 }
+
+/* ------------------------------------------------------------
+   Dark theme — SCOPED to the Ask X chat surfaces only. The .theme-dark
+   container (the /agent workspace and the floating bubble panel) opts
+   into the dark token palette; the rest of the app stays light by
+   design. Never put this class on <html>/<body> — the product pages
+   are built light-only and would break (see docs/SITUATION_OCCUR.md).
+   ------------------------------------------------------------ */
+.theme-dark {
+  --surface: #0f172a;
+  --card: #111827;
+  --border: #334155;
+  --ink: #f8fafc;
+  --ink-2: #cbd5e1;
+  --ink-3: #94a3b8;
+  --ink-4: #64748b;
+  --surface-2: #1e293b;
+  background: var(--surface);
+  color: var(--ink);
+}
+.theme-dark .field { background: var(--card); color: var(--ink); }
+
 
 body {
   background: var(--surface);
