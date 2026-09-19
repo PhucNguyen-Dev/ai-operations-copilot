@@ -113,16 +113,8 @@ await test('unreachable pipeline → connection refused (app maps to 502)', asyn
 })
 
 const pass = results.filter((r) => r.pass).length
-const out = [
-  '# E2E Failure-Case Results (Phase 8.1)',
-  '',
-  `Run: ${new Date().toISOString()} — ${pass}/${results.length} passed`,
-  '',
-  '| # | Case | Result | Detail |',
-  '|---|---|---|---|',
-  ...results.map((r, i) => `| ${i + 1} | ${r.name} | ${r.pass ? '✅ pass' : '❌ fail'} | ${r.detail.replace(/\|/g, '/')} |`),
-].join('\n')
-mkdirSync('docs', { recursive: true })
-writeFileSync('docs/e2e-results.md', out + '\n')
-console.log(`\n${pass}/${results.length} passed — saved docs/e2e-results.md`)
+const out = { run: new Date().toISOString(), passed: pass, total: results.length, results }
+mkdirSync('test-results', { recursive: true })
+writeFileSync('test-results/e2e-results.json', JSON.stringify(out, null, 2) + '\n')
+console.log(`\n${pass}/${results.length} passed — saved test-results/e2e-results.json`)
 process.exit(pass === results.length ? 0 : 1)

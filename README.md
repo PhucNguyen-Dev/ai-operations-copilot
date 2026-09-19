@@ -1,173 +1,93 @@
 # AI Operations Copilot
 
-An internal operations platform for a (simulated) education company: an **AI receptionist that handles
-student leads end-to-end**, five **AI assistants** for the staff, role-scoped dashboards, and a working
-**AI governance** practice — built as a portfolio demonstration of the AI Automation Specialist skill set.
+A portfolio prototype for a **simulated Vietnamese education company**: admissions automation, staff AI drafting tools, role-scoped dashboards, governance materials, and a governed tool-using agent runtime.
 
-**Status:** all 30 roadmap features complete (Phases 0–8) · post-8 hardening landed (AI response cache,
-swap-ready rate limiter, health observability, generation-log fix, Telegram webhook secret) · Playwright
-RLS matrix is the main open item.
+**Status (final checkpoint, 2026-09-17):** classic workflows, agent hardening and both MCP profiles are implemented with offline verification; **273/273 unit tests across 23 files, typecheck, build and validation of 4 n8n workflows pass** (3 existing Gmail variable warnings). **28/28 isolated SQL checks pass** with `PGLITE_MODULE_PATH` set for temporary dependencies. Results were reported firsthand by the primary on `c8506e4` plus the uncommitted working tree, not rerun for this docs update. Hosted migration 015, real multi-connection concurrency, live MCP/other integrations, remote CI and new captures remain pending. This is not production-ready or a completed customer deployment. See the [execution report](docs/EXECUTION_REPORT.md), [local evidence](docs/evidence/LOCAL_VERIFICATION.md) and [remaining gates](docs/ROADMAP.md).
 
 ![Dashboard](docs/screenshots/01-dashboard-admin.png)
 
-## The business problem
+## What it demonstrates
 
-Education companies live on incoming leads ("I need IELTS 7.5 in 6 weeks!"). Handled manually, response is
-slow and inconsistent, hot leads go cold, and every department repeats the same drudgery: marketers write
-every ad from scratch, teachers build every quiz by hand, managers assemble reports from scattered data.
-There's also no process for *adopting* AI safely — so it either doesn't get used or gets used carelessly.
+- **Classic admissions pipeline:** internal test-lead form or Telegram intake → signed n8n webhook → validation → AI qualification → deterministic category thresholds → CRM → email draft → dry-run email record → counselor task and notification → run logs. A separate Gmail send path exists but is outside the local demonstration target.
+- **Staff application:** lead and automation dashboards plus five human-reviewed tools: Content Generator, Campaign Analyzer, Lesson Planner, Quiz Generator, and Report Generator.
+- **Agent core / Ask X:** a model selects registered tools; application code checks permissions, resources, arguments and policy, records execution, and supports approval suspension, knowledge retrieval and bounded delegation. This is separate from n8n's fixed pipeline.
+- **Governance:** historical tool experiments and adoption decisions, designed training and SOPs. Training delivery and real employee adoption are not claimed.
+- **External integration code:** credential-scoped REST, a signed lead webhook, an [MCP stdio adapter](mcp/README.md) and [native n8n MCP tools](docs/WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools). MCP is implemented and offline-verified, not live-accepted or deployed; these integrations do not provide tenant isolation or a live Facebook/Zalo connection.
 
-## The solution
+[Feature inventory](docs/FEATURES.md) · [Agent core](docs/AGENT_CORE.md) · [External API](docs/EXTERNAL_API.md)
 
-One system with four parts:
+## Architecture at a glance
 
-1. **The automatic receptionist** — a lead arrives (internal test form or the Telegram parent chatbot) and
-   is validated, AI-analyzed (score 0–100, HOT/WARM/COLD), stored, answered with a personalized email,
-   given a follow-up task, and assigned to a counselor — with a counselor notification. Every step is
-   logged; failures are classified (transient → retried with backoff; permanent → structured failure
-   record). Nothing is silently dropped.
-2. **Role-scoped dashboards** — counselors see their assigned leads and tasks; operations sees automation
-   health and full logs; the *database* enforces every boundary (Row-Level Security), not just the UI.
-3. **Department AI assistants** — Content Generator & Campaign Analyzer (Marketing), Lesson Planner &
-   Quiz Generator (Academic), Report Generator for reports & data analysis (Operations). All AI output
-   is draft material with human review built in.
-4. **Governance** — real tool experiments (a measured head-to-head that chose the production model), a
-   scored adoption decision, per-department training designs, a workshop, and SOPs. Employees get an
-   **AI Guidelines** portal; the specialist gets a **Governance** back office.
-
-![Lead detail](docs/screenshots/02-lead-detail.png)
-
-## Features
-
-- **P0 — the automated pipeline (F-001–F-016):** test-lead intake, webhook trigger, validation, AI analysis,
-  scoring, HOT/WARM/COLD classification, CRM storage, AI email draft, automated send (dry-run locally),
-  follow-up task, counselor notification, step-level logging, error handling, retries, auth, RBAC.
-- **P1 — observability + department tools (F-017–F-025):** lead dashboard with search/filters, lead detail,
-  automation log viewer + run detail timelines, five AI tools, admin overview.
-- **P2 — governance (F-026–F-030):** AI Tool Lab, AI Tool Evaluation, Employee AI Training, Internal AI
-  Workshop, SOP collection. Full inventory: [docs/FEATURES.md](docs/FEATURES.md).
-- **Phase 9 — governed agentic core (A–H):** tool-using agents where the LLM decides what happens next and
-  the platform enforces whether it is allowed — central tool registry, permission engine, durable run state,
-  execution traces (no chain-of-thought), guardrails + human approvals + kill switch, governed RAG with
-  citations, nightly behavior evals in CI, an Ask X employee chat, a signed external lead webhook, a
-  scoped external REST API, and bounded multi-agent handoff. Run and verify it yourself:
-  **[docs/RUNBOOK.md](docs/RUNBOOK.md)** · spec: [docs/PHASE_9_AGENTIC_CORE_UPGRADE.md](docs/PHASE_9_AGENTIC_CORE_UPGRADE.md)
-  · external integrators: [docs/EXTERNAL_API.md](docs/EXTERNAL_API.md).
-
-## Architecture
-
-Four layers, each with one job — **n8n orchestrates, Next.js serves humans, Supabase persists, Gemini
-thinks, Gmail transports.** The dashboard reads exclusively from Supabase under RLS. AI output is
-schema-validated before anything is persisted; transient failures retry with backoff, permanent failures
-halt into structured records. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · workflow diagrams:
-[docs/WORKFLOW.md](docs/WORKFLOW.md).
-
-## Automation workflow
-
-The Admissions pipeline (F-002–F-014), node by node: [docs/WORKFLOW.md](docs/WORKFLOW.md).
-
-```
-Lead in (test form / Telegram chatbot) → webhook → validate → AI analyze (JSON-mode + schema gate)
-→ score & classify (deterministic thresholds) → CRM write → AI email draft → send (dry-run locally)
-→ follow-up task → counselor notification → per-step log → dashboard
+```text
+Staff browser → Next.js → Supabase Auth / RLS-backed dashboards
+                    ├→ interactive AI tools → optional Gateway / direct Gemini
+                    ├→ governed agent runtime → tools / Supabase / direct Gemini
+                    └→ signed admissions webhook → n8n fixed pipeline
+Telegram → local tunnel → n8n chatbot → admissions pipeline
+Signed external lead webhook → Next.js → CRM + agent triage
+External API client → Next.js → capability-scoped agent runtime
 ```
 
-A dedicated error-handler workflow catches unhandled crashes into the same log. The intake form stands
-in for **Facebook Lead Ads** — going live is one mapping branch (webhook payload → the same pipeline),
-tracked under Future Improvements.
+Next.js 15, React 19, TypeScript, Tailwind v4, Supabase/Postgres, n8n, Gemini and optional Gmail transport. Gateway routing applies to `generateJSON`, **not every AI call**. PromptLedger can own selected prompts; receiving telemetry does not make it the owner of all prompts. See [architecture](docs/ARCHITECTURE.md), [AI design](docs/AI_DESIGN.md), and [security boundaries](docs/SECURITY.md).
 
-## AI implementation
+## Run locally
 
-One AI convention (`lib/gemini.ts` + mirrored n8n nodes): pinned Gemini model (chosen by experiment),
-JSON mode everywhere, per-use-case schema gates, transient-retry/permanent-fail classification, usage
-logging. Prompts, contracts, and the failure philosophy: [docs/AI_DESIGN.md](docs/AI_DESIGN.md).
+Use Node 22 and npm. Configure credentials privately; never paste them into docs or issue reports. Follow [RUNBOOK](docs/RUNBOOK.md) for migrations, synthetic seed data and safety checks before starting services.
 
-**Prompt registry ([PromptLedger](../PromptLedger))** — the system prompts of owned tools live in a
-versioned registry, not in the code. `lib/promptledger.ts` fetches the **live** version at run time
-(60s TTL) when `PROMPTLEDGER_URL` is set: promoting a new version in the registry changes tool
-behavior on the next run, no redeploy. Fail-closed: registry down / no live version → the tool
-returns a structured `PROMPT_UNAVAILABLE` error instead of silently running a stale prompt.
-Unset → tools run on the committed prompts in `prompts/` (single-sourced with
-`scripts/seed-promptledger.mjs`, which registers them in the registry). Report Generator (F-024)
-shows the pattern; `prompt_source`/`prompt_version` land in each `ai_generations` row.
+```sh
+npm install
+npm run dev
+```
 
-## Screenshots
+The app is intended at `http://localhost:3000`. The agent core does not require n8n. For the classic pipeline use `npm run n8n`; for the Telegram demo use `npm run bot` after the [bot setup](docs/TELEGRAM-CHATBOT.md). Local services plus a temporary tunnel are the demonstration target, not a hosted production deployment.
 
-| | |
+## Verify
+
+```sh
+npm run typecheck -- --incremental false
+npm test
+```
+
+Live AI, database, Playwright and workflow checks require separate preparation and may create records, spend quota or send Telegram messages. Commands and evidence rules are in [TESTING](docs/TESTING.md); the test total above is a dated working-tree checkpoint, not a fixed expectation or current green-CI claim.
+
+## Evidence and limitations
+
+- [Simulated school case study](docs/case-study/README.md): assumed discovery, local deployment plan, and an explicitly unmeasured results framework; no fabricated interviews, users, ROI or outcomes.
+- [Tool Lab](docs/AI_TOOL_LAB.md) and [Tool Evaluation](docs/AI_TOOL_EVALUATION.md): retained historical experiments, not a fresh benchmark.
+- `prepare_email` **only records a dry-run draft**, even when approval is required. It does not send Gmail messages.
+- External agent reads use a service client; restricting tools and client-owned run history does not isolate CRM data by tenant.
+- Postgres limiter/cache implementations exist, with memory alternatives and degraded-mode behavior; durable rows alone do not provide a worker queue, exactly-once execution or automatic recovery.
+- Approval resume now uses authoritative requester reads, durable at-most-once claims and guard rechecks; uncertain effects require reconciliation, not blind replay. Migration 015 is unapplied. Server approval requirements and requester opt-in are now combined with OR, persisted, retained/strengthened on resume and inherited by children. Live SQL acceptance and the background webhook lifecycle remain separate gates.
+- Ask X supports manual **Refresh run trace** after approval; it does not auto-poll. The school case study is a planned skeleton, with services absent for the exercise; implemented/offline-verified MCP profiles do not establish live acceptance or customer deployment.
+
+## Historical screenshots and demos
+
+These existing assets are retained as historical demonstrations, not evidence of the current checkout or a real school deployment.
+
+| Lead detail | Automation logs |
 |---|---|
 | ![Lead detail](docs/screenshots/02-lead-detail.png) | ![Automation logs](docs/screenshots/03-automation-logs.png) |
+
+| Tool evaluation | Content generator |
+|---|---|
 | ![Tool evaluation](docs/screenshots/06-tool-evaluation.png) | ![Content generator](docs/screenshots/05-content-generator.png) |
 
-More in `docs/screenshots/`.
+[Lead pipeline video](https://youtu.be/f44MgJeGtNw) · [Telegram chatbot video](https://youtu.be/f44MgIc-8d4)
 
-## Demo video
+## Documentation
 
-**Full lead pipeline** — submit a test lead, watch n8n execute node by node:
+| Purpose | Document |
+|---|---|
+| Current remaining work | [Roadmap](docs/ROADMAP.md) |
+| System boundaries and components | [Architecture](docs/ARCHITECTURE.md) |
+| Runtime, tools, approvals, retrieval | [Agent core](docs/AGENT_CORE.md) |
+| Setup and operations | [Runbook](docs/RUNBOOK.md) |
+| Security limitations | [Security](docs/SECURITY.md) |
+| Checks and evidence | [Testing](docs/TESTING.md) · [Local verification](docs/evidence/LOCAL_VERIFICATION.md) · [Execution report](docs/EXECUTION_REPORT.md) |
+| Workflow details | [Workflows](docs/WORKFLOW.md) · [Telegram](docs/TELEGRAM-CHATBOT.md) |
+| AI routing and prompt ownership | [AI design](docs/AI_DESIGN.md) |
+| Integration contracts | [External API](docs/EXTERNAL_API.md) |
+| Scope and governance | [Features](docs/FEATURES.md) · [Historical product assumptions](docs/PRODUCT_SPEC.md) · [Training](docs/TRAINING.md) |
+| Historical plans | [Roadmap history](docs/archive/ROADMAP_HISTORY.md) · [Original Phase 9 specification](docs/archive/PHASE_9_AGENTIC_CORE_UPGRADE.md) |
 
-[![Lead pipeline demo](docs/screenshots/01-dashboard-admin.png)](https://youtu.be/f44MgJeGtNw)
-
-**Telegram chatbot** — the same flow through a live chat conversation:
-
-[![Telegram chatbot demo](docs/screenshots/03-automation-logs.png)](https://youtu.be/f44MgIc-8d4)
-
-## Tech stack
-
-Next.js 15 (App Router, TypeScript, Tailwind v4) · Supabase (Postgres + Auth + RLS) · n8n · Google Gemini
-· Gmail API · Vitest.
-
-## Setup
-
-```bash
-npm install
-cp .env.example .env    # fill: Supabase URL/keys, GEMINI_API_KEY (free at aistudio.google.com)
-                        # optional: PROMPTLEDGER_URL/KEY to serve prompts from the registry
-# Supabase SQL editor: run supabase/migrations/001..009, then seed.sql (+ seed_governance.sql)
-npm run seed:users      # 5 demo logins (password demo1234)
-npm run push:n8n        # import workflows (n8n stopped), then Activate in the UI
-npm run dev             # app at :3000
-npm run bot             # full bot stack: cloudflared tunnel + n8n + Telegram webhook, verified
-npm run kill-stack      # emergency stop: n8n, tunnels, stray node processes
-```
-
-Demo logins: any of `admin@demo.dev` / `operations@demo.dev` / `counselor@demo.dev` / `marketing@demo.dev` /
-`teacher@demo.dev` — password `demo1234`.
-Full runbooks: [docs/TELEGRAM-CHATBOT.md](docs/TELEGRAM-CHATBOT.md) (chatbot), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Testing
-
-- **74 unit tests** (`npm test`): AI helpers + response cache, tool schemas, app logic, rate limiter.
-- **E2E failure-case suite** (`node scripts/e2e-tests.mjs`): valid lead, invalid phone, missing fields,
-  malformed email, wrong secret, duplicate leads, oversized fields, unreachable pipeline — verified against
-  live Supabase. Latest results: [docs/archive/e2e-results.md](docs/archive/e2e-results.md) (8/8).
-- Integration test for the Gemini client (`npm run test:integration`).
-- Playwright auth/RLS visibility matrix (`d9c3ee1`) — the remaining open item is wiring it into CI.
-
-## Limitations
-
-- Email is **dry-run by default** (deliberate: no real sends from a prototype); real sending needs Gmail
-  OAuth credentials and `GMAIL_DRY_RUN=false`.
-- Free-tier Gemini quota is per-model per-day; sustained volume needs a paid tier or provider fallback.
-- No duplicate-lead dedupe yet (documented); chatbot demo runs on Telegram (Messenger/Zalo = same pattern,
-  business-account gated).
-- Single environment, no multi-region/HA — deliberate non-goals for a prototype.
-- n8n pipeline writes are RLS-scoped when `SUPABASE_JWT_SECRET` is set in `.env`; without it they fall
-  back to the service-role key (R-08, tracked in the project risk register).
-- Rate limiter + AI response cache are in-memory (single-instance); both sit behind swap-ready
-  interfaces for a multi-instance deploy.
-
-## Future improvements
-
-- Live Facebook Lead Ads / Zalo webhook replacing the test-lead simulation (§25; one mapping branch).
-- Registry-driven access: governance decisions granting/revoking tool access per role, with training gates
-  and n8n alerting to employees (docs/archive/PHASE7-SUMMARY §10).
-- Duplicate-lead detection, prompt versioning with accuracy tracking, multi-language lead handling.
-- Deployment: Vercel + hosted n8n (see docs/ROADMAP.md "Path to production"); shared rate limiter /
-  cache when multi-instance; Supabase JWT Signing Keys when the legacy secret is retired.
-- Full backlog: [docs/ROADMAP.md — Future implementations](docs/ROADMAP.md).
-
-## Document index
-
-[Roadmap](docs/ROADMAP.md) · [Spec](docs/PRODUCT_SPEC.md) · [Features](docs/FEATURES.md) ·
-[Architecture](docs/ARCHITECTURE.md) · [AI Design](docs/AI_DESIGN.md) · [Workflows](docs/WORKFLOW.md) ·
-[Tool Lab](docs/AI_TOOL_LAB.md) · [Tool Evaluation](docs/AI_TOOL_EVALUATION.md) · [Training](docs/TRAINING.md) ·
-[Phase 7 Summary](docs/archive/PHASE7-SUMMARY.md)
+Archived completion statements describe their original reporting context, not current acceptance. Private working notes are not required to follow this documentation.

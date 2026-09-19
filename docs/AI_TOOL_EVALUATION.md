@@ -1,7 +1,8 @@
 # AI_TOOL_EVALUATION — adoption decision (F-027)
 
-Distilled from the Tool Lab experiments (AI_TOOL_LAB.md). The scored decision also lives in the
-`tool_evaluations` table and renders at `/governance/tool-evaluation`.
+Historical adoption decision distilled from [Tool Lab experiments](AI_TOOL_LAB.md). Original scores and observations below are retained, not newly measured or revalidated. The decision's database/UI representation is `tool_evaluations` / `/governance/tool-evaluation`; current seeded state is unverified.
+
+The sample is small and synthetic. Labels such as accuracy, production prompt, free tier and cheapest paid tier describe the original evaluation, not current market/pricing facts, calibrated accuracy or production approval. It did not evaluate today's agent function calling, retrieval safety or deployment capacity. Before a new adoption decision, rerun relevant tasks, verify current provider terms/pricing and record uncertainty. See [AI_DESIGN](AI_DESIGN.md), [SECURITY](SECURITY.md), and [TESTING](TESTING.md).
 
 ## Decision: gemini-3.5-flash-lite — **Recommended** (conditional)
 

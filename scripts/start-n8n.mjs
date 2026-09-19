@@ -54,7 +54,13 @@ if (publicUrl && !/^https:\/\//.test(publicUrl)) {
   process.exit(1)
 }
 
-const child = spawn('npx', ['n8n', 'start'], {
+// n8n version is PINNED to the current security-patched stable release
+// (n8n security advisory batch, Sept 2026: 2.22.6 < 2.37.7 had multiple
+// High/Medium advisories incl. sandbox escapes). Bump deliberately, not via
+// npx's whatever-is-cached behavior.
+const N8N_VERSION = '2.37.7'
+
+const child = spawn('npx', [`n8n@${N8N_VERSION}`, 'start'], {
   stdio: 'inherit',
   shell: true,
   env: {

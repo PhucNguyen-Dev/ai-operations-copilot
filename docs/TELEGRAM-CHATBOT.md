@@ -1,146 +1,60 @@
-# Telegram Parent Chatbot — Runbook
+# Telegram parent chatbot — local runbook
 
-Closes the last JD gap: *"AI chatbot for answering parent inquiries"* + a live
-lead channel (the JD's "Facebook Leads" workflow, demonstrated on Telegram —
-the same pattern swaps to Messenger/Zalo when a business account exists).
+A simulated school lead-capture demonstration implemented in n8n, not the Next.js agent runtime. Current live bot operation is **unverified**; retained screenshots/videos describe historical demonstrations. The target is local n8n plus a temporary tunnel, not a production school service.
 
-## How it works
+## Behavior and data
 
-```
-Parent messages the Telegram bot
-  → Telegram Trigger (n8n)
-  → Prepare turn        [Code] — per-chat memory + school knowledge base
-  → AI chat turn        [Gemini] — FAQ answer OR collect enrollment info
-                                   (name, phone, course — one question at a time)
-  → Resolve turn        [Code] — schema check + conversation state
-  → Enrollment intent?  [IF]
-       ├─ reply        → Telegram message (knowledge-base answer / next question)
-       └─ submit       → Fire admissions pipeline (existing webhook!)
-                         → classification → CRM → email (dry-run) → task → notification
-                         → Telegram: warm confirmation to the parent
-```
+`n8n/telegram-parent-chatbot.json:35` prepares per-chat workflow static data, short conversation history, language/activity state and a simulated course/pricing knowledge base. The workflow either answers/collects information or submits to the classic signed admissions pipeline. It does not perform agent-tool delegation or governed vector retrieval.
 
-The bot uses the SAME webhook, validation, AI analysis, and logging as the
-Test Lead form — the chatbot is just a new front door. Leads arrive with
-`source: 'telegram'`. (Email is synthesized as `<phone>.tg@lead.local` because
-the pipeline requires a valid email — flagged in the lead's message field.)
+- `/start`, `/help` and `/stop` take the quick-command path without an AI turn.
+- Enrollment leads carry Telegram source information. The workflow synthesizes an email such as `<phone>.tg@lead.local` to meet the classic pipeline contract; that address is not a verified recipient and must not be used for live mail.
+- Follow-ups use CRM `telegram_stopped`, `nudges_sent` and `last_nudge_at` fields from migration 009. The intended sequence is a first nudge around 24 hours and a final one around five days, with active-chat skipping and opt-out handling.
+- Counter updates and message delivery are not atomic; overlapping runs can duplicate touches. Workflow static chat state is not a multi-instance conversation service.
+- Telegram replies/nudges are real external sends when a bot is connected. `GMAIL_DRY_RUN` controls email only, not Telegram.
 
-## Welcome experience & quick commands
+Treat tuition, campuses, hours and course names as synthetic scenario facts. No real parent's history, consent record or school policy is asserted. [WORKFLOW](WORKFLOW.md) owns the flow diagrams.
 
-- **Bot profile**: `start-bot.mjs` sets the empty-chat description
-  (`setMyDescription`) and the command menu (`setMyCommands`) at every startup —
-  idempotent, static until changed. This is the "auto pop-up" a parent sees
-  before tapping Start.
-- **Quick commands skip the AI turn** (instant, zero tokens): `/start` sends a
-  canned welcome, `/help` a menu, `/stop` an opt-out confirmation.
-- **No n8n attribution footer** on any customer-facing message
-  (`appendAttribution: false`).
+## Two local modes
 
-## Follow-up sequence (CRM-driven)
-
-A second trigger in the same workflow (`Hourly follow-up check`) runs the
-nudge engine — **trigger on inaction, not blind timers**:
-
-| Tier | When | Condition (server-side filtered) | Touches |
-|---|---|---|---|
-| 2 — Nurture | ~24h after registration | `status='new'`, chat_id set, not stopped, `nudges_sent=0` | 1 |
-| 3 — Re-engagement | ~5 days, still cold | same + `nudges_sent=1` | final |
-
-Rules baked into the logic:
-
-- **Max 2 automated touches per lead, ever.** `nudges_sent` is never reset —
-  not even by `/start` re-enable.
-- **`/stop`** sets `leads.telegram_stopped = true` (excluded by the query);
-  **`/start` re-enables** (explicit re-consent) — the `/stop` confirmation says so.
-- **Active-chat skip**: conversations active in the last 2h are never nudged
-  (`lastActiveAt` stamp on every non-command message).
-- **Messages vary per tier and per lead** (2 rotated templates × EN/VI —
-  language detected per message, stored per chat).
-- Every nudge is logged back to the lead (`nudges_sent`, `last_nudge_at` —
-  migration 009), so counselors see the automated history before calling.
-- **Race window note**: the GET-candidates → PATCH-counter pair has a small
-  double-send window at hourly cadence. Accepted at this scale; an RPC-side
-  increment is the over-engineering escape hatch.
-- **Operational bonus**: nudge sends are outbound Telegram API calls — they
-  work even in Layer 1 (`npm run n8n`, tunnel down); only *inbound* parent
-  messages need the tunnel.
-
-Chat memory lives in n8n workflow static data (`staticData.chats['chat_<id>']`,
-one map for Prepare + Resolve), including `lang`, `stopped`, `lastActiveAt`.
-
-
-## Running the stack (two layers)
-
-| Command | What it starts | Use when |
-|---|---|---|
-| `npm run n8n` | n8n only — editor at http://localhost:5678 | You want to inspect/edit workflows or test the admissions pipeline locally. The **Telegram trigger stays offline** (it needs a public HTTPS URL) — that is expected, not an error. |
-| `npm run bot` | Fresh tunnel + n8n + Telegram webhook, all verified | You want the chatbot live. One terminal, keep it open. |
-| `npm run kill-stack` | Emergency stop of everything (n8n ports + stray tunnels) | Anything feels "out of hand"; run this, then start fresh. |
-
-`npm run bot` performs, in order: kills stale port-5678 processes → starts a
-**cloudflared quick tunnel** (free, no account; backend swappable via
-`TUNNEL_BACKEND=cloudflared|localtunnel` in `.env`) and verifies it actually
-serves → starts n8n with that URL as `WEBHOOK_URL` → waits for n8n health →
-verifies the Telegram webhook (with 429 retry) → prints `✓ Bot stack ready`.
-If any layer fails it prints exactly which one and stops both children.
-
-The startup banner is always the source of truth for the current public URL.
-That URL is for Telegram's servers only — for the editor, always use
-`http://localhost:5678` (quick-tunnel URLs are random per start and free
-relays choke on the editor's asset burst in a browser).
-
-## Your steps
-
-### 1. Create the bot (~3 min)
-1. In Telegram, message **@BotFather** → send `/newbot`
-2. Name it (e.g. "Language School Enrollment") and pick a username ending in `bot`
-3. Copy the **token** (`123456:ABC-DEF...`)
-
-### 2. Configure the project
-1. Open `.env` → paste the token into `TELEGRAM_BOT_TOKEN=`
-2. Then:
-   ```bash
-   npm run push:n8n       # imports the chatbot workflow (first time / after edits)
-   npm run bot            # tunnel + n8n + Telegram webhook in one command
-   ```
-
-### 3. One-time n8n UI step (~2 min)
-1. Open http://localhost:5678 → **Credentials** → **Add credential** → **Telegram API**
-2. Paste the **same bot token** → name it exactly **`Telegram bot`** → Save
-3. Open the **Parent Inquiry Chatbot (Telegram)** workflow — the 3 Telegram nodes
-   should pick the credential up automatically (if not, select it in each) → **Activate**
-
-### 4. Test it
-Message your bot on Telegram:
-
-| Message | Expected |
+| Command | Intended use |
 |---|---|
-| "How much is IELTS?" | KB answer (from 6,000,000 VND, placement test) — no lead created |
-| "I want to register my daughter for IELTS" | Bot asks for name / phone |
-| "...her name is Lan, phone 0901 234 567" | Bot confirms → **lead appears in the dashboard** (source: telegram) with AI score/category, task + counselor notification created |
+| `npm run n8n` | Local editor/classic admissions at `http://localhost:5678`; no public Telegram ingress unless separately configured |
+| `npm run bot` | Launcher-managed tunnel, n8n, webhook registration and watchdog checks |
+| `npm run kill-stack` | Broad emergency cleanup; inspect targets first because unrelated local processes may be affected |
 
-Watch the runs: each enrollment-intent chat produces a full `admissions-lead-pipeline` run.
+`npm run bot` uses the launcher in `scripts/start-bot.mjs:1`. Its default tunnel approach is cloudflared, with localtunnel support. Startup checks and watchdog messages report attempts/current observations; they do not establish durable availability, guaranteed delivery or successful current verification by this docs task.
 
-## Troubleshooting
+Use the local editor URL, not the random public tunnel URL. A tunnel may expose the whole origin service; review access controls before starting it. Local insecure-cookie/environment-access settings are not a hardened public configuration. See [SECURITY](SECURITY.md).
 
-For the full post-mortem of the 2026-09-07 outage (silent bot, 502 tunnels,
-429 rate limits, webhook secret race), see the incident log maintained in the
-project's internal lessons-learned register.
+## Setup checklist — operator actions, not executed here
 
-- **Bot silent, no execution row in n8n** → message never reached n8n. Usually
-  the tunnel is down or you're in plain `npm run n8n` mode (Telegram offline by
-  design). Run `npm run kill-stack`, then `npm run bot`.
-- **`403 Provided secret is not valid`** → webhook was registered without the
-  secret. `npm run bot`'s watchdog re-registers with the correct secret; a
-  restart also fixes it (n8n registers itself on activation).
-- **Webhook errors in n8n** → run `npm run kill-stack`, then `npm run bot`.
-- **Everything feels broken / port in use** → `npm run kill-stack` stops every
-  n8n and stray tunnel process; then start again with `npm run bot`.
-- **`The service is receiving too many requests from you`** → Telegram 429
-  rate limit from many restarts; the launcher retries with backoff — wait a
-  minute between restarts.
-- **Lead not appearing** → check the chatbot workflow execution: "Fire admissions pipeline" node output;
-  remember the admissions workflow must also be Active.
-- **`⚠ Tunnel is down — healing`** → normal watchdog behavior; it opens a new
-  tunnel and re-registers automatically. Messages sent during the dead window
-  are lost (Telegram does not queue).
+1. Prepare the disposable project, ordered migrations and synthetic data using [RUNBOOK](RUNBOOK.md). Keep n8n email dry-run enabled and use only an authorized test Telegram chat.
+2. Create a test bot through Telegram's BotFather. Store the bot token privately as `TELEGRAM_BOT_TOKEN`; set a private `TELEGRAM_WEBHOOK_SECRET`. Never publish token fragments or credential screenshots.
+3. Stop the intended n8n instance, then run `npm run push:n8n`. This validates/imports/publishes workflows and changes trigger state; inspect the command before execution.
+4. Configure an n8n Telegram API credential named `Telegram bot`, privately using the test bot token. Check each Telegram node's credential binding and the workflow's activation state.
+5. Start `npm run bot` instead of another competing n8n process. Verify the reported webhook registration and local workflow state without displaying credential values. Keep the terminal open for the exercise.
+6. After testing, stop the stack/tunnel and review leftover fixtures, opted-in leads and scheduled follow-ups so a later restart does not contact unintended chats.
+
+## Synthetic acceptance exercise
+
+| Input / action | Observation to record, not an asserted result |
+|---|---|
+| `/start` then `/help` | Quick-command replies; no provider turn for those commands |
+| Ask about a fictional course | Answer uses the approved simulated knowledge; unknown details defer rather than invent |
+| Express enrollment interest with synthetic details | Information collection, signed pipeline submission, CRM/task/notification and dry-run email reconciled |
+| `/stop` | Opt-out state and exclusion from subsequent follow-up candidate selection |
+| Re-enable deliberately in the test chat | Intended consent/state transition without resetting lifetime nudge history |
+| Stop tunnel or simulate provider failure in the disposable setup | Record errors, retry behavior and actual delivery outcome without assuming messages are lost or queued indefinitely |
+
+Do not include real phone numbers or minors' data. Record only redacted evidence and measured observations in [case-study/RESULTS](case-study/RESULTS.md) after an authorized run.
+
+## Troubleshooting by layer
+
+1. **No n8n execution:** inspect local process, tunnel reachability and Telegram webhook status. Do not assume the AI failed if no update reached the workflow.
+2. **Webhook secret rejection:** check the private secret configuration and registration agree; allow the launcher to register against the current URL. Do not paste secrets into diagnosis output.
+3. **Telegram 429:** avoid restart loops; respect returned retry timing and inspect launcher backoff.
+4. **Lead missing:** inspect the `Fire admissions pipeline` result and classic workflow activation, then reconcile DB records; a chat confirmation alone is not database evidence.
+5. **Port conflict:** identify and stop only the intended n8n process. Broad cleanup is a last resort, not the default response to any error.
+6. **Tunnel interruption:** examine webhook pending/error information and actual delivered updates after recovery. Delivery retries are bounded and environment-dependent; neither loss nor eventual delivery is guaranteed here.
+
+Launcher/dependency changes are retained; local unit/type evidence is separate from live bot acceptance. Services for the case-study exercise are absent and its walkthrough remains planned, not implemented. [TESTING](TESTING.md) describes live gates; no launcher or package changes are made by documentation finalization.

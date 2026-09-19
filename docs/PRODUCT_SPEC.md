@@ -1,7 +1,13 @@
 # AI Operations Copilot
 
 **Type:** Portfolio prototype — internal business operations platform
-**Status:** Phase 0 — Product definition (no architecture, schema, or code yet)
+**Status:** Historical Phase 0 product definition and assumed requirements, retained as design context; not current implementation status.
+
+## Reading this historical specification
+
+The numbered sections below preserve the original scope, targets and assumptions. They are not discovery findings from a real school or evidence of delivered outcomes. Later additions include the Telegram customer-facing chatbot, governed agents, signed intake and external REST; the original claims of no code, no public-facing surface and no additional principals are therefore historical, not current facts. The original shadcn/ui constraint is not a claim that the current UI uses it.
+
+Current sources: [FEATURES](FEATURES.md), [ARCHITECTURE](ARCHITECTURE.md), [AGENT_CORE](AGENT_CORE.md), [EXTERNAL_API](EXTERNAL_API.md), and [remaining work](ROADMAP.md). Historical success criteria are targets, not passed acceptance tests. The AI score is a heuristic, agent email remains dry-run, and provider-shaped intake is not a live Facebook/Zalo account integration. See the explicitly [simulated Vietnamese school case study](case-study/README.md) for the local+tunnel demonstration plan; no real interviews, users or business results are claimed.
 
 ---
 

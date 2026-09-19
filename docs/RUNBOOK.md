@@ -1,116 +1,125 @@
-# RUNBOOK — Run, check, test, and operate the platform
+# Runbook — local demonstration and operations
 
-Everything below is exactly what was used to build and verify Phase 9. If a command's "looks like" output doesn't match, see [Troubleshooting](#troubleshooting).
+Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist, **not a record of completed setup or live verification**. Approval/runtime hardening and both MCP profiles are implemented with offline verification; 273/273 unit tests across 23 files, typecheck, validation of 4 n8n workflows (3 existing Gmail variable warnings) and the final build pass locally (2026-09-17). Isolated SQL passes 28 checks with `PGLITE_MODULE_PATH` set; hosted migration application, live MCP/other checks, remote CI and captures remain pending. See [local evidence](evidence/LOCAL_VERIFICATION.md) and the [execution report](EXECUTION_REPORT.md); this is not production readiness.
 
----
+## 1. Prepare privately
 
-## 1. One-time setup
+Use Node 22 and npm. Configure a disposable Supabase project and synthetic data. Keep credentials in private local configuration; never paste values into docs, terminal transcripts or issue reports. This consolidation did not inspect environment files.
 
-**Prerequisites:** Node 22, npm. n8n is only needed for the classic pipeline, not the agent core.
+| Configuration name | Used by |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | App database/Auth client |
+| `SUPABASE_SERVICE_ROLE_KEY` | Trusted agent persistence/writes and optional Postgres limiter/cache |
+| `GEMINI_API_KEY`, optional `AI_MODEL` | Direct Gemini generation/agent calls; model selection |
+| `N8N_WEBHOOK_SECRET` | Classic admissions signed intake |
+| `LEAD_WEBHOOK_SECRET` | Next.js signed lead webhook; code falls back to `N8N_WEBHOOK_SECRET` |
+| `GMAIL_DRY_RUN` | Keep true for n8n email demonstration |
+| `GMAIL_AGENT_DRY_RUN` | Agent draft approval policy only; never enables sending |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` | Optional chatbot/launcher |
+| `AI_GATEWAY_URL`, `AI_GATEWAY_KEY` | Optional Gateway for `generateJSON`, not agent turns/embeddings |
+| `PROMPTLEDGER_URL`, `PROMPTLEDGER_API_KEY` | Optional prompt retrieval and telemetry |
+| `RATE_LIMIT_BACKEND`, `CACHE_BACKEND` | Optional `memory` override; otherwise service credentials select Postgres |
 
-```bash
+Launcher handling and database credential behavior: `scripts/start-n8n.mjs:20`, `scripts/start-n8n.mjs:40`. Do not assume a custom-role JWT is active merely because migration 008 exists. See [SECURITY](SECURITY.md).
+
+## 2. Database and dependencies
+
+```sh
 npm install
 ```
 
-**`.env` keys** (already present in this workspace's `.env`):
+An install may change local package/lock state; review the resulting diff before any unrelated work. Do not replace another worker's package or launcher changes.
 
-| Key | Required for |
+Apply reviewed SQL migrations in filename order on the disposable project, starting at 001 for a fresh database; do not start a fresh database at 010. The inspected sequence is:
+
+| Range | Purpose |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | everything |
-| `GEMINI_API_KEY` | every AI call (agent turns, embeddings, department tools) |
-| `SUPABASE_SERVICE_ROLE_KEY` | agent runtime writes, governed tool writes, rate limiter/cache backends |
-| `GMAIL_AGENT_DRY_RUN` | optional (default `true`) — `false` forces human approval on email actions |
-| `LEAD_WEBHOOK_SECRET` | optional — lead webhook; falls back to `N8N_WEBHOOK_SECRET` |
+| 001–003 | Base schema, RLS and performance |
+| 004–007 | Generation logs, governance and index/default refinements |
+| 008–009 | Pipeline-role design and Telegram follow-ups |
+| 010–011 | Agent state/approvals and knowledge vectors |
+| 012–013 | External API clients and lead source-key uniqueness |
+| 014 | Persistent limiter/cache |
+| 015 (`015_approval_resume.sql`) | Approval wait accounting, durable execution claims and service-role-only requester reads |
 
-**Migrations 010–014** — run each `supabase/migrations/01*.sql` in the Supabase SQL Editor (idempotent). Confirm applied:
+**Release-gate status:** migration 015's SQL is now **verified against isolated in-memory PostgreSQL** (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)), but it **has not been applied to any hosted/managed Supabase project** and real multi-connection concurrency is untested. Local Docker/psql/postgres tooling was initially unavailable; verification used a temporary PGlite install, not a database substitute for the hosted rollout.
+
+The requester wrapper's `search_path = public, extensions` operator resolution is SQL-verified (`supabase/migrations/015_approval_resume.sql:111`). Execution on the selected hosted database, grants and the role/resource matrix remain pending. Review prerequisites and apply in order; do not blindly replay a wildcard.
+
+### Migration 015 and legacy reconciliation
+
+The backfill binds only an `awaiting_approval` run with no `pending_approval_id` to exactly one still-`pending` approval and its request time. **Legacy decided approvals, multiple pending approvals, or missing pending approvals require manual reconciliation**; the migration does not guess which action is safe to resume.
+
+Before enabling resume, inspect run/approval bindings, existing tool records and any external effects. Preserve the audit evidence; do not clear `execution_claimed_at`, fabricate wait timestamps, or reset decided approvals to force replay. A crash after a claim can leave an effect uncertain even if its trace is incomplete. Stop automated replay, establish whether the effect occurred, and record an operator disposition before any separately authorized new action.
+
+The requester-read RPC validates `auth.users.raw_app_meta_data.role`, not `profiles.role`; a missing/changed authoritative role blocks resume. Verify service-role-only function grants and the role/resource matrix on the selected database. Same-decision endpoint retries preserve the original decision; they do not grant permission to replay claimed work. Conflicting decisions return 409 and self-decisions 403.
+
+Review `supabase/seed.sql` and `supabase/seed_governance.sql` before optional synthetic seeding. `npm run seed:users` provisions demo accounts and changes Auth state; use only the disposable project and manage access privately. `npm run ingest:knowledge` chunks/embeds database knowledge documents, consumes provider quota and changes knowledge rows; it is not automatic ingestion of every Markdown document.
+
+## 3. Start only the needed path
+
+```sh
+npm run dev
+```
+
+Use `http://localhost:3000` for the app. Agent tools/Ask X do not require n8n. Inspect the actual process/port rather than assuming a ready page is the latest code.
+
+For classic admissions, stop the intended n8n instance before import, then:
+
+```sh
+npm run push:n8n
+npm run n8n
+```
+
+The push command validates, imports and publishes workflows; review it before use because publishing can enable triggers. Use `http://localhost:5678` for the editor. For the Telegram demo, follow [TELEGRAM-CHATBOT](TELEGRAM-CHATBOT.md) and use `npm run bot` instead of a second competing n8n process. No hosted deployment is required or claimed.
+
+## 4. Synthetic walkthrough — expected observations, not results
+
+1. As a counselor, inspect assigned leads and ask a read-only question through `/agent`; inspect the run and tool trace, including denials/errors rather than assuming `completed`.
+2. In the classic intake form, submit a synthetic lead; reconcile CRM, analysis, dry-run email, task/notification and n8n logs. The agent and n8n execution histories are separate.
+3. After migration 015 and its live gates pass, inspect exact draft arguments and decide as an independent permitted Operations/Admin user. Confirm the result remains `dry_run`; in Ask X use **Refresh run trace** to fetch updated state. Treat `RECONCILIATION_REQUIRED` as an operator stop, not a retry instruction.
+4. Optionally use a provisioned external client against [EXTERNAL_API](EXTERNAL_API.md); acknowledge its broad service-client CRM visibility before granting access.
+5. Run selected [TESTING](TESTING.md) checks only with authorization for their fixture writes, quota and messaging effects. Save a redacted summary, not raw test artifacts in Git.
+
+## 5. Runtime controls
+
+These SQL examples mutate the selected database; confirm the disposable target and record prior values before executing.
 
 ```sql
-select table_name from information_schema.tables
-where table_schema = 'public'
-  and table_name in ('agent_runs','agent_run_steps','agent_approvals','agent_api_clients','knowledge_chunks','rate_limit_hits','ai_response_cache');
--- expect 7 rows; plus: select count(*) from leads where external_key is not null; -- column exists
+update agent_runtime_config set kill_switch = true;
 ```
 
-**Demo users** (idempotent): `npm run seed:users`
+This stops execution at subsequent guard checks; it does not retract a side effect or guarantee cancellation of an in-flight model call. Restore the prior value only after investigating the cause.
 
----
-
-## 2. Run it — the 10-minute hands-on tour
-
-```bash
-npm run dev          # http://localhost:3000
+```sql
+insert into agent_tool_config (tool_name, enabled)
+values ('create_task', false)
+on conflict (tool_name) do update set enabled = false;
 ```
 
-Log in with `<role>@demo.dev` / password `demo1234` (counselor, admin, operations, marketing, teacher).
+This disables one registered tool at subsequent checks. Restore its prior configuration after the controlled exercise.
 
-1. **Ask X (the agent, as counselor):** sidebar → *AI Assistant → Ask X* → ask
-   *"Which of my leads need follow-up today?"*
-   → answer card shows a status badge (`completed`), the factual answer, and a **Run trace** you can expand: every tool call with its status and permission decision. No tool call happens without a permission decision.
-2. **As admin:** the same chat plus the "Recent agent runs" list. Simulate an incoming lead (*Simulate incoming lead*) and watch the classic n8n pipeline do its thing.
-3. **External API (as an external app, no browser session):** provision a client via `POST /api/agent/external-clients` (admin session) or just run `node scripts/verify-external-api.mjs` (provisions a temp client for you) — see [Verification scripts](#3-test-it).
-
----
-
-## 3. Test it — four tiers, cheapest first
-
-### Tier 1 — static + unit (no network, seconds)
-
-```bash
-npm run typecheck    # strict TS
-npm test             # 170 unit tests (registry, permissions, guardrails, loop, scorer, chunker, auth…)
-npm run build        # production build
-```
-
-### Tier 2 — E2E regression (dev server must be running)
-
-```bash
-npm run dev          # in one terminal
-npm run test:e2e     # in another — auth/RLS visibility matrix (6/6)
-```
-
-### Tier 3 — opt-in LIVE checks (real Gemini; each proves one guarantee)
-
-| Command | Proves |
+| Action | Interface |
 |---|---|
-| `AGENT_VERIFY=1 npx playwright test tests/e2e/agent-verify.spec.ts` | a real governed run completes + the chat UI renders answers with traces |
-| `npm run evals:agent` | the 9 behavior scenarios pass → `test-results/agent-evals.json` (9/9 expected) |
-| `node scripts/verify-external-api.mjs` | external client auth (wrong secret → 401), capability discovery, governed run, client attribution |
-| `node scripts/verify-lead-webhook.mjs` | signed webhook accepted → governed triage run; duplicate re-delivery idempotent; tampered payload → 401 |
-| `node scripts/verify-persistent-infra.mjs` | Postgres rate limiter blocks over-limit, isolates keys, persists; cache round-trips (no server needed) |
+| Decide approval | Session-authenticated `POST /api/agent/approvals/{id}` with `decision` and optional `note` |
+| Provision/revoke external client | Operations/Admin `/api/agent/external-clients`; revoke via `PATCH /api/agent/external-clients/{id}` with `enabled: false` |
+| Refresh knowledge | `npm run ingest:knowledge`, after reviewing document scope and provider cost |
+| Stop local stack | Prefer Ctrl+C in its owning terminal; inspect processes before using `npm run kill-stack` |
 
-All of these need the dev server running (except `verify-persistent-infra`), create their own fixtures, and clean up after themselves.
-
-### Tier 4 — nightly CI (already wired)
-
-```bash
-gh workflow run agent-evals   # manual trigger
-gh run watch                  # or: GitHub → Actions tab
-```
-
-Green build = the 9 scenarios passed against the real project; results artifact is attached to each run. Nightly 02:00 UTC.
-
----
-
-## 4. Operate it
-
-| Action | How |
-|---|---|
-| **Kill switch** (blocks all agent execution before any model call) | Supabase SQL: `update agent_runtime_config set kill_switch = true;` → next run fails with `KILL_SWITCH`. Back: `… set kill_switch = false;` |
-| **Disable one tool platform-wide** | `insert into agent_tool_config (tool_name, enabled) values ('create_task', false) on conflict (tool_name) do update set enabled = false;` → agents get a `TOOL_DISABLED` denial and re-plan |
-| **External client provisioning / revoke** | `POST /api/agent/external-clients` (admin session; secret shown once) · `PATCH /api/agent/external-clients/{id} {"enabled": false}` |
-| **Approve a high-risk agent action** | When a run is `awaiting_approval`: `POST /api/agent/approvals/{id} {"decision":"approved","note":"…"}` as Operations/Admin — the run resumes from Postgres |
-| **Refresh knowledge after editing SOPs** | `npm run ingest:knowledge` (re-chunks + re-embeds; the `search_knowledge` tool picks it up immediately) |
-| **Email approval demo** | Set `GMAIL_AGENT_DRY_RUN=false` in `.env`, restart → `prepare_email` now requires human approval |
-
----
+`kill-stack` is broad process cleanup, not a harmless health check. Do not use it on a machine running unrelated Node/tunnel work without inspecting the script and targets.
 
 ## Troubleshooting
 
-| Symptom | Cause → fix |
+| Symptom | Check / next action |
 |---|---|
-| Dev server "in use" / lands on :3001 | A previous `node.exe` holds :3000 (Windows orphans survive terminal close). `netstat -ano | findstr :3000` → `taskkill /PID <pid> /F`, then restart. **Always confirm the health endpoint on :3000 before running e2e**, or you'll test stale code. |
-| `text-embedding-004` → HTTP 404 | Model retired. The code already uses `gemini-embedding-001` + `outputDimensionality: 768` — don't "fix" it back. |
-| Gemini 400 "missing a thought_signature" | Model turns must be replayed verbatim (full raw parts, grouped per turn). The runtime does this — never rebuild model turns from `{name, args}`. |
-| Eval scenario fails instantly with 0 tokens in CI | Transient Gemini 429 (quota). The workflow pauses 3s between scenarios and retries once — rerun, or wait for the nightly. |
-| Runs fail with `KILL_SWITCH` unexpectedly | A previous eval/local run left the flag on: `update agent_runtime_config set kill_switch = false;` |
-| Tool denied with `AGENT_NOT_AUTHORIZED` for a NEW agent | `ToolDefinition.allowedAgents` must list EVERY agent identity allowed to call it — adding an agent definition alone is not enough. |
+| Port in use or app moves to 3001 | Identify the owning process and intended checkout; stop only that process rather than all Node processes |
+| Classic webhook rejected | Confirm launcher configuration, signed envelope and active workflow without printing secrets |
+| Agent missing DB objects | Compare the final ordered migrations with the selected project's applied schema |
+| `awaiting_approval` | Inspect approval state and exact arguments; do not repeatedly resubmit a non-idempotent action |
+| Unexpected `KILL_SWITCH` | Investigate previous test/operator state before restoring it; do not disable safety controls blindly |
+| Provider/config error | Check model availability and quota; old benchmark/model pins do not guarantee current availability |
+| Health reports Postgres | This identifies configured backend, not a successful RPC/cache round-trip; run the explicit authorized check |
+| Accepted webhook without completed run | Reconcile the stored lead with agent runs; background dispatch is not a durable queue |
+| Telegram silence or webhook errors | Follow the layered checks in the [bot runbook](TELEGRAM-CHATBOT.md); do not assume message delivery or loss |
+
+For current limits, use [AGENT_CORE](AGENT_CORE.md), [SECURITY](SECURITY.md) and [ROADMAP](ROADMAP.md), not historical pass counts.

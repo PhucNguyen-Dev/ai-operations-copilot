@@ -1,14 +1,14 @@
 # AI_TOOL_LAB — genuine experiments (F-026)
 
-All experiments were **actually executed** against the live Gemini API by `scripts/run-lab-experiments.mjs`
-(raw run data committed: `docs/governance-data/experiments.json`; records also seeded into the
-`tool_experiments` table and viewable at `/governance/tool-lab`).
+Historical experiment record, retained without rerunning or altering its measurements. The original record attributes execution to `scripts/run-lab-experiments.mjs` and stores evidence in [governance-data/experiments.json](governance-data/experiments.json). Database seed/display paths are `tool_experiments` and `/governance/tool-lab`; the current database state was not checked.
+
+These small synthetic business-task experiments are not a current provider benchmark, proof of production suitability, or real-school outcome. The measurements below belong to their original runs. Current routing/prompt ownership is documented in [AI_DESIGN](AI_DESIGN.md); agent behavior evaluation is separate in [TESTING](TESTING.md).
 
 ## Experiment A — head-to-head: gemini-3.5-flash vs gemini-3.5-flash-lite
 
 **Business task:** Admissions (F-004) — qualify a lead into
 `{score, category, intent, course, timeline, summary, recommended_action}` JSON.
-**Protocol:** 5 runs each, 3 rotating real leads (urgent HOT IELTS / vague COLD / mid WARM),
+**Protocol:** 5 runs each, 3 rotating synthetic lead scenarios (urgent HOT IELTS / vague COLD / mid WARM),
 JSON mode, temperature 0.4, graded on parse, schema validity, and category correctness.
 
 | Model | JSON parsed | Schema valid | Category correct | Avg latency |
