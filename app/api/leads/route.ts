@@ -55,11 +55,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const webhookUrl = process.env.N8N_WEBHOOK_URL
+  const webhookUrl = process.env.LEAD_WEBHOOK_URL
   const webhookSecret = process.env.N8N_WEBHOOK_SECRET
   if (!webhookUrl || !webhookSecret) {
     return NextResponse.json(
-      { error: 'Pipeline not configured (missing N8N_WEBHOOK_URL / N8N_WEBHOOK_SECRET)' },
+      { error: 'Pipeline not configured (missing LEAD_WEBHOOK_URL / N8N_WEBHOOK_SECRET)' },
       { status: 500 }
     )
   }

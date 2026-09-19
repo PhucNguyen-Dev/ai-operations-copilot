@@ -28,7 +28,11 @@ if (!secrets.SUPABASE_URL) secrets.SUPABASE_URL = secrets.NEXT_PUBLIC_SUPABASE_U
 if (!secrets.SUPABASE_SERVICE_ROLE_KEY) secrets.SUPABASE_SERVICE_ROLE_KEY = secrets.SUPABASE_SERVICE_ROLE_KEY
 // n8n calls its own admissions webhook on this same instance. This must never
 // be the public Telegram tunnel URL.
-secrets.N8N_WEBHOOK_URL = 'http://localhost:5678/webhook/admissions-lead'
+// Named LEAD_* (not N8N_*) because n8n reserves the N8N_WEBHOOK_URL env var
+// as its own public webhook base URL — using that name here made the Telegram
+// trigger register its bot webhook at this localhost address (rejected by
+// Telegram: "An HTTPS URL must be provided").
+secrets.LEAD_WEBHOOK_URL = 'http://localhost:5678/webhook/admissions-lead'
 
 // R-08 status update: the minted-JWT approach does NOT work on hosted
 // Supabase - PostgREST there rejects `SET ROLE n8n_pipeline` for custom
@@ -49,6 +53,7 @@ if (false && secrets.SUPABASE_JWT_SECRET) {
 // WEBHOOK_URL is optional: `npm run bot` supplies a fresh public HTTPS URL;
 // plain `npm run n8n` runs without one (Telegram trigger stays offline).
 const publicUrl = process.env.WEBHOOK_URL || secrets.WEBHOOK_URL
+delete secrets.N8N_WEBHOOK_URL // never leak the localhost callback into n8n's own config
 if (publicUrl && !/^https:\/\//.test(publicUrl)) {
   console.error('✗ WEBHOOK_URL must be a public HTTPS URL (supplied by `npm run bot`).')
   process.exit(1)

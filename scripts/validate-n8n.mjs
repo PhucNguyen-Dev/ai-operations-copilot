@@ -16,7 +16,7 @@ const n8nDir = join(root, 'n8n')
 
 // start-n8n.mjs injects every .env key into n8n's env, plus derived ones.
 const AVAILABLE_ENV = new Set([
-  'SUPABASE_URL', 'N8N_WEBHOOK_URL', 'N8N_PIPELINE_JWT', 'N8N_PORT', 'WEBHOOK_URL',
+  'SUPABASE_URL', 'LEAD_WEBHOOK_URL', 'N8N_WEBHOOK_SECRET', 'N8N_PIPELINE_JWT', 'N8N_PORT', 'WEBHOOK_URL',
 ])
 const envPath = join(root, '.env')
 if (existsSync(envPath)) {

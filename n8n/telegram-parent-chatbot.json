@@ -273,7 +273,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.N8N_WEBHOOK_URL }}",
+        "url": "={{ $env.LEAD_WEBHOOK_URL }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
