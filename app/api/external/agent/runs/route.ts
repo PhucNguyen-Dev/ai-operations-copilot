@@ -38,6 +38,11 @@ export async function POST(request: NextRequest) {
   const agent = getAgent(agentId)
   if (!agent) return NextResponse.json({ error: `Unknown agent "${agentId}"` }, { status: 400 })
 
+  if (!client.created_by) {
+    console.error('[api/external/agent/runs] POST refused: client has no provisioning user (created_by is null)')
+    return NextResponse.json({ error: 'Client configuration error: provisioning user is missing' }, { status: 500 })
+  }
+
   const limit = await rateLimiter.check(`ext-agent-run:${client.client_id}`, client.max_runs_per_hour, 3_600_000)
   if (!limit.ok) {
     return NextResponse.json(
@@ -61,7 +66,7 @@ export async function POST(request: NextRequest) {
   try {
     const output = await startAgentRun(deps, {
       agentId,
-      userId: client.created_by ?? '00000000-0000-0000-0000-000000000000',
+      userId: client.created_by,
       userRole: 'external',
       goal,
       clientId: client.client_id,
@@ -78,6 +83,14 @@ export async function GET(request: NextRequest) {
   const auth = await authenticateExternalClient(request)
   if ('response' in auth) return auth.response
   const { client, admin } = auth
+
+  const limit = await rateLimiter.check(`ext-agent-read:${client.client_id}`, 60, 60_000)
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: `Rate limit exceeded (60 reads/minute) — retry after ${limit.retryAfterSec}s` },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } }
+    )
+  }
 
   const { data, error } = await admin
     .from('agent_runs')

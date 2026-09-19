@@ -39,14 +39,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const userClient = await createClient()
   const { data: pending } = await userClient
     .from('agent_approvals')
-    .select('id, run_id, status')
+    .select('id, run_id, status, requested_by')
     .eq('id', id)
     .limit(1)
   if (!pending?.length) {
     return NextResponse.json({ error: 'Approval not found' }, { status: 404 })
   }
-  if (pending[0].status !== 'pending') {
-    return NextResponse.json({ error: `Approval already decided (${pending[0].status})` }, { status: 409 })
+  if (pending[0].requested_by === userId) {
+    return NextResponse.json(
+      { error: 'The requesting employee cannot decide their own approval' },
+      { status: 403 }
+    )
+  }
+  const priorStatus = pending[0].status as 'pending' | 'approved' | 'rejected'
+  if (priorStatus !== 'pending' && priorStatus !== decision) {
+    return NextResponse.json({ error: `Approval already decided (${priorStatus})` }, { status: 409 })
   }
 
   let adminClient
@@ -69,6 +76,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const decided = await store.decideApproval(id, decision, userId, note)
   if (!decided) {
+    if (priorStatus === decision) {
+      const existing = await store.getApproval(id)
+      return NextResponse.json({ approval: { id, status: priorStatus }, run: await resumeAgentRun(deps, { runId: existing!.run_id, approvalId: id }) })
+    }
     return NextResponse.json({ error: 'Approval already decided' }, { status: 409 })
   }
 

@@ -24,6 +24,14 @@ export const DEFAULT_GUARDRAIL_LIMITS: GuardrailLimits = {
   maxToolCallsPerTurn: 3,
 }
 
+export function activeRunTimeMs(
+  run: Pick<AgentRunRecord, 'started_at' | 'approval_wait_ms' | 'approval_wait_started_at'>,
+  now: number = Date.now()
+): number {
+  const end = run.approval_wait_started_at ? new Date(run.approval_wait_started_at).getTime() : now
+  return Math.max(0, end - new Date(run.started_at).getTime() - Number(run.approval_wait_ms ?? 0))
+}
+
 export type GuardFailure = { ok: false; reason: 'step_limit' | 'token_budget' | 'timeout'; message: string }
 export type GuardResult = { ok: true } | GuardFailure
 
@@ -33,15 +41,15 @@ export type GuardResult = { ok: true } | GuardFailure
  * process re-evaluates from the same numbers.
  */
 export function evaluateRunGuards(
-  run: Pick<AgentRunRecord, 'step_count' | 'tokens_in' | 'tokens_out' | 'max_steps' | 'started_at'>,
+  run: Pick<AgentRunRecord, 'step_count' | 'tokens_in' | 'tokens_out' | 'max_steps' | 'started_at' | 'approval_wait_ms' | 'approval_wait_started_at'>,
   limits: GuardrailLimits,
   now: number = Date.now()
 ): GuardResult {
   if (run.step_count >= run.max_steps) {
     return { ok: false, reason: 'step_limit', message: `step limit reached (${run.max_steps})` }
   }
-  const elapsed = now - new Date(run.started_at).getTime()
-  if (elapsed > limits.runTimeoutMs) {
+  const elapsed = activeRunTimeMs(run, now)
+  if (!Number.isFinite(elapsed) || elapsed >= limits.runTimeoutMs) {
     return { ok: false, reason: 'timeout', message: `run timeout after ${Math.round(elapsed / 1000)}s` }
   }
   const tokens = run.tokens_in + run.tokens_out

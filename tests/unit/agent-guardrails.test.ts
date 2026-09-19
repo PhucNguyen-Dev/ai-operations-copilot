@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_GUARDRAIL_LIMITS,
+  activeRunTimeMs,
   clampTurnCalls,
   evaluateRunGuards,
   refusalFeedback,
@@ -48,6 +49,29 @@ describe('evaluateRunGuards (9.6)', () => {
     const r = evaluateRunGuards({ ...baseRun, started_at: started }, DEFAULT_GUARDRAIL_LIMITS)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe('timeout')
+  })
+
+  it('excludes accumulated human-wait time from the run budget', () => {
+    const started = new Date(Date.now() - 180_000).toISOString()
+    const waitStart = new Date(Date.now() - 120_000).toISOString()
+    const r = evaluateRunGuards(
+      { ...baseRun, started_at: started, approval_wait_ms: 0, approval_wait_started_at: waitStart },
+      DEFAULT_GUARDRAIL_LIMITS
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it('excludes previously accumulated human-wait time from the run budget', () => {
+    const started = new Date(Date.now() - 180_000).toISOString()
+    const r = evaluateRunGuards(
+      { ...baseRun, started_at: started, approval_wait_ms: 120_000 },
+      DEFAULT_GUARDRAIL_LIMITS
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it('activeRunTimeMs stays non-negative across suspicious clocks', () => {
+    expect(activeRunTimeMs({ started_at: new Date(Date.now() + 10_000).toISOString() })).toBe(0)
   })
 })
 

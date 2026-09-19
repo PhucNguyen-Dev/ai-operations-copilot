@@ -26,9 +26,15 @@ export class MemoryAgentStore implements AgentStateStore {
 
   async createRun(run: Omit<AgentRunRecord, 'id' | 'started_at' | 'updated_at'>): Promise<AgentRunRecord> {
     const now = new Date().toISOString()
-    const record: AgentRunRecord = { ...run, id: crypto.randomUUID(), started_at: now, updated_at: now }
+    const record: AgentRunRecord = {
+      ...run,
+      id: crypto.randomUUID(),
+      started_at: now,
+      updated_at: now,
+      current_state: { ...run.current_state },
+    }
     this.runs.set(record.id, record)
-    return { ...record }
+    return { ...record, current_state: { ...run.current_state } }
   }
 
   async updateRun(runId: string, patch: Partial<Omit<AgentRunRecord, 'id'>>): Promise<void> {
@@ -96,6 +102,30 @@ export class MemoryAgentStore implements AgentStateStore {
     }
     this.approvals.set(id, updated)
     return { ...updated }
+  }
+
+  async claimApproval(runId: string, approvalId: string): Promise<AgentRunRecord | null> {
+    const run = this.runs.get(runId)
+    const approval = this.approvals.get(approvalId)
+    if (!run || !approval || run.status !== 'awaiting_approval' || run.pending_approval_id !== approvalId ||
+      !run.approval_wait_started_at || approval.run_id !== runId || approval.requested_by !== run.user_id ||
+      approval.status === 'pending' || approval.execution_claimed_at || approval.decided_by === run.user_id) return null
+    const now = new Date().toISOString()
+    this.approvals.set(approvalId, { ...approval, execution_claimed_at: now })
+    const claimed: AgentRunRecord = {
+      ...run,
+      status: 'running',
+      approval_wait_ms: (run.approval_wait_ms ?? 0) + Math.max(0, Date.now() - new Date(run.approval_wait_started_at).getTime()),
+      approval_wait_started_at: null,
+    }
+    this.runs.set(runId, claimed)
+    return { ...claimed }
+  }
+
+  async requesterRead(runId: string, operation: string, _args: Record<string, unknown>): Promise<unknown> {
+    const run = this.runs.get(runId)
+    if (operation === 'principal' && run) return { user_id: run.user_id, user_role: run.user_role }
+    throw new Error('REQUESTER_AUTHORIZATION_FAILED: unavailable test resource')
   }
 
   async isKillSwitchOn(): Promise<boolean> {

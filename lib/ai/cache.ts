@@ -61,12 +61,13 @@ export async function cacheGet(key: string): Promise<{ hit: boolean; value?: unk
       if (!row) return { hit: false }
       if (new Date(row.expires_at).getTime() < Date.now()) {
         // Lazy eviction — best-effort.
-        await admin().from('ai_response_cache').delete().eq('key', key)
+        const { error: evictionError } = await admin().from('ai_response_cache').delete().eq('key', key)
+        if (evictionError) throw new Error(evictionError.message)
         return { hit: false }
       }
       return { hit: true, value: row.value }
     } catch (e) {
-      console.error(`[ai-cache] postgres cache unavailable, treating as miss: ${String(e)}`)
+      console.error(`[ai-cache] postgres cache unavailable; deliberately failing open as a cache miss to preserve generation availability: ${String(e)}`)
       return { hit: false }
     }
   }
@@ -86,14 +87,15 @@ export async function cacheGet(key: string): Promise<{ hit: boolean; value?: unk
 export async function cacheSet(key: string, value: unknown): Promise<void> {
   if (usePostgres()) {
     try {
-      await admin().from('ai_response_cache').upsert({
+      const { error } = await admin().from('ai_response_cache').upsert({
         key,
         value,
         expires_at: new Date(Date.now() + TTL_MS).toISOString(),
       })
+      if (error) throw new Error(error.message)
     } catch (e) {
       // A cache-write failure must never break the response.
-      console.error(`[ai-cache] postgres cache write failed: ${String(e)}`)
+      console.error(`[ai-cache] postgres cache write failed; deliberately failing open to preserve the response (value was not cached): ${String(e)}`)
     }
     return
   }

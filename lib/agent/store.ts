@@ -141,6 +141,18 @@ export class SupabaseAgentStateStore implements AgentStateStore {
     decidedBy: string,
     note: string | null
   ): Promise<AgentApprovalRecord | null> {
+    const { data: existing, error: loadError } = await this.admin
+      .from('agent_approvals')
+      .select('id, status, requested_by')
+      .eq('id', id)
+      .limit(1)
+    if (loadError) throw new Error(`approval decision failed: ${loadError.message}`)
+    const current = (existing ?? [])[0] as Pick<AgentApprovalRecord, 'id' | 'status' | 'requested_by'> | undefined
+    if (!current) return null
+    if (current.requested_by === decidedBy) {
+      throw new Error('SELF_APPROVAL_FORBIDDEN: the requesting employee cannot decide their own approval')
+    }
+
     // The status='pending' filter makes double-decisions impossible:
     // the second caller gets zero rows back, not the first one's result.
     const { data, error } = await this.admin
@@ -148,9 +160,22 @@ export class SupabaseAgentStateStore implements AgentStateStore {
       .update({ status: decision, decided_by: decidedBy, decision_note: note, decided_at: nowIso() })
       .eq('id', id)
       .eq('status', 'pending')
+      .neq('requested_by', decidedBy)
       .select('*')
     if (error) throw new Error(`approval decision failed: ${error.message}`)
     return ((data ?? [])[0] as AgentApprovalRecord | undefined) ?? null
+  }
+
+  async claimApproval(runId: string, approvalId: string): Promise<AgentRunRecord | null> {
+    const { data, error } = await this.admin.rpc('claim_agent_approval', { p_run_id: runId, p_approval_id: approvalId })
+    if (error) throw new Error(`approval claim failed: ${error.message}`)
+    return data as AgentRunRecord | null
+  }
+
+  async requesterRead(runId: string, operation: string, args: Record<string, unknown>): Promise<unknown> {
+    const { data, error } = await this.admin.rpc('agent_requester_read', { p_run_id: runId, p_operation: operation, p_args: args })
+    if (error) throw new Error(`REQUESTER_AUTHORIZATION_FAILED: ${error.message}`)
+    return data
   }
 
   async isKillSwitchOn(): Promise<boolean> {

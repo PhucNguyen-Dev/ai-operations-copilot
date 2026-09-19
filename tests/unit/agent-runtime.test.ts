@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { loadVisibleLead } from '@/lib/agent/tools/crm'
+import { testContext } from './helpers/agent-test-kit'
 import { startAgentRun, resumeAgentRun, type RuntimeDeps } from '@/lib/agent/runtime'
 import { FakeAgentModel, MemoryAgentStore, TEST_AGENTS, TEST_TOOLS } from './helpers/agent-test-kit'
 
@@ -262,6 +264,205 @@ describe('agent runtime — multi-agent handoff (9.12)', () => {
     const denied = specialistSteps.find((s) => s.tool_name === 'delegate_to_agent')
     expect(denied?.status).toBe('denied')
     expect(denied?.error).toContain('AGENT_NOT_AUTHORIZED')
+  })
+})
+
+describe('approval resume safety', () => {
+  async function suspendedRun() {
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'make_draft', args: { text: 'approved draft' } }] },
+    ], { dryRunEmail: false })
+    const suspended = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+    const approvalId = suspended.pendingApprovalId!
+    await store.decideApproval(approvalId, 'approved', 'ops-1', null)
+    const resumeDeps = makeDeps({ store, dryRunEmail: false, model: new FakeAgentModel([
+      { calls: [{ name: 'finish', args: { summary: 'done', verification: 'observed' } }] },
+    ]) })
+    return { store, deps: resumeDeps, input: { runId: suspended.runId, approvalId } }
+  }
+
+  it('does not execute a tool disabled during the human wait', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(TEST_TOOLS.make_draft.execute)
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute } }
+    store.toolFlags.set('make_draft', false)
+    const out = await resumeAgentRun(deps, input)
+    expect(execute).not.toHaveBeenCalled()
+    expect(out.error).toContain('TOOL_DISABLED')
+  })
+
+  it('allows only one concurrent resume to execute the approved effect', async () => {
+    const { deps, input } = await suspendedRun()
+    const execute = vi.fn(TEST_TOOLS.make_draft.execute)
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute } }
+    await Promise.allSettled([resumeAgentRun(deps, input), resumeAgentRun(deps, input)])
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('excludes durable human wait and persists the resumed execution count', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const past = new Date(Date.now() - 86_400_000).toISOString()
+    await store.updateRun(input.runId, { started_at: past, approval_wait_started_at: past })
+    const out = await resumeAgentRun(deps, input)
+    expect(out.status).toBe('completed')
+    expect(out.stepCount).toBe(3)
+    expect((await store.getRun(input.runId))?.step_count).toBe(3)
+  })
+
+  it('uses requester authorization instead of the approver client for lead reads', async () => {
+    const from = vi.fn(() => { throw new Error('approver client must not be used') })
+    const requesterRead = vi.fn(async () => null)
+    const ctx = testContext({ userClient: { from } as unknown as RuntimeDeps['userClient'], requesterRead })
+    const result = await loadVisibleLead(ctx, 'lead-1')
+    expect(result.ok).toBe(false)
+    expect(from).not.toHaveBeenCalled()
+    expect(requesterRead).toHaveBeenCalledWith('lead', { lead_id: 'lead-1' })
+  })
+
+  it('preserves the persisted approval requirement on resume when the server weakens', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const secondModel = new FakeAgentModel([
+      { calls: [{ name: 'make_draft', args: { text: 'second draft' } }] },
+    ])
+    deps.model = secondModel
+    deps.dryRunEmail = true
+    const out = await resumeAgentRun(deps, input)
+    expect(out.status).toBe('awaiting_approval')
+    expect(out.pendingApprovalId).toBeTruthy()
+    const approvals = [...store.approvals.values()].filter((a) => a.tool_name === 'make_draft')
+    expect(approvals.length).toBe(2)
+    expect((await store.getRun(input.runId))?.current_state).toMatchObject({ require_approval: true })
+  })
+
+  it('tightens to the server requirement on resume even when the run opted out', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const run = await store.getRun(input.runId)
+    await store.updateRun(input.runId, { current_state: { ...run?.current_state, require_approval: false } })
+    const secondModel = new FakeAgentModel([
+      { calls: [{ name: 'make_draft', args: { text: 'second draft' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'both drafts recorded', verification: 'two drafts observed' } }] },
+    ])
+    deps.model = secondModel
+    deps.dryRunEmail = false
+    const out = await resumeAgentRun(deps, input)
+    expect(out.status).toBe('awaiting_approval')
+    expect(out.pendingApprovalId).toBeTruthy()
+  })
+
+  it('delegation inherits the parent approval policy without loosening it', async () => {
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'delegate_to_agent', args: { agent_id: 'test-specialist', task: 'Prepare a draft report' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'child done', verification: 'n/a' } }] },
+      { calls: [{ name: 'finish', args: { summary: 'parent done', verification: 'delegation observed' } }] },
+    ], { dryRunEmail: true })
+    const out = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL, requireApproval: true })
+    expect(out.status).toBe('completed')
+    const childRuns = [...store.runs.values()].filter((r) => r.agent_id === 'test-specialist')
+    expect(childRuns.length).toBe(1)
+    expect(childRuns[0].current_state).toMatchObject({ parent_run_id: out.runId, require_approval: true })
+  })
+
+  it('interrupted execution after the claim never replays the approval', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(async () => { throw new Error('process died mid-write') })
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute } }
+    const out = await resumeAgentRun(deps, input)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(out.error).toContain('RECONCILIATION_REQUIRED')
+    expect((await store.getApproval(input.approvalId))?.execution_claimed_at).toBeTruthy()
+    expect((await store.getRun(input.runId))?.status).toBe('failed')
+    const again = await resumeAgentRun(deps, input)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(again.error).toContain('RECONCILIATION_REQUIRED')
+  })
+
+  it('retry before any claim recovers the decision and executes once', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const originalClaim = store.claimApproval.bind(store)
+    const beforeClaim = vi.fn()
+      .mockImplementationOnce(async () => { throw new Error('claim transport failed before commit') })
+      .mockImplementationOnce(async () => {
+        const claimed = await originalClaim(input.runId, input.approvalId)
+        expect(claimed).toBeTruthy()
+        return claimed
+      })
+    store.claimApproval = beforeClaim as unknown as typeof store.claimApproval
+    const resumeModel = new FakeAgentModel([
+      { calls: [{ name: 'finish', args: { summary: 'done', verification: 'observed' } }] },
+    ])
+    deps.model = resumeModel
+    const first = await resumeAgentRun(deps, input)
+    expect(first.error).toContain('RESUME_UNAVAILABLE')
+    const second = await resumeAgentRun(deps, input)
+    expect(second.status).toBe('completed')
+    const draftSteps = (await store.listSteps(input.runId)).filter((s) => s.tool_name === 'make_draft' && s.status === 'success')
+    expect(draftSteps.length).toBe(1)
+  })
+
+  it('a decided approval cannot overwrite a terminal run status', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(TEST_TOOLS.make_draft.execute)
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute } }
+    const claimed = await store.claimApproval(input.runId, input.approvalId)
+    expect(claimed?.status).toBe('running')
+    await store.updateRun(input.runId, { status: 'completed' })
+    const out = await resumeAgentRun(deps, input)
+    expect(execute).not.toHaveBeenCalled()
+    expect((await store.getRun(input.runId))?.status).toBe('completed')
+  })
+
+  it('persists durable reconciliation context when claimed execution is interrupted', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(async () => { throw new Error('process died mid-write') })
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute } }
+    const out = await resumeAgentRun(deps, input)
+    expect(out.status).toBe('failed')
+    const steps = await store.listSteps(input.runId)
+    const reconcile = steps.find((s) => s.kind === 'system' && (s.error ?? '').includes('RECONCILIATION_REQUIRED'))
+    expect(reconcile).toBeTruthy()
+    expect(reconcile?.result_summary).toMatchObject({ approval_id: input.approvalId, tool_name: 'make_draft' })
+    expect((await store.getApproval(input.approvalId))?.execution_claimed_at).toBeTruthy()
+  })
+
+  it('records attempted tool, args and approval context on an uncertain timeout', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(() => new Promise<never>(() => {})) as unknown as typeof TEST_TOOLS.make_draft.execute
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, execute, timeoutMs: 10, idempotency: 'non_idempotent' } }
+    const out = await resumeAgentRun(deps, input)
+    expect(out.status).toBe('failed')
+    expect(out.error).toContain('RECONCILIATION_REQUIRED')
+    expect(out.error).toContain('attempted tool=make_draft')
+    expect(out.error).toContain('"text":"approved draft"')
+    expect(out.error).toContain(`approval_id=${input.approvalId}`)
+    const steps = await store.listSteps(input.runId)
+    expect(steps.some((s) => s.kind === 'system' && (s.error ?? '').includes('attempted tool=make_draft'))).toBe(true)
+  })
+
+  it('recovers an ordinary resource-scoped refusal instead of failing the run', async () => {
+    const { store, deps } = await happyDeps([
+      { calls: [{ name: 'make_draft', args: { text: 'draft for in-scope lead' } }] },
+      { calls: [{ name: 'finish', args: { summary: 're-planned', verification: 'resource refusal observed' } }] },
+    ], { dryRunEmail: true })
+    const ctxTool = TEST_TOOLS.make_draft
+    const execute = vi.fn(ctxTool.execute)
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...ctxTool, checkResource: async () => ({ ok: false, reason: 'outside scope' }), execute } }
+    const out = await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+    expect(out.status).toBe('completed')
+    expect(execute).not.toHaveBeenCalled()
+    const steps = await store.listSteps(out.runId)
+    const refused = steps.find((s) => s.tool_name === 'make_draft')
+    expect(refused?.status).toBe('denied')
+    expect(refused?.error).toContain('RESOURCE_DENIED')
+    expect(steps.some((s) => s.tool_name === 'finish' && s.status === 'success')).toBe(true)
+  })
+
+  it('fails closed when an approved action loses resource scope during the wait', async () => {
+    const { store, deps, input } = await suspendedRun()
+    const execute = vi.fn(TEST_TOOLS.make_draft.execute)
+    deps.tools = { ...TEST_TOOLS, make_draft: { ...TEST_TOOLS.make_draft, checkResource: async () => ({ ok: false, reason: 'lead reassigned' }), execute } }
+    const out = await resumeAgentRun(deps, input)
+    expect(execute).not.toHaveBeenCalled()
+    expect(out.error).toContain('RESOURCE_DENIED')
   })
 })
 

@@ -47,6 +47,7 @@ export type ToolContext = {
   adminClient: SupabaseClient
   /** When false, the prepare_email tool requires human approval (real-send mode). */
   dryRunEmail: boolean
+  requesterRead?: (operation: string, args: Record<string, unknown>) => Promise<unknown>
   /**
    * Runtime-injected delegation capability (9.12) — only present for
    * agents permitted to delegate; the runtime enforces the child
@@ -130,6 +131,9 @@ export type AgentRunRecord = {
   started_at: string
   updated_at: string
   completed_at: string | null
+  approval_wait_ms?: number
+  approval_wait_started_at?: string | null
+  pending_approval_id?: string | null
 }
 
 export type AgentStepRecord = {
@@ -166,6 +170,7 @@ export type AgentApprovalRecord = {
   decision_note: string | null
   requested_at: string
   decided_at: string | null
+  execution_claimed_at?: string | null
 }
 
 /**
@@ -186,6 +191,8 @@ export interface AgentStateStore {
     a: Pick<AgentApprovalRecord, 'run_id' | 'step_id' | 'tool_name' | 'args_snapshot' | 'requested_by'>
   ): Promise<AgentApprovalRecord>
   getApproval(id: string): Promise<AgentApprovalRecord | null>
+  claimApproval(runId: string, approvalId: string): Promise<AgentRunRecord | null>
+  requesterRead(runId: string, operation: string, args: Record<string, unknown>): Promise<unknown>
   decideApproval(id: string, decision: 'approved' | 'rejected', decidedBy: string, note: string | null): Promise<AgentApprovalRecord | null>
 
   /** Global kill switch (9.6) — checked at loop entry and before every step. */

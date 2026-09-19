@@ -4,6 +4,7 @@ import { canViewAutomation } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateCredentials } from '@/lib/agent/external-auth'
+import { getAgent } from '@/lib/agent/agents'
 
 // =============================================================
 // 9.10 — Client provisioning (Operations/Admin only). The secret is
@@ -45,9 +46,15 @@ export async function POST(request: NextRequest) {
   const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : ''
   if (!name) return NextResponse.json({ error: 'Field "name" is required' }, { status: 400 })
 
+  if (body?.allowedAgents !== undefined && (!Array.isArray(body.allowedAgents) || body.allowedAgents.some((id) => typeof id !== 'string'))) {
+    return NextResponse.json({ error: 'allowedAgents must be an array of registered agent IDs' }, { status: 400 })
+  }
   const allowedAgents = Array.isArray(body?.allowedAgents) && body.allowedAgents.length
     ? (body.allowedAgents as unknown[]).filter((a): a is string => typeof a === 'string')
     : ['external-lead-support']
+  if (allowedAgents.length === 0 || allowedAgents.some((id) => !getAgent(id))) {
+    return NextResponse.json({ error: 'allowedAgents must contain registered agent IDs only' }, { status: 400 })
+  }
   const maxRunsPerHour =
     typeof body?.maxRunsPerHour === 'number' && Number.isInteger(body.maxRunsPerHour) && body.maxRunsPerHour > 0
       ? Math.min(body.maxRunsPerHour, 100)

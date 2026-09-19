@@ -58,17 +58,21 @@ export const prepareEmailTool: ToolDefinition<PrepareEmailArgs, PrepareEmailResu
   idempotency: 'non_idempotent',
   requiresApproval: (_args, ctx: ToolContext) => !ctx.dryRunEmail,
   async checkResource(ctx, args) {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     return visible.ok ? { ok: true } : { ok: false, reason: visible.error }
   },
   async execute(ctx, args): Promise<ToolOutcome<PrepareEmailResult>> {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
+    const recipient = visible.lead.email
+    if (typeof recipient !== 'string' || recipient.length > 254 || !/^[^@\s<>,;:"\\]+@[^@\s<>,;:"\\]+\.[^@\s<>,;:"\\]+$/.test(recipient)) {
+      return { ok: false, error: 'INVALID_ARGUMENTS: lead email must be a valid recipient address', retryable: false }
+    }
     const { data, error } = await ctx.adminClient
       .from('sent_emails')
       .insert({
         lead_id: args.lead_id,
-        to_address: visible.lead.email as string,
+        to_address: recipient,
         subject: args.subject,
         body: args.body,
         status: 'dry_run',
@@ -79,7 +83,7 @@ export const prepareEmailTool: ToolDefinition<PrepareEmailArgs, PrepareEmailResu
     if (error) return { ok: false, error: `email record insert failed: ${error.message}`, retryable: false }
     return {
       ok: true,
-      result: { email_id: data.id as string, to_address: visible.lead.email as string, status: 'dry_run' },
+      result: { email_id: data.id as string, to_address: recipient, status: 'dry_run' },
     }
   },
 }

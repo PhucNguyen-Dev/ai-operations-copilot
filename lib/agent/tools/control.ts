@@ -90,13 +90,13 @@ export const escalateTool: ToolDefinition<EscalateArgs, EscalateResult> = {
   control: 'escalate',
   async checkResource(ctx, args) {
     if (!args.lead_id) return { ok: true }
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     return visible.ok ? { ok: true } : { ok: false, reason: visible.error }
   },
   async execute(ctx, args): Promise<ToolOutcome<EscalateResult>> {
     let recipient = ctx.userId
     if (args.lead_id) {
-      const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+      const visible = await loadVisibleLead(ctx, args.lead_id)
       if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
       recipient = (visible.lead.assigned_counselor_id as string | null) ?? ctx.userId
     }

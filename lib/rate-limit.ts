@@ -96,7 +96,7 @@ class PostgresRateLimiter implements RateLimiter {
       const r = data as { ok: boolean; remaining: number; retry_after_sec: number }
       return { ok: r.ok, retryAfterSec: r.retry_after_sec, remaining: r.remaining }
     } catch (e) {
-      console.error(`[rate-limit] postgres limiter unavailable, failing open: ${String(e)}`)
+      console.error(`[rate-limit] postgres limiter unavailable; deliberately failing open to preserve availability (requests are not rate limited): ${String(e)}`)
       return { ok: true, retryAfterSec: 0, remaining: limit }
     }
   }

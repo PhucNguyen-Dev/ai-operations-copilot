@@ -33,6 +33,8 @@ type Message = {
   status?: string
   pendingApproval?: boolean
   trace?: Trace
+  refreshing?: boolean
+  refreshError?: string
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -113,6 +115,30 @@ export default function AgentChat() {
     }
   }
 
+  async function refreshRun(runId: string) {
+    setMessages((m) => m.map((msg) => msg.runId === runId ? { ...msg, refreshing: true, refreshError: undefined } : msg))
+    try {
+      const res = await fetch(`/api/agent/runs/${runId}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Could not refresh the run trace. Try again.')
+      const trace: Trace = await res.json()
+      const status = trace.run.status
+      setMessages((m) => m.map((msg) => msg.runId === runId ? {
+        ...msg,
+        trace,
+        status,
+        pendingApproval: status === 'awaiting_approval',
+        text: status === 'awaiting_approval' ? msg.text
+          : status === 'running' ? 'The approved run is still working. Refresh again for its result.'
+            : status === 'failed' ? `The run failed: ${trace.run.error ?? 'unknown error'}`
+              : trace.run.final_outcome ?? (status === 'completed' ? 'Done.' : `Run ${status}.`),
+      } : msg))
+    } catch {
+      setMessages((m) => m.map((msg) => msg.runId === runId ? { ...msg, refreshError: 'Could not refresh the run trace. Try again.' } : msg))
+    } finally {
+      setMessages((m) => m.map((msg) => msg.runId === runId ? { ...msg, refreshing: false } : msg))
+    }
+  }
+
   return (
     <div className="rounded-lg border bg-white shadow-sm" data-testid="chat">
       <div ref={listRef} className="max-h-[26rem] space-y-4 overflow-y-auto p-4" aria-live="polite">
@@ -158,6 +184,18 @@ export default function AgentChat() {
                     ⏸ Awaiting human approval — the agent paused instead of acting on its own (run {msg.runId?.slice(0, 8)}).
                   </p>
                 )}
+
+                {msg.runId && (msg.pendingApproval || msg.status === 'running') && (
+                  <button
+                    type="button"
+                    onClick={() => refreshRun(msg.runId!)}
+                    disabled={msg.refreshing}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {msg.refreshing ? 'Refreshing…' : 'Refresh run trace'}
+                  </button>
+                )}
+                {msg.refreshError && <p role="alert" className="text-xs text-red-600">{msg.refreshError}</p>}
 
                 {msg.trace && msg.trace.steps.length > 0 && (
                   <details className="rounded-lg border text-sm" data-testid="run-trace">

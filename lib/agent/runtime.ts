@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { traceAiRun } from '@/lib/runtrace'
 import { getAgent, type AgentDefinition } from '@/lib/agent/agents'
 import {
+  activeRunTimeMs,
   callSignature,
   clampTurnCalls,
   DEFAULT_GUARDRAIL_LIMITS,
@@ -60,6 +61,7 @@ export type RuntimeDeps = {
   /** Injectable registries (tests use pure tools/agents; prod uses the real ones). */
   tools?: Record<string, ToolDefinition<never, never>>
   agents?: Record<string, AgentDefinition>
+  requesterScoped?: boolean
 }
 
 export type AgentRunOutput = {
@@ -89,12 +91,15 @@ export async function startAgentRun(
     clientId?: string
     /** 9.12 multi-agent handoff: set on child runs for trace correlation. */
     parentRunId?: string
+    requireApproval?: boolean
   }
 ): Promise<AgentRunOutput> {
   const agent = getAgent(input.agentId, deps.agents)
   if (!agent) return immediateFailure(input.agentId, `unknown agent ${input.agentId}`)
 
   const limits: GuardrailLimits = { ...DEFAULT_GUARDRAIL_LIMITS, ...deps.limits }
+  const serverRequiresApproval = (deps.dryRunEmail ?? process.env.GMAIL_AGENT_DRY_RUN !== 'false') === false
+  const requireApproval = input.requireApproval === true || serverRequiresApproval
   let run: AgentRunRecord
   try {
     run = await deps.store.createRun({
@@ -104,7 +109,10 @@ export async function startAgentRun(
       client_id: input.clientId ?? null,
       goal: input.goal,
       status: 'running',
-      current_state: input.parentRunId ? { parent_run_id: input.parentRunId } : {},
+      current_state: {
+        ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
+        require_approval: requireApproval,
+      },
       step_count: 0,
       max_steps: limits.maxSteps,
       tokens_in: 0,
@@ -117,7 +125,13 @@ export async function startAgentRun(
     return immediateFailure(null, `run persistence failed: ${String(e)}`)
   }
 
-  return driveRun(deps, agent, run, buildCtx(deps, run, input.userRole), limits)
+  return driveRun(deps, agent, run, buildCtx(deps, run, input.userRole, requireApproval), limits)
+}
+
+function effectiveRequireApproval(run: AgentRunRecord, deps: RuntimeDeps): boolean {
+  const persisted = run.current_state?.require_approval === true
+  const server = (deps.dryRunEmail ?? process.env.GMAIL_AGENT_DRY_RUN !== 'false') === false
+  return persisted || server
 }
 
 /**
@@ -131,7 +145,7 @@ export async function resumeAgentRun(
   deps: RuntimeDeps,
   input: { runId: string; approvalId: string }
 ): Promise<AgentRunOutput> {
-  const run = await deps.store.getRun(input.runId)
+  let run = await deps.store.getRun(input.runId)
   if (!run) return immediateFailure(null, `run ${input.runId} not found`)
   const agent = getAgent(run.agent_id, deps.agents)
   if (!agent) return immediateFailure(run.id, `unknown agent ${run.agent_id}`)
@@ -144,7 +158,14 @@ export async function resumeAgentRun(
     pendingApprovalId: null,
     stepCount: run.step_count,
   }
-  if (run.status !== 'awaiting_approval') return notSuspended
+  if (run.status !== 'awaiting_approval') {
+    if (run.status === 'running') {
+      notSuspended.error = 'RECONCILIATION_REQUIRED: run is already processing; interrupted execution must not be replayed'
+    } else if (run.status === 'failed') {
+      notSuspended.error = 'RECONCILIATION_REQUIRED: claimed execution failed and must not be replayed'
+    }
+    return notSuspended
+  }
 
   const approval = await deps.store.getApproval(input.approvalId)
   if (!approval || approval.run_id !== run.id || approval.status === 'pending') {
@@ -155,6 +176,53 @@ export async function resumeAgentRun(
     }
   }
 
+  if (approval.requested_by !== run.user_id || approval.decided_by === run.user_id || !approval.decided_by ||
+    run.pending_approval_id !== approval.id || !run.approval_wait_started_at) {
+    return { ...notSuspended, error: 'APPROVAL_STATE_INVALID: approval is not bound to the suspended requester' }
+  }
+  if (approval.execution_claimed_at) {
+    return { ...notSuspended, error: 'RECONCILIATION_REQUIRED: approval execution was already claimed' }
+  }
+  deps = { ...deps, requesterScoped: true }
+  const limits = { ...DEFAULT_GUARDRAIL_LIMITS, ...deps.limits }
+  const requireApproval = effectiveRequireApproval(run, deps)
+  let ctx = buildCtx(deps, run, run.user_role, requireApproval)
+  try {
+    await verifyRequester(ctx)
+    const guard = await actionGuard(deps, run, {
+      stepCount: run.step_count, tokensIn: run.tokens_in, tokensOut: run.tokens_out, lastModel: null,
+    }, limits)
+    if (guard) return { ...notSuspended, error: guard }
+    if (approval.status === 'approved') {
+      const tool = getTool(approval.tool_name, deps.tools)
+      if (!tool) return { ...notSuspended, error: 'UNKNOWN_TOOL: approved tool is no longer registered' }
+      const validation = tool.validateInput(approval.args_snapshot)
+      if (!validation.ok) return { ...notSuspended, error: `INVALID_ARGUMENTS: ${validation.errors.join('; ')}` }
+      const denied = await authorizeAction(deps, agent, tool, validation.data as never, ctx)
+      if (denied) return { ...notSuspended, error: denied }
+    }
+  } catch (e) {
+    return { ...notSuspended, error: `RESUME_UNAVAILABLE: ${String(e)}` }
+  }
+  let claimed: AgentRunRecord | null
+  try {
+    claimed = await deps.store.claimApproval(run.id, approval.id)
+  } catch (e) {
+    return { ...notSuspended, error: `RESUME_UNAVAILABLE: claim failed before any execution: ${String(e)}` }
+  }
+  if (!claimed) {
+    const current = await deps.store.getRun(run.id)
+    return {
+      ...notSuspended,
+      status: current?.status ?? run.status,
+      stepCount: current?.step_count ?? run.step_count,
+      error: 'RECONCILIATION_REQUIRED: approval is already processing or its durable state changed',
+    }
+  }
+  run = claimed
+  ctx = buildCtx(deps, run, run.user_role, requireApproval)
+
+  try {
   if (approval.status === 'rejected') {
     await deps.store.recordStep({
       run_id: run.id,
@@ -195,33 +263,104 @@ export async function resumeAgentRun(
     if (!revalidated.ok) {
       return failRun(deps, run, `approved arguments no longer valid: ${revalidated.errors.join('; ')}`, state)
     }
-    const ctx = buildCtx(deps, run, run.user_role)
     const executed = await executeToolCall(deps, run, tool, revalidated.data as never, ctx, state, approval.id, null, [])
-    await deps.store.updateRun(run.id, { status: 'running' })
     if ('terminal' in executed) return executed.terminal
+    await deps.store.updateRun(run.id, { step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut })
   }
 
   const fresh = await deps.store.getRun(run.id)
   if (!fresh) return immediateFailure(run.id, 'run disappeared during resume')
-  return driveRun(deps, agent, fresh, buildCtx(deps, fresh, fresh.user_role), {
-    ...DEFAULT_GUARDRAIL_LIMITS,
-    ...deps.limits,
-  })
+  return await driveRun(deps, agent, fresh, buildCtx(deps, fresh, fresh.user_role, requireApproval), limits)
+  } catch (e) {
+    const error = `RECONCILIATION_REQUIRED: claimed execution was interrupted: ${String(e)}`
+    let status: AgentRunStatus = run.status
+    let stepCount = run.step_count
+    let finalOutcome: string | null = null
+    try {
+      await deps.store.recordStep({
+        run_id: run.id,
+        kind: 'system',
+        tool_name: null,
+        tool_version: null,
+        permission_decision: null,
+        status: 'failed',
+        approval_id: null,
+        args_snapshot: null,
+        result_summary: { approval_id: approval.id, tool_name: approval.tool_name, args_snapshot: approval.args_snapshot },
+        feedback_snapshot: null,
+        error,
+        latency_ms: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        finished_at: new Date().toISOString(),
+      })
+      await deps.store.updateRun(run.id, { status: 'failed', error, completed_at: new Date().toISOString() })
+      status = 'failed'
+    } catch (persistError) {
+      console.error(`[agent-runtime] reconciliation persistence failed for run ${run.id}: ${String(persistError)}`)
+      try {
+        const current = await deps.store.getRun(run.id)
+        status = current?.status ?? run.status
+        stepCount = current?.step_count ?? run.step_count
+        finalOutcome = current?.final_outcome ?? null
+      } catch {
+        status = run.status
+        stepCount = run.step_count
+      }
+    }
+    return {
+      runId: run.id,
+      status,
+      finalOutcome,
+      error,
+      pendingApprovalId: null,
+      stepCount,
+    }
+  }
 }
 
 // -------------------------------------------------------------
 // The loop
 // -------------------------------------------------------------
 
-function buildCtx(deps: RuntimeDeps, run: AgentRunRecord, userRole: string): ToolContext {
+async function verifyRequester(ctx: ToolContext): Promise<void> {
+  if (!ctx.requesterRead) return
+  const principal = await ctx.requesterRead('principal', {}) as { user_id?: string; user_role?: string } | null
+  if (principal?.user_id !== ctx.userId || principal?.user_role !== ctx.userRole) {
+    throw new Error('REQUESTER_AUTHORIZATION_FAILED: requester identity or role changed')
+  }
+}
+
+async function actionGuard(deps: RuntimeDeps, run: AgentRunRecord, state: LoopState, limits: GuardrailLimits): Promise<string | null> {
+  if (await deps.store.isKillSwitchOn()) return 'KILL_SWITCH: agent execution is disabled platform-wide'
+  const guard = evaluateRunGuards({ ...run, step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut }, limits)
+  return guard.ok ? null : `${guard.reason.toUpperCase()}: ${guard.message}`
+}
+
+async function authorizeAction(
+  deps: RuntimeDeps, agent: AgentDefinition, tool: ToolDefinition<never, never>, args: never, ctx: ToolContext,
+  approved = true
+): Promise<string | null> {
+  await verifyRequester(ctx)
+  const permission = evaluateToolPermission({ agent, tool, args, ctx, userRole: ctx.userRole, toolEnabled: await deps.store.isToolEnabled(tool.name) })
+  if (permission.decision === 'denied' || (permission.decision === 'approval_required' && !approved)) return permission.reason
+  if (tool.checkResource) {
+    const resource = await tool.checkResource(ctx, args)
+    if (!resource.ok) return `RESOURCE_DENIED: ${resource.reason}`
+  }
+  return null
+}
+
+function buildCtx(deps: RuntimeDeps, run: AgentRunRecord, userRole: string, requireApproval: boolean): ToolContext {
   return {
     runId: run.id,
     agentId: run.agent_id,
     userId: run.user_id,
     userRole: userRole as ToolContext['userRole'],
-    userClient: deps.userClient,
+    userClient: deps.requesterScoped ? null as unknown as SupabaseClient : deps.userClient,
+    ...(deps.requesterScoped ? { requesterRead: (operation: string, args: Record<string, unknown>) => deps.store.requesterRead(run.id, operation, args) } : {}),
     adminClient: deps.adminClient,
-    dryRunEmail: deps.dryRunEmail ?? process.env.GMAIL_AGENT_DRY_RUN !== 'false',
+    dryRunEmail: !requireApproval,
     // 9.12 — bounded delegation, injected only when this agent's
     // allowlist includes delegate_to_agent. Recursion is structurally
     // impossible: child agents do not carry the delegation tool, and
@@ -233,6 +372,7 @@ function buildCtx(deps: RuntimeDeps, run: AgentRunRecord, userRole: string): Too
         userRole,
         goal: `[delegation from ${run.agent_id}] ${input.task}`,
         parentRunId: run.id,
+        requireApproval,
       })
       return {
         ok: child.status === 'completed' || child.status === 'escalated',
@@ -318,6 +458,8 @@ async function driveRun(
         tokens_out: state.tokensOut,
         max_steps: run.max_steps,
         started_at: run.started_at,
+        approval_wait_ms: run.approval_wait_ms,
+        approval_wait_started_at: run.approval_wait_started_at,
       },
       limits
     )
@@ -391,9 +533,8 @@ async function driveRun(
     for (let ci = 0; ci < honored.length; ci++) {
       const call = honored[ci]
 
-      if (state.stepCount >= run.max_steps) {
-        return failRun(deps, run, `STEP_LIMIT: step limit reached (${run.max_steps})`, state)
-      }
+      const actionStop = await actionGuard(deps, run, state, limits)
+      if (actionStop) return failRun(deps, run, actionStop, state)
 
       // --- loop guard (9.6): refuse the (N+1)th consecutive identical
       // call — observation loops burn budget without changing state. ---
@@ -567,7 +708,7 @@ async function driveRun(
           requested_by: run.user_id,
         })
         state.stepCount += 1
-        await persistProgress({ status: 'awaiting_approval' })
+        await persistProgress({ status: 'awaiting_approval', pending_approval_id: approval.id, approval_wait_started_at: new Date().toISOString() })
         return {
           runId: run.id,
           status: 'awaiting_approval',
@@ -622,12 +763,53 @@ async function executeToolCall(
   turnParts: Record<string, unknown>[]
 ): Promise<ExecutionOutcome> {
   const store = deps.store
+  const limits = { ...DEFAULT_GUARDRAIL_LIMITS, ...deps.limits }
+  const agent = getAgent(run.agent_id, deps.agents)!
+  const denied = await authorizeAction(deps, agent, tool, args, ctx, approvalId !== null)
+  if (denied) {
+    if (approvalId === null && denied.startsWith('RESOURCE_DENIED')) {
+      const wrapper: FeedbackPayload = { ...(turnId ? { modelParts: turnParts, turnId } : {}), response: refusalFeedback(denied) }
+      await store.recordStep({
+        run_id: run.id,
+        kind: 'tool_call',
+        tool_name: tool.name,
+        tool_version: tool.version,
+        permission_decision: 'denied',
+        status: 'denied',
+        approval_id: null,
+        args_snapshot: args,
+        result_summary: null,
+        feedback_snapshot: wrapper,
+        error: denied,
+        latency_ms: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        finished_at: new Date().toISOString(),
+      })
+      state.stepCount += 1
+      await store.updateRun(run.id, { step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut })
+      return { response: wrapper.response }
+    }
+    return { terminal: await failRun(deps, run, denied, state) }
+  }
+  const stop = await actionGuard(deps, run, state, limits)
+  if (stop) return { terminal: await failRun(deps, run, stop, state) }
   state.stepCount += 1
+  await store.updateRun(run.id, { step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut })
   const started = Date.now()
-
-  let outcome = await withTimeout(tool.execute(ctx, args), tool.timeoutMs, tool.idempotency === 'idempotent')
-  if (!outcome.ok && outcome.retryable && tool.idempotency === 'idempotent') {
-    outcome = await withTimeout(tool.execute(ctx, args), tool.timeoutMs, false)
+    const invoke = () => withTimeout(tool.execute(ctx, args), Math.min(tool.timeoutMs, Math.max(1, limits.runTimeoutMs - activeRunTimeMs(run))), false)
+  let outcome = await invoke()
+  if (!outcome.ok && outcome.error.startsWith('TOOL_TIMEOUT')) {
+    return { terminal: await failRun(deps, run, `RECONCILIATION_REQUIRED: ${outcome.error}; execution may still complete [attempted tool=${tool.name}, args=${JSON.stringify(args)}, approval_id=${approvalId ?? 'none'}]`, state) }
+  }
+  if (!outcome.ok && outcome.retryable && tool.idempotency === 'idempotent' && !approvalId) {
+    const retryDenied = await authorizeAction(deps, agent, tool, args, ctx, false)
+    const retryStop = await actionGuard(deps, run, { ...state, stepCount: state.stepCount - 1 }, limits)
+    if (retryDenied || retryStop) return { terminal: await failRun(deps, run, retryDenied ?? retryStop!, state) }
+    outcome = await invoke()
+    if (!outcome.ok && outcome.error.startsWith('TOOL_TIMEOUT')) {
+      return { terminal: await failRun(deps, run, `RECONCILIATION_REQUIRED: ${outcome.error}; execution may still complete [attempted tool=${tool.name}, args=${JSON.stringify(args)}, approval_id=${approvalId ?? 'null'}]`, state) }
+    }
   }
   const latencyMs = Date.now() - started
 

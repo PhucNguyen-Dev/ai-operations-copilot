@@ -38,11 +38,13 @@ async function keywordSearch(
   query: string,
   department: string | null
 ): Promise<KnowledgeHit[]> {
+  const keyword = query.replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').trim()
+  if (!keyword) return []
   let query2 = ctx.userClient
     .from('knowledge_docs')
     .select('title, doc_type, department, content, allowed_roles')
     .eq('is_active', true)
-    .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+    .or(`title.ilike.%${keyword}%,content.ilike.%${keyword}%`)
     .limit(10)
   if (department) query2 = query2.eq('department', department)
   const { data, error } = await query2
@@ -101,31 +103,64 @@ export const searchKnowledgeTool: ToolDefinition<KnowledgeArgs, KnowledgeResult>
     // --- primary path: semantic search over embedded chunks ---
     const embedded = await generateEmbedding(args.query)
     if (embedded.ok) {
-      const { data, error } = await ctx.userClient.rpc('match_knowledge_chunks', {
-        query_embedding: `[${embedded.embedding.join(',')}]`,
-        match_count: MATCH_COUNT,
-        p_role: ctx.userRole,
-      })
-      if (error) {
-        console.error(`[tool:search_knowledge] vector match failed, falling back to keyword: ${error.message}`)
+      if (ctx.requesterRead) {
+        try {
+          const rows = await ctx.requesterRead('knowledge_match', {
+            query_embedding: `[${embedded.embedding.join(',')}]`,
+            match_count: MATCH_COUNT,
+          }) as Array<Record<string, unknown>> | null
+          const hits = (rows ?? [])
+            .filter((r) => typeof r.similarity === 'number' && (r.similarity as number) >= MIN_SIMILARITY)
+            .filter((r) => !args.department || r.department === args.department)
+            .map((r) => toHit(r as { title: string; doc_type: string; department: string; content: string }))
+          if (hits.length > 0) return { ok: true, result: { results: hits } }
+        } catch (e) {
+          console.error(`[tool:search_knowledge] vector match failed, falling back to keyword: ${String(e)}`)
+        }
       } else {
-        const hits = ((data ?? []) as Array<{
-          title: string
-          doc_type: string
-          department: string
-          content: string
-          similarity: number
-        }>)
-          .filter((r) => typeof r.similarity === 'number' && r.similarity >= MIN_SIMILARITY)
-          // The requested department narrows results; when it empties the
-          // set, the keyword fallback runs with the filter applied.
-          .filter((r) => !args.department || r.department === args.department)
-          .map(toHit)
-        if (hits.length > 0) return { ok: true, result: { results: hits } }
+        const { data, error } = await ctx.userClient.rpc('match_knowledge_chunks', {
+          query_embedding: `[${embedded.embedding.join(',')}]`,
+          match_count: MATCH_COUNT,
+          p_role: ctx.userRole,
+        })
+        if (error) {
+          console.error(`[tool:search_knowledge] vector match failed, falling back to keyword: ${error.message}`)
+        } else {
+          const hits = ((data ?? []) as Array<{
+            title: string
+            doc_type: string
+            department: string
+            content: string
+            similarity: number
+          }>)
+            .filter((r) => typeof r.similarity === 'number' && r.similarity >= MIN_SIMILARITY)
+            // The requested department narrows results; when it empties the
+            // set, the keyword fallback runs with the filter applied.
+            .filter((r) => !args.department || r.department === args.department)
+            .map(toHit)
+          if (hits.length > 0) return { ok: true, result: { results: hits } }
+        }
       }
     }
 
     // --- fallback: keyword search when embeddings unavailable or empty ---
+    if (ctx.requesterRead) {
+      try {
+        const rows = await ctx.requesterRead('knowledge_keyword', {
+          query: args.query, department: args.department,
+        }) as Array<Record<string, unknown>> | null
+        const hits = (rows ?? [])
+          .filter((r) => {
+            const roles = (r.allowed_roles as string[] | null) ?? []
+            return roles.length === 0 || roles.includes('all') || roles.includes(ctx.userRole)
+          })
+          .slice(0, MATCH_COUNT)
+          .map((r) => toHit(r as { title: string; doc_type: string; department: string; content: string }))
+        return { ok: true, result: { results: hits } }
+      } catch (e) {
+        return { ok: false, error: `knowledge search failed: ${String(e)}`, retryable: false }
+      }
+    }
     const fallback = await keywordSearch(ctx, args.query, args.department)
     return { ok: true, result: { results: fallback } }
   },

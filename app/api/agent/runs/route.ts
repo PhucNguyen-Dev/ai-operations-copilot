@@ -83,10 +83,7 @@ export async function POST(request: NextRequest) {
   if ('error' in deps) return deps.error
 
   try {
-    const output = await startAgentRun(
-      { ...deps, dryRunEmail: !requireApproval },
-      { agentId, userId, userRole: role, goal }
-    )
+    const output = await startAgentRun(deps, { agentId, userId, userRole: role, goal, requireApproval })
     return NextResponse.json(output, { status: 200 })
   } catch (e) {
     console.error('[api/agent/runs] POST failed:', e)

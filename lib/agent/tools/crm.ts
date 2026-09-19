@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ToolContext, ToolDefinition, ToolOutcome } from '@/lib/agent/types'
 import type { ValidationResult } from '@/lib/gemini'
 
@@ -66,10 +65,18 @@ export function validateLeadList(v: unknown): ValidationResult<{ count: number; 
  * client for reads.
  */
 export async function loadVisibleLead(
-  userClient: SupabaseClient,
+  ctx: ToolContext,
   leadId: string
 ): Promise<{ ok: true; lead: Record<string, unknown> } | { ok: false; error: string }> {
-  const { data, error } = await userClient
+  if (ctx.requesterRead) {
+    try {
+      const lead = await ctx.requesterRead('lead', { lead_id: leadId }) as Record<string, unknown> | null
+      return lead ? { ok: true, lead } : { ok: false, error: 'LEAD_NOT_FOUND: no such lead in your visible scope' }
+    } catch (e) {
+      return { ok: false, error: `LEAD_LOOKUP_UNAVAILABLE: ${String(e)}` }
+    }
+  }
+  const { data, error } = await ctx.userClient
     .from('leads')
     .select('*')
     .eq('id', leadId)
@@ -110,6 +117,19 @@ export const getLeadTool: ToolDefinition<{ lead_id: string }, GetLeadResult> = {
   timeoutMs: 8_000,
   idempotency: 'idempotent',
   async execute(ctx, args): Promise<ToolOutcome<GetLeadResult>> {
+    if (ctx.requesterRead) {
+      const visible = await loadVisibleLead(ctx, args.lead_id)
+      if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
+      let analysis = null
+      try {
+        const rows = await ctx.requesterRead('lead_analyses', { lead_id: args.lead_id }) as Record<string, unknown>[] | null
+        analysis = rows?.[0] ?? null
+      } catch (e) {
+        return { ok: false, error: `lead lookup failed: ${String(e)}`, retryable: false }
+      }
+      const { analysis: _a, ...lead } = visible.lead
+      return { ok: true, result: { lead, analysis } }
+    }
     const { data, error } = await ctx.userClient
       .from('leads')
       .select('*, lead_analyses(score, category, intent, summary, recommended_action, created_at)')
@@ -169,6 +189,16 @@ export const searchLeadsTool: ToolDefinition<SearchLeadsArgs, { count: number; l
   timeoutMs: 8_000,
   idempotency: 'idempotent',
   async execute(ctx, args): Promise<ToolOutcome<{ count: number; leads: Record<string, unknown>[] }>> {
+    if (ctx.requesterRead) {
+      try {
+        const rows = await ctx.requesterRead('search_leads', {
+          status: args.status ?? null, category: args.category ?? null, limit: args.limit,
+        }) as Record<string, unknown>[] | null
+        return { ok: true, result: { count: rows?.length ?? 0, leads: rows ?? [] } }
+      } catch (e) {
+        return { ok: false, error: `lead search failed: ${String(e)}`, retryable: false }
+      }
+    }
     let query = ctx.userClient
       .from('leads')
       .select('id, name, email, phone, source, status, course_interest, created_at, lead_analyses(score, category, intent)')
@@ -217,8 +247,28 @@ export const getLeadHistoryTool: ToolDefinition<{ lead_id: string }, LeadHistory
   timeoutMs: 8_000,
   idempotency: 'idempotent',
   async execute(ctx, args): Promise<ToolOutcome<LeadHistory>> {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
+    if (ctx.requesterRead) {
+      try {
+        const [analyses, tasks, emails] = await Promise.all([
+          ctx.requesterRead('lead_analyses', { lead_id: args.lead_id }) as Promise<Record<string, unknown>[] | null>,
+          ctx.requesterRead('lead_tasks', { lead_id: args.lead_id }) as Promise<Record<string, unknown>[] | null>,
+          ctx.requesterRead('lead_emails', { lead_id: args.lead_id }) as Promise<Record<string, unknown>[] | null>,
+        ])
+        return {
+          ok: true,
+          result: {
+            lead_id: args.lead_id,
+            analyses: analyses ?? [],
+            tasks: tasks ?? [],
+            emails: emails ?? [],
+          },
+        }
+      } catch (e) {
+        return { ok: false, error: `history lookup failed: ${String(e)}`, retryable: false }
+      }
+    }
     const [analyses, tasks, emails] = await Promise.all([
       ctx.userClient.from('lead_analyses').select('score, category, intent, summary, recommended_action, created_at').eq('lead_id', args.lead_id).order('created_at', { ascending: false }).limit(5),
       ctx.userClient.from('tasks').select('id, title, priority, status, due_at, created_at').eq('lead_id', args.lead_id).order('created_at', { ascending: false }).limit(10),
@@ -307,13 +357,13 @@ export const createTaskTool: ToolDefinition<CreateTaskArgs, CreateTaskResult> = 
   timeoutMs: 10_000,
   idempotency: 'non_idempotent',
   async checkResource(ctx, args) {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     return visible.ok ? { ok: true } : { ok: false, reason: visible.error }
   },
   async execute(ctx, args): Promise<ToolOutcome<CreateTaskResult>> {
     // Resource-level check on the employee's scope (9.5) — the write
     // itself goes out on the admin client only when this passes.
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
     const dueAt = new Date(Date.now() + args.due_in_hours * 3_600_000).toISOString()
     const { data, error } = await ctx.adminClient
@@ -385,11 +435,11 @@ export const notifyCounselorTool: ToolDefinition<NotifyArgs, NotifyResult> = {
   timeoutMs: 10_000,
   idempotency: 'non_idempotent',
   async checkResource(ctx, args) {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     return visible.ok ? { ok: true } : { ok: false, reason: visible.error }
   },
   async execute(ctx, args): Promise<ToolOutcome<NotifyResult>> {
-    const visible = await loadVisibleLead(ctx.userClient, args.lead_id)
+    const visible = await loadVisibleLead(ctx, args.lead_id)
     if (!visible.ok) return { ok: false, error: visible.error, retryable: false }
     const recipient = visible.lead.assigned_counselor_id as string | null
     if (!recipient) return { ok: false, error: 'LEAD_UNASSIGNED: the lead has no assigned counselor to notify', retryable: false }

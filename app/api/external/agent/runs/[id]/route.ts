@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateExternalClient } from '@/lib/agent/external-server'
+import { rateLimiter } from '@/lib/rate-limit'
 
 // GET /api/external/agent/runs/[id] — the client's own run with its
 // full trace ("traceable result", 9.10 acceptance criterion). A client
@@ -8,6 +9,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const auth = await authenticateExternalClient(request)
   if ('response' in auth) return auth.response
   const { client, admin } = auth
+
+  const limit = await rateLimiter.check(`ext-agent-read:${client.client_id}`, 60, 60_000)
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: `Rate limit exceeded (60 reads/minute) — retry after ${limit.retryAfterSec}s` },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } }
+    )
+  }
 
   const { id } = await params
   const { data: run, error } = await admin
