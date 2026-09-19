@@ -561,3 +561,78 @@ describe('agent runtime — approval protocol (9.6)', () => {
     expect(out.error).toContain('still pending')
   })
 })
+
+describe('agent runtime — durable session memory', () => {
+  const SID = '11111111-1111-1111-1111-111111111111'
+
+  it('carries durable context into a follow-up run and saves the new outcome', async () => {
+    const store = new MemoryAgentStore()
+    // Seed the previous session context as if an earlier run produced it.
+    await store.putSessionContext(SID, 'user-1', {
+      recentGoals: ['show our hottest leads'],
+      recentSummaries: ['Top lead: Emma (HOT, score 91)'],
+      leads: { 'lead-emma': { name: 'Emma', category: 'HOT', score: 91 } },
+      lastFocusLeadId: 'lead-emma',
+    })
+    const model = new FakeAgentModel([
+      { calls: [{ name: 'finish', args: { summary: 'Drafted for Emma', verification: 'echo ok' } }] },
+    ])
+    const deps = makeDeps({ store, model })
+
+    await startAgentRun(deps, {
+      agentId: 'test-agent', userId: 'user-1', userRole: 'admissions',
+      goal: 'Now draft an email for the top one.', sessionId: SID,
+    })
+
+    // The follow-up run's FIRST model turn must contain the durable facts.
+    const firstTurn = model.requests[0]
+    const preamble = JSON.stringify(firstTurn.contents[0])
+    expect(preamble).toContain('untrusted')
+    expect(preamble).toContain('show our hottest leads')
+    expect(preamble).toContain('lead-emma')
+    expect(preamble).toContain('most recent focus')
+
+    // The completed run's own outcome was appended to the durable context.
+    const saved = await store.getSessionContext(SID, 'user-1')
+    expect(saved?.recentGoals).toContain('Now draft an email for the top one.')
+    expect(saved?.recentSummaries).toContain('Drafted for Emma')
+  })
+
+  it('never leaks another user\'s session context (isolation)', async () => {
+    const store = new MemoryAgentStore()
+    await store.putSessionContext(SID, 'user-A', {
+      recentGoals: ['secret research'],
+      recentSummaries: ['classified results'],
+      leads: {},
+    })
+    const model = new FakeAgentModel([
+      { calls: [{ name: 'finish', args: { summary: 'done', verification: 'v' } }] },
+    ])
+    const deps = makeDeps({ store, model })
+
+    await startAgentRun(deps, {
+      agentId: 'test-agent', userId: 'user-B', userRole: 'admissions',
+      goal: 'do something unrelated', sessionId: SID,
+    })
+
+    // user-B's run saw NO trace of user-A's context.
+    for (const req of model.requests) {
+      expect(JSON.stringify(req.contents)).not.toContain('secret research')
+      expect(JSON.stringify(req.contents)).not.toContain('classified results')
+    }
+    // And user-A's context was not overwritten by user-B's run.
+    const a = await store.getSessionContext(SID, 'user-A')
+    expect(a?.recentGoals).toEqual(['secret research'])
+  })
+
+  it('runs without a session skip context entirely', async () => {
+    const store = new MemoryAgentStore()
+    const model = new FakeAgentModel([
+      { calls: [{ name: 'finish', args: { summary: 's', verification: 'v' } }] },
+    ])
+    const deps = makeDeps({ store, model })
+    await startAgentRun(deps, { agentId: 'test-agent', userId: 'user-1', userRole: 'admissions', goal: GOAL })
+    expect(JSON.stringify(model.requests[0].contents)).not.toContain('untrusted')
+    expect(store.sessionContexts.size).toBe(0)
+  })
+})

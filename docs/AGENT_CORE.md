@@ -24,7 +24,7 @@ How the Ask X agent works: runtime, tools, permissions, sessions and the briefin
 
 - `agent_runs.session_id` (migration 016) groups consecutive runs into a conversation; the in-app builder and the external API both accept an optional `sessionId` validated against the caller.
 - Ambiguous goals can be answered with a structured clarification (migration 017) the UI renders as an interactive prompt instead of a wrong guess.
-- Sessions are ephemeral by product decision ("New chat" resets; history is read-only + forkable) — there is no durable cross-session memory yet (see [ROADMAP](ROADMAP.md)).
+- **Durable session memory** (migration 022): after each terminal run the runtime derives a compact, hard-capped context (recent goals + outcomes, referenced leads with name/category/score, most-recent-focus marker) and stores it per session (`agent_session_context`, user-scoped RLS, service-role writes only). Follow-up runs in the session load it through the same untrusted channel as ephemeral context — "now draft it for the top one" resolves without re-searching, measurably cutting steps and tokens (verified: 7 steps/18.5k tokens → 4 steps/13.5k tokens on the eval scenario). A session-context row is keyed by session + user; another user can never read or overwrite it.
 
 ## External clients and scopes
 
@@ -46,6 +46,6 @@ Agent-proposed side effects (email drafts, recommended actions) never execute on
 
 ## Known limits
 
-- No durable multi-turn memory across sessions (session context is per-conversation only).
+- Durable memory is per-session only ("New chat" starts empty; there is no cross-session recall) — deliberate privacy/simplicity tradeoff.
 - Trace capture includes tool inputs/outputs — treat trace access as data access.
 - The briefing's top-5 caps at five leads by design; the dashboard carries the full operational view.

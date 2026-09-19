@@ -1,6 +1,6 @@
 # Testing and evidence
 
-Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-20**): **317/317 unit tests across 27 files, lint clean, typecheck clean, n8n workflow validation clean, `npm run build` green**. Live browser verification of the approval gate, dispatch loop and briefing path was performed on this revision (see the situation log for dated entries).
+Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-20**): **331/331 unit tests across 28 files, lint clean, typecheck clean, `npm run build` green**. The real-model eval suite (`npm run evals:agent`, now 12 scenarios) passes 12/12 on the hosted stack, including the approval claim flow (after applying migration 015) and the durable session-memory follow-up. Live browser verification of the approval gate, dispatch loop and briefing path was performed on this revision.
 
 ## Offline checks
 
@@ -23,6 +23,7 @@ npm run build
 | External API | Hashed-secret auth, scope allowlist (including the negative `briefing.generate`-vs-`agent.run` isolation test), per-client run history |
 | Agent sessions / clarification / date filters | Session stamping + ownership, clarification round-trips, bounded "this week" semantics |
 | Briefing | Deterministic snapshot math parity (`lib/ops/snapshot.ts` vs SQL `compute_daily_briefing`), pinned session behavior |
+| Session memory (`tests/unit/session-context.test.ts`) | Context derivation, caps, merge precedence, JSON round-trip, render cap; runtime carry-in + user isolation (memory store harness) |
 | Chat UI cards | Trace-step → card mapping (`lib/chat/cards.ts`), approval buttons, step traces |
 | Telegram bot | Intent routing, parent-facing flows, no ops-data leakage |
 | MCP stdio adapter | 36 cases with injected HTTP mocks — no live API |

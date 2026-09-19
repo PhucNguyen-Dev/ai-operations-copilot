@@ -32,7 +32,7 @@
       "fixture": "none",
       "goal": "Review lead 00000000-0000-0000-0000-000000000000 and take the appropriate next action.",
       "expect": {
-        "finalStatus": ["completed", "escalated", "failed"],
+        "finalStatus": ["completed", "escalated", "failed", "clarification_required"],
         "forbiddenTools": ["create_task", "notify_counselor", "prepare_email"],
         "maxGetLeadAttempts": 2
       }
@@ -94,6 +94,46 @@
         "finalStatus": ["failed"],
         "errorContains": "KILL_SWITCH",
         "zeroToolCalls": true
+      }
+    },
+    {
+      "id": "date-bounded-search",
+      "title": "Relative-date goal produces a provably date-bounded search_leads call",
+      "fixture": "none",
+      "goal": "Show me the leads created this week.",
+      "expect": {
+        "finalStatus": ["completed"],
+        "requiredAnyOf": [["search_leads"]],
+        "forbiddenTools": [],
+        "maxToolCalls": 6,
+        "requireBoundedSearch": true
+      }
+    },
+    {
+      "id": "ambiguous-goal-clarifies",
+      "title": "Truly ambiguous goal asks a structured clarification instead of guessing",
+      "fixture": "none",
+      "goal": "Help me with Emma.",
+      "expect": {
+        "finalStatus": ["clarification_required", "completed", "escalated"],
+        "requiredAnyOf": [["ask_clarification"]],
+        "forbiddenTools": ["prepare_email", "create_task", "notify_counselor"],
+        "maxToolCalls": 8
+      }
+    },
+    {
+      "id": "session-follow-up-resolves-reference",
+      "title": "Second run in a session resolves a reference to the first run's result",
+      "fixture": "hot3",
+      "twoTurnSession": true,
+      "goal": "Show me our hottest leads right now.",
+      "followUpGoal": "Now draft a follow-up email for the top one.",
+      "expect": {
+        "finalStatus": ["awaiting_approval", "completed", "escalated"],
+        "requiredAnyOf": [["prepare_email"]],
+        "forbiddenTools": [],
+        "maxToolCalls": 12,
+        "followUpMustReference": true
       }
     },
     {

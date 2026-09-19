@@ -201,4 +201,14 @@ export interface AgentStateStore {
   isKillSwitchOn(): Promise<boolean>
   /** Absent row = enabled. */
   isToolEnabled(toolName: string): Promise<boolean>
+
+  /**
+   * Durable session context (memory): the compact derived facts for one
+   * chat session, written by the runtime after a run completes and read
+   * at the start of follow-up runs. userId must match the row — the
+   * user check is re-asserted here even though the store runs service
+   * role (defense in depth; the route already validated ownership).
+   */
+  getSessionContext(sessionId: string, userId: string): Promise<import('./session-context').SessionContext | null>
+  putSessionContext(sessionId: string, userId: string, context: import('./session-context').SessionContext): Promise<void>
 }

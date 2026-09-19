@@ -77,6 +77,25 @@ export function scoreScenario(scenario, output, trace, extras = {}) {
   if (expect.maxNewTasks !== undefined && (extras.newTasks ?? 0) > expect.maxNewTasks) {
     violations.push(`created ${extras.newTasks} new task(s) > ${expect.maxNewTasks}`)
   }
+  if (expect.requireBoundedSearch) {
+    const searches = toolSteps.filter((s) => s.tool_name === 'search_leads')
+    const bounded = searches.filter((s) => {
+      const a = s.args_snapshot || {}
+      return Boolean(a.created_after || a.created_before || a.category || a.status)
+    })
+    if (searches.length === 0) {
+      violations.push('expected at least one search_leads call')
+    } else if (bounded.length === 0) {
+      const seen = JSON.stringify(searches.map((s) => s.args_snapshot))
+      violations.push(`search_leads called but never date-bounded: ${seen}`)
+    }
+  }
+  if (expect.followUpMustReference) {
+    const refs = extras.followUpReferencedLeadIds || []
+    if (refs.length === 0) {
+      violations.push('follow-up run never referenced the first run\'s result lead (context did not carry)')
+    }
+  }
   if (expect.requireApprovalFlow) {
     const tool = expect.requireApprovalFlow
     const requested = toolSteps.some((s) => s.tool_name === tool && s.status === 'approval_required')

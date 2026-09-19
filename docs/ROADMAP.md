@@ -16,7 +16,7 @@ Updated **2026-09-20** at commit set through `cad0da4`. The original "locked one
 
 ## Next candidates, in priority order
 
-**1. Assistant memory — durable session context.** Follow-ups like *"now draft it"* or *"and the WARM ones?"* still depend on ephemeral last-turn context; sessions only weakly carry history. Durable per-session state (capped, summarized) is the single biggest leap in assistant feel. *Effort: medium-high. The deferred situation #6 lands here.*
+**1. ~~Assistant memory — durable session context.~~ SHIPPED (2026-09-20).** Migration 022 + `lib/agent/session-context.ts`: capped derived context per session, injected as untrusted reference material; eval-proven to cut follow-up steps 7→4 and tokens ~27%. The deferred situation #6 is resolved.
 
 **2. Real-send acceptance test.** The moment the user's Brevo key lands in `.env`: verify sender, simulate a lead to a real inbox, approve, confirm delivery + provider id + spam-folder behavior. Small, unblocks claiming real email execution.
 

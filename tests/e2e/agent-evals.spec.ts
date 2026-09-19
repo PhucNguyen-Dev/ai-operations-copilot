@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test'
+
+// Real-model scenarios are slow (multi-turn Gemini rounds, shared free-tier
+// quota, 3s inter-scenario pacing) — the 60s suite default kills them at
+// exactly 1.0m. Give every scenario room to breathe.
+test.setTimeout(300_000)
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { buildResultsDoc, scoreScenario } from './helpers/agent-eval-score.mjs'
@@ -89,6 +94,10 @@ async function traceOf(page: import('@playwright/test').Page, runId: string) {
 }
 
 test.beforeAll(async () => {
+  // Defensive cleanup: a previously killed run can leave fixture rows behind
+  // (its afterAll never ran), and stale rows collide with the inserts below
+  // (emails are unique). Source-tagged deletion is exact and cheap.
+  await svcDelete('leads', `source=eq.${SOURCE_TAG}`)
   // Guarantee a clean runtime state at START — never trust the previous
   // run's cleanup (a leftover kill_switch=true poisons unrelated scenarios).
   await fetch(`${REST}/agent_runtime_config?on_conflict=id`, {
@@ -99,7 +108,10 @@ test.beforeAll(async () => {
   const counselor = await svcSelect('profiles', `email=eq.${COUNSELOR}&select=id`)
   const counselorId = counselor[0].id as string
   // Fixture leads, all assigned to the counselor so her RLS scope sees them.
-  const mk = (name: string, message: string) => ({ name, email: `${name}@eval.example`, phone: null, source: SOURCE_TAG, message, assigned_counselor_id: counselorId })
+  // Email must be a VALID address (no spaces) — prepare_email validates it,
+  // and the approval-flow scenario requires the post-approval execution to
+  // actually succeed.
+  const mk = (name: string, message: string) => ({ name, email: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@eval.example`, phone: null, source: SOURCE_TAG, message, assigned_counselor_id: counselorId })
   const leads = await svcInsert('leads', [
     mk('Eval Hot Lead', 'Very interested, ready to enroll this month, budget confirmed, timeline: immediately.'),
     mk('Eval Cold Lead', 'Just browsing, comparing with a competitor, mentioned refund.'),
@@ -136,12 +148,15 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
+  // Every delete is guarded: a throw here must never prevent the OTHER
+  // afterAll (the results writer) from running.
   const f = (globalThis as Record<string, unknown>).__evalFixtures as Fixture | undefined
   if (!f) return
-  await svcDelete('leads', `source=eq.${SOURCE_TAG}`)
-  if (f.injectionDocId) await svcDelete('knowledge_docs', `id=eq.${f.injectionDocId}`)
-  await svcDelete('agent_tool_config', `tool_name=eq.create_task`)
-  await svcDelete('agent_runtime_config', `id=eq.1`) // row re-created with defaults (kill_switch=false)
+  const safe = async (fn: () => Promise<void>) => { try { await fn() } catch (e) { console.warn('[eval cleanup]', e instanceof Error ? e.message : e) } }
+  await safe(() => svcDelete('leads', `source=eq.${SOURCE_TAG}`))
+  if (f.injectionDocId) await safe(() => svcDelete('knowledge_docs', `id=eq.${f.injectionDocId}`))
+  await safe(() => svcDelete('agent_tool_config', `tool_name=eq.create_task`))
+  await safe(() => svcDelete('agent_runtime_config', `id=eq.1`)) // row re-created with defaults (kill_switch=false)
 })
 
 const results: Record<string, unknown>[] = []
@@ -198,6 +213,50 @@ for (const scenario of scenarios.cases) {
     await login(page, loginAs)
     let output = await startRun(page, { goal, requireApproval: s.requireApproval === true })
 
+    // Two-turn session case: the follow-up goal is a SECOND run in the same
+    // session that references the first run's result ("the top one"). Today
+    // the runtime has no durable session context, so the reference is
+    // expected to fail to resolve — this scenario is the before/after proof
+    // for the memory upgrade. Scoring uses the SERVER-side trace only, so
+    // the check stays honest no matter what the client did.
+    if (s.twoTurnSession) {
+      // The client owns the session id (same as the UI): generate it here
+      // and stamp BOTH runs so they share one conversation.
+      const sessionId = crypto.randomUUID()
+      output = await startRun(page, { goal, requireApproval: s.requireApproval === true, sessionId })
+      const first = output as { runId?: string }
+      let firstTrace: Record<string, unknown> | null = null
+      if (first.runId) firstTrace = await traceOf(page, first.runId)
+      const firstLeadId = extractReferencedLeadId(firstTrace)
+      // Ground truth of what the follow-up could know: the durable memory
+      // row run 1 wrote (service-role read — RLS does not gate the runner).
+      // A reference is legitimate when it appears in run 1's trace OR the
+      // memory row; anything else would be an invented id.
+      const knownFromMemory = new Set<string>()
+      try {
+        const rows = await svcSelect('agent_session_context', `session_id=eq.${sessionId}&select=context`)
+        const ctx = (rows[0] as { context?: { leads?: Record<string, unknown>; lastFocusLeadId?: string } } | undefined)?.context
+        if (ctx?.leads) for (const id of Object.keys(ctx.leads)) knownFromMemory.add(id)
+        if (ctx?.lastFocusLeadId) knownFromMemory.add(ctx.lastFocusLeadId)
+      } catch { /* table read failure: fall back to trace-only check */ }
+      const followUp = await startRun(page, {
+        goal: s.followUpGoal as string,
+        sessionId,
+      })
+      const followRunId = (followUp as { runId?: string }).runId
+      let followTrace: Record<string, unknown> | null = null
+      if (followRunId) followTrace = await traceOf(page, followRunId)
+      const followLeadIds = followLeadReferencedIds(followTrace)
+      const referenced = followLeadIds.some((id) => id === firstLeadId || knownFromMemory.has(id))
+      const scored2 = scoreScenario(s, { ...followUp, status: followUp.status }, followTrace ?? {}, {
+        followUpReferencedLeadIds: referenced ? [firstLeadId as string] : [],
+      })
+      results.push(scored2)
+      console.log(`\n[${scored2.scenarioId}] ${scored2.pass ? 'PASS' : 'FAIL'} — ${JSON.stringify(scored2)}`)
+      expect(scored2.pass, `${scored2.scenarioId}: ${scored2.violations.join('; ')}`).toBe(true)
+      return
+    }
+
     // Approval flow: decide as admin, the run resumes server-side.
     if (output.status === 'awaiting_approval') {
       await login(page, ADMIN)
@@ -227,3 +286,28 @@ for (const scenario of scenarios.cases) {
     expect(scored.pass, `${scored.scenarioId}: ${scored.violations.join('; ')}`).toBe(true)
   })
 }
+
+// The first session run has no email tool call by design — the reference
+// target is whatever lead id appeared in its search/read steps.
+function extractReferencedLeadId(trace: Record<string, unknown> | null): string | null {
+  const steps = (trace?.steps as Record<string, unknown>[] | undefined) ?? []
+  for (const s of steps) {
+    const snap = (s.args_snapshot ?? {}) as Record<string, unknown>
+    if (typeof snap.lead_id === 'string') return snap.lead_id
+    const res = (s.result_summary ?? {}) as Record<string, unknown>
+    const leads = res.leads as Record<string, unknown>[] | undefined
+    if (leads?.length && typeof leads[0].id === 'string') return leads[0].id
+  }
+  return null
+}
+
+function followLeadReferencedIds(trace: Record<string, unknown> | null): string[] {
+  const steps = (trace?.steps as Record<string, unknown>[] | undefined) ?? []
+  const ids: string[] = []
+  for (const s of steps) {
+    const snap = (s.args_snapshot ?? {}) as Record<string, unknown>
+    if (typeof snap.lead_id === 'string') ids.push(snap.lead_id)
+  }
+  return ids
+}
+

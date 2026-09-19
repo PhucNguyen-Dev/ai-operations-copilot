@@ -5,6 +5,7 @@ import type {
   AgentStateStore,
   AgentStepRecord,
 } from '@/lib/agent/types'
+import { parseSessionContext, type SessionContext } from '@/lib/agent/session-context'
 
 // =============================================================
 // 9.3 — Durable agent run state. Production store: the service-role
@@ -198,5 +199,27 @@ export class SupabaseAgentStateStore implements AgentStateStore {
     if (error) throw new Error(`tool config load failed: ${error.message}`)
     const row = (data ?? [])[0] as { enabled: boolean } | undefined
     return row ? row.enabled : true // absent row = enabled
+  }
+
+  async getSessionContext(sessionId: string, userId: string): Promise<SessionContext | null> {
+    const { data, error } = await this.admin
+      .from('agent_session_context')
+      .select('context')
+      .eq('session_id', sessionId)
+      .eq('user_id', userId)
+      .limit(1)
+    if (error) throw new Error(`session context load failed: ${error.message}`)
+    const row = (data ?? [])[0] as { context: unknown } | undefined
+    return row ? parseSessionContext(row.context) : null
+  }
+
+  async putSessionContext(sessionId: string, userId: string, context: SessionContext): Promise<void> {
+    const { error } = await this.admin
+      .from('agent_session_context')
+      .upsert(
+        { session_id: sessionId, user_id: userId, context, updated_at: nowIso() },
+        { onConflict: 'session_id' }
+      )
+    if (error) throw new Error(`session context save failed: ${error.message}`)
   }
 }

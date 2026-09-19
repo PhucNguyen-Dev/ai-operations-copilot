@@ -8,6 +8,7 @@ import type {
 } from '@/lib/agent/types'
 import type { AgentFunctionCall, AgentModel, AgentTurnRequest } from '@/lib/agent/model'
 import type { AgentDefinition } from '@/lib/agent/agents'
+import type { SessionContext } from '@/lib/agent/session-context'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // =============================================================
@@ -23,6 +24,7 @@ export class MemoryAgentStore implements AgentStateStore {
   approvals = new Map<string, AgentApprovalRecord>()
   toolFlags = new Map<string, boolean>()
   killSwitch = false
+  sessionContexts = new Map<string, SessionContext>()
 
   async createRun(run: Omit<AgentRunRecord, 'id' | 'started_at' | 'updated_at'>): Promise<AgentRunRecord> {
     const now = new Date().toISOString()
@@ -134,6 +136,14 @@ export class MemoryAgentStore implements AgentStateStore {
 
   async isToolEnabled(toolName: string): Promise<boolean> {
     return this.toolFlags.get(toolName) ?? true
+  }
+
+  async getSessionContext(sessionId: string, userId: string): Promise<SessionContext | null> {
+    return this.sessionContexts.get(`${sessionId}:${userId}`) ?? null
+  }
+
+  async putSessionContext(sessionId: string, userId: string, context: SessionContext): Promise<void> {
+    this.sessionContexts.set(`${sessionId}:${userId}`, structuredClone(context))
   }
 }
 
