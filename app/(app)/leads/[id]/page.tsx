@@ -44,6 +44,21 @@ type DecisionRow = {
 
 type TimelineEvent = { at: string; label: string; detail: string | null; ai: boolean }
 
+type AgentRunRef = {
+  id: string
+  agent_id: string
+  goal: string
+  status: string
+  final_outcome: string | null
+  error: string | null
+  started_at: string
+}
+
+type StepRow = {
+  run_id: string
+  agent_runs: AgentRunRef | null
+}
+
 export default async function LeadDetailPage({
   params,
 }: {
@@ -58,7 +73,7 @@ export default async function LeadDetailPage({
 
   // RLS decides visibility; the ops-only pipeline-run lookup is an
   // independent read and runs in parallel.
-  const [leadResult, runResult] = await Promise.all([
+  const [leadResult, runResult, stepsResult] = await Promise.all([
     supabase
       .from('leads')
       .select(
@@ -75,16 +90,36 @@ export default async function LeadDetailPage({
     canViewAutomation(role)
       ? supabase
           .from('automation_runs')
-          .select('id')
+          .select('id, status, error_summary, started_at')
           .eq('lead_id', id)
           .order('started_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+          .limit(3)
+      : Promise.resolve({ data: [], error: null }),
+    // Agent runs that touched this lead — linked through the steps
+    // table's lead references (the honest join; no denormalized lead_id
+    // exists on runs). RLS scopes steps to runs the operator may see:
+    // counselors read their own runs, ops/admin read all.
+    supabase
+      .from('agent_run_steps')
+      .select('run_id, agent_runs!inner(id, agent_id, goal, status, final_outcome, error, started_at)')
+      .eq('args_snapshot->>lead_id', id)
+      .order('started_at', { ascending: false })
+      .limit(30),
   ])
 
   const { data: lead, error } = leadResult
-  const runId = canViewAutomation(role) ? ((runResult.data as { id: string } | null)?.id ?? null) : null
+  const automationRuns = (runResult.data as Array<{
+    id: string
+    status: string
+    error_summary: string | null
+    started_at: string
+  }> | null) ?? []
+  // Dedupe steps → distinct runs, latest first (steps arrive pre-sorted).
+  const agentRuns: AgentRunRef[] = []
+  for (const row of ((stepsResult.data as StepRow[] | null) ?? [])) {
+    const run = row.agent_runs
+    if (run && !agentRuns.some((r) => r.id === run.id)) agentRuns.push(run)
+  }
 
   if (error) {
     console.error('[lead-detail] query failed:', error.message)
@@ -151,6 +186,18 @@ export default async function LeadDetailPage({
       detail: `${d.target}${d.decision_note ? ` — "${d.decision_note}"` : ''}`,
       ai: false,
     })),
+    ...agentRuns.map((r) => ({
+      at: r.started_at,
+      label: `Agent run · ${r.agent_id}`,
+      detail: `${r.goal} — ${r.status}${r.error ? ` · ${r.error}` : r.final_outcome ? ` · ${r.final_outcome}` : ''}`,
+      ai: true,
+    })),
+    ...automationRuns.map((r) => ({
+      at: r.started_at,
+      label: 'Automation run',
+      detail: `${r.status}${r.error_summary ? ` · ${r.error_summary}` : ''}`,
+      ai: false,
+    })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 
   return (
@@ -177,29 +224,8 @@ export default async function LeadDetailPage({
       <SiteHeader title={lead.name} subtitle={`Lead detail · received ${timeAgo(lead.created_at)}`} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Lead record — unchanged structure */}
-        <section className="rounded-lg border bg-white p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Lead record</h2>
-            <span className="text-xs text-gray-400">submitted {timeAgo(lead.created_at)}</span>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Email" value={lead.email} />
-            <Field label="Phone" value={lead.phone} />
-            <Field label="Source" value={lead.source} />
-            <Field label="Course interest" value={lead.course_interest} />
-            <Field label="Budget" value={lead.budget} />
-            <Field label="Timeline" value={lead.timeline} />
-            <Field label="Assigned counselor" value={counselor?.full_name ?? null} />
-            <Field label="Status" value={lead.status} />
-          </div>
-          {lead.message && (
-            <div className="mt-4 rounded border bg-gray-50 p-3 text-sm text-gray-700">
-              “{lead.message}”
-            </div>
-          )}
-        </section>
-
+        {/* Decision spine first: the AI assessment + recommended action is
+            the primary object of this workspace; the record supports it. */}
         {/* 2/6 — AI analysis split: Assessment (AI) + Recommended Action (human gate) */}
         <section className={`rounded-lg border bg-white border-l-4 p-6 ${analysis ? CATEGORY_BORDER[analysis.category] ?? 'border-l-gray-300' : ''}`}>
           <div className="mb-4 flex items-center justify-between">
@@ -254,6 +280,29 @@ export default async function LeadDetailPage({
           )}
         </section>
 
+        {/* Lead record — unchanged structure */}
+        <section className="rounded-lg border bg-white p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold">Lead record</h2>
+            <span className="text-xs text-gray-400">submitted {timeAgo(lead.created_at)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Email" value={lead.email} />
+            <Field label="Phone" value={lead.phone} />
+            <Field label="Source" value={lead.source} />
+            <Field label="Course interest" value={lead.course_interest} />
+            <Field label="Budget" value={lead.budget} />
+            <Field label="Timeline" value={lead.timeline} />
+            <Field label="Assigned counselor" value={counselor?.full_name ?? null} />
+            <Field label="Status" value={lead.status} />
+          </div>
+          {lead.message && (
+            <div className="mt-4 rounded border bg-gray-50 p-3 text-sm text-gray-700">
+              “{lead.message}”
+            </div>
+          )}
+        </section>
+
         {/* Follow-up tasks — unchanged structure */}
         <section className="rounded-lg border bg-white p-6">
           <h2 className="mb-4 font-semibold">Follow-up tasks</h2>
@@ -279,11 +328,10 @@ export default async function LeadDetailPage({
           )}
         </section>
 
-        {/* Generated communication — same list, approval gate on dry_run drafts */}
+        {/* Generated communication — per-draft AI tag, approval gate on dry_run drafts */}
         <section className="rounded-lg border bg-white p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Emails</h2>
-            {emails.length > 0 && <AiTag />}
+            <h2 className="font-semibold">Generated communication</h2>
           </div>
           {emails.length === 0 ? (
             <p className="text-sm text-gray-500">No emails recorded for this lead.</p>
@@ -295,7 +343,7 @@ export default async function LeadDetailPage({
                 return (
                   <li key={e.id} className="rounded border p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{e.subject}</p>
+                      <p className="text-sm font-medium">{e.subject} {dryRun && <AiTag />}</p>
                       <span className={`rounded px-2 py-0.5 text-xs font-medium ${dryRun ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
                         {e.status}
                       </span>
@@ -331,11 +379,9 @@ export default async function LeadDetailPage({
               })}
             </ul>
           )}
-          {canViewAutomation(role) && (
+          {canViewAutomation(role) && automationRuns.length > 0 && (
             <p className="mt-4 text-xs text-gray-400">
-              {runId
-                ? <>Pipeline run: <Link className="underline" href={`/runs/${runId}`}>view execution log</Link></>
-                : 'No pipeline run linked to this lead.'}
+              Pipeline run: <Link className="underline" href={`/runs/${automationRuns[0].id}`}>view execution log</Link>
             </p>
           )}
         </section>
@@ -343,7 +389,14 @@ export default async function LeadDetailPage({
 
       {/* 5 — compact activity timeline: only real, timestamped events */}
       <section aria-label="Activity timeline" className="mt-6 rounded-lg border bg-white p-6">
-        <h2 className="mb-4 font-semibold">Activity timeline</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Activity timeline</h2>
+          {agentRuns.length > 0 && (
+            <Link href="/agent" className="text-xs font-medium text-[var(--brand)] hover:underline">
+              {agentRuns.length} Ask X agent run{agentRuns.length === 1 ? '' : 's'} touched this lead →
+            </Link>
+          )}
+        </div>
         <ol className="space-y-0">
           {timeline.map((event, i) => (
             <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
