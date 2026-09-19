@@ -48,29 +48,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// Reshape the deterministic briefing into one Telegram message.\n// Every number comes straight from compute_daily_briefing — this\n// script formats, it never computes.\nconst b = $input.first().json;\nconst c = b.counts || {};\nconst leads = b.priorityLeads || [];\nconst lines = [];\nlines.push('☀ *Morning briefing*');\nlines.push(b.headline || `${c.total ?? 0} leads visible`);\nif (leads.length) {\n  lines.push('');\n  lines.push('*Priority queue*');\n  for (const l of leads.slice(0, 5)) {\n    const overdue = l.overdue_due_at ? ' ⚠ OVERDUE' : '';\n    const action = l.recommended_action ? `\\n→ ${l.recommended_action}` : '';\n    lines.push(`• ${l.name} — ${l.category ?? 'unanalyzed'}${l.score != null ? ' · ' + l.score : ''}${overdue}${action}`);\n  }\n}\nif ((c.pendingApprovals ?? 0) > 0) {\n  lines.push('');\n  lines.push(`⏳ ${c.pendingApprovals} agent approval${c.pendingApprovals === 1 ? '' : 's'} waiting — open Agent Approvals`);\n}\nlines.push('');\nlines.push('Open /agent for the full briefing with lead cards.');\nreturn [{ json: { text: lines.join('\\n'), briefing: b } }];"
+        "jsCode": "// Daily bookkeeping log — the briefing itself is delivered IN-APP\n// (pinned ☀ Briefing session in /agent). Telegram push is disabled by\n// design for now: no auto-sends to any account. To re-enable later,\n// restore a Send-to-Telegram node AFTER 'Format message' using a\n// DEDICATED ops bot (BRIEFING_TELEGRAM_BOT_TOKEN) — never the\n// parent-facing bot token — and per-recipient opt-in chat ids.\nconst b = $input.first().json;\nconst c = b.counts || {};\nconsole.log(`[morning-briefing] ${b.headline}`);\nconsole.log(`[morning-briefing] needsAction=${c.needsAction ?? 0} followUpsDue=${c.followUpsDue ?? 0} atRisk=${c.atRisk ?? 0} total=${c.total ?? 0} pendingApprovals=${c.pendingApprovals ?? 0}`);\nconsole.log(`[morning-briefing] priority leads: ${(b.priorityLeads || []).map(l => l.name).join(', ') || 'none'}`);\nreturn [{ json: { delivered: 'in_app', sessionId: b.sessionId, runId: b.runId } }];"
       },
       "id": "b2000000-0000-0000-0000-000000000203",
-      "name": "Format message",
+      "name": "Log briefing result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [0, 0]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://api.telegram.org/bot{{ $env.BRIEFING_TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "notes": "Uses a DEDICATED ops bot (BRIEFING_TELEGRAM_BOT_TOKEN), never the parent-facing bot token — internal briefings must not mix into the customer-test chat.",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.BRIEFING_TELEGRAM_CHAT_ID, text: $json.text, parse_mode: 'Markdown' }) }}",
-        "options": { "timeout": 15000 }
-      },
-      "id": "b2000000-0000-0000-0000-000000000204",
-      "name": "Send to Telegram",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [240, 0]
     }
   ],
   "connections": {
@@ -78,10 +62,7 @@
       "main": [[{ "node": "Generate briefing", "type": "main", "index": 0 }]]
     },
     "Generate briefing": {
-      "main": [[{ "node": "Format message", "type": "main", "index": 0 }]]
-    },
-    "Format message": {
-      "main": [[{ "node": "Send to Telegram", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Log briefing result", "type": "main", "index": 0 }]]
     }
   }
 }
