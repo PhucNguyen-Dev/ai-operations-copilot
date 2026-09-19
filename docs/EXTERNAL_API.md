@@ -5,7 +5,9 @@ Two independent Next.js surfaces exist: credential-based agent REST and a shared
 - [Profile 2: stdio adapter](../mcp/README.md) wraps this REST API via [mcp/server.mjs](../mcp/server.mjs), exposing `list_capabilities`, `run_agent_goal` and `get_run_trace`. Its 36 unit cases are included in the final 273-test pass; [scripts/verify-mcp.mjs](../scripts/verify-mcp.mjs) supports offline discovery and opt-in live checks. It is a handrolled protocol implementation, not an SDK-backed or compliance-certified server.
 - [Profile 1: native n8n tools](WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools) exposes classic-pipeline qualification and service-role recent agent runs through [n8n/mcp-server-tools.json](../n8n/mcp-server-tools.json). It does not inherit the governed REST API's scopes, approvals or rate limits. Its signing Code node means “config-only” describes no application-code changes, not no authored code.
 
-Inspector interoperability, live calls and redacted captures for both profiles remain pending; offline verification is not production readiness. See [the execution report](EXECUTION_REPORT.md).
+Inspector interoperability, live calls and redacted captures for both profiles remain pending; offline verification is not production readiness (see [TESTING](TESTING.md)).
+
+Scope model: machine clients are provisioned with an allowlisted scope set (`agent.run`, `briefing.generate`) enforced at provisioning time and checked per route. A `briefing.generate` client is rejected on the general run route with 403 — scope isolation is regression-tested. Secrets are stored hashed and shown once.
 
 ## Agent REST authentication and boundary
 

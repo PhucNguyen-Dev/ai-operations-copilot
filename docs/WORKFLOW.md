@@ -22,10 +22,10 @@ Signed webhook envelope + shared-secret header
 Key references: intake validation at `n8n/admissions-lead-pipeline.json:32`, classification at `:337`, email gate at `:600`, dry-run branch at `:668`, counselor assignment at `:870` and step-log builder at `:1003`.
 
 - The model proposes a score; code applies HOT/WARM/COLD thresholds (70/40). It is not a validated probability of enrollment.
-- The email branch is separate from the agent's `prepare_email`. Keep `GMAIL_DRY_RUN=true`; real Gmail transport requires a deliberate credential/configuration decision outside this demonstration.
+- The email branch is separate from the agent's `prepare_email`. Keep `GMAIL_DRY_RUN=true`; the approved dispatch path for agent-generated email is the Brevo adapter (`lib/email/dispatch.ts`), not this Gmail branch.
 - Validation/schema/email failure branches and the error workflow are intended to record failures, but database/log-write failures can still prevent complete evidence. Do not claim that nothing can be silently lost without exercising these paths.
 - This workflow does not gain the Next.js webhook's source/external-key deduplication simply because both accept leads.
-- PromptLedger lookup in unattended nodes can fall back to last-known-good/committed prompts with source/error tags. This differs from interactive staff-tool fail-closed behavior; see [AI_DESIGN](AI_DESIGN.md).
+- PromptLedger lookup in unattended nodes can fall back to last-known-good/committed prompts with source/error tags. This differs from interactive staff-tool fail-closed behavior; prompt-source ownership is recorded in the repo configuration, not in agent docs.
 
 ## 2. Telegram parent inquiry chatbot
 
@@ -78,7 +78,7 @@ HTTP node serialization, headers, response wrapping and PostgREST bulk-row shape
 
 ## 5. MCP profile 1: native n8n admissions tools
 
-Source: [n8n/mcp-server-tools.json](../n8n/mcp-server-tools.json). This additive workflow changes no application code or existing workflow. “Config-only” means no application-code changes, **not no authored code**: qualification includes a signing Code node. It is independent of the [profile 2 stdio adapter](../mcp/README.md), which calls the governed external agent API instead. Both profiles are implemented with offline verification; live acceptance and captures remain pending, as recorded in the [execution report](EXECUTION_REPORT.md).
+Source: [n8n/mcp-server-tools.json](../n8n/mcp-server-tools.json). This additive workflow changes no application code or existing workflow. “Config-only” means no application-code changes, **not no authored code**: qualification includes a signing Code node. It is independent of the [profile 2 stdio adapter](../mcp/README.md), which calls the governed external agent API instead. Both profiles are implemented with offline verification; live acceptance and captures remain pending (see [TESTING](TESTING.md)).
 
 ### Native node contract
 

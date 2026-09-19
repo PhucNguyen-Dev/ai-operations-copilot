@@ -1,54 +1,51 @@
 # Agent core
 
-Current working-tree implementation over `c8506e4`, reviewed 2026-09-17. Approval hardening is implemented and final offline checks (273/273 unit tests across 23 files, typecheck, validation of 4 n8n workflows with 3 existing Gmail variable warnings, build) pass; migration 015 passes 28 isolated SQL checks, but hosted application, live behavior and remote CI remain **pending**. [Local evidence](evidence/LOCAL_VERIFICATION.md) records the boundary; [Phase 9](archive/PHASE_9_AGENTIC_CORE_UPGRADE.md) preserves original design intent.
+How the Ask X agent works: runtime, tools, permissions, sessions and the briefing path.
 
-## Execution and identities
+## Runtime
 
-```text
-Goal → persist → model selects registered tool → validate/authorize/resource check
-     → execute / deny / suspend → persist feedback → re-plan → finish/escalate/fail
-```
+`lib/agent/runtime.ts` executes every run inside hard bounds — max steps, wall-clock time and token budget — with a kill switch and per-tool disable checks honored before each tool call. The clock is **injected**, so tests and the date-bounds guard share one time source. Every step is traced via `lib/runtrace.ts` (tool name, input/output summaries, duration) — this trace is what the chat UI renders as step summaries and what the rich answer cards are derived from. No live step polling: the run flow is request → bounded execution → persisted trace → rendered.
 
-The loop runs inside Next.js: `startAgentRun` at `lib/agent/runtime.ts:84`, resume at `lib/agent/runtime.ts:144`. n8n remains a separate fixed workflow. Model adapter: `lib/agent/model.ts:43`; registry: `lib/agent/registry.ts:16`; agent definitions: `lib/agent/agents.ts:35`.
+## Agents
 
-| Agent | Intended use | Tools |
-|---|---|---|
-| `admissions-followup` | Employee Ask X / trusted webhook triage | CRM/history reads, task, notification, dry-run email, knowledge, reporting delegation, finish/escalation |
-| `external-lead-support` | Credential-based REST | CRM/history/knowledge reads and control outcomes; no CRM write tool |
-| `reporting-agent` | Delegated reporting | CRM/history/knowledge reads and finish; no delegation tool |
+| Agent | Purpose |
+|---|---|
+| **Oracle** (default) | Routes a goal to the right specialist(s), synthesizes results, asks clarifying questions when a request is ambiguous (clarification round-trips, migration 017) |
+| **CRM specialist** | Lead queries and mutations — always date-bounded: a "this week" request must produce a provably bounded search, enforced at the tool/runtime boundary, not by prompt alone |
+| **Knowledge specialist** | SOP/document retrieval, role/department filtered |
+| **Comms** | Email drafting via `prepare_email` — dry-run drafts only; real dispatch happens exclusively through the human approval gate |
+| **Briefing** | Generates the daily morning briefing from the deterministic ops snapshot (below); zero model tokens for the numbers themselves |
 
-Employee routes have role gates with an admin exception; an empty `allowedRoles` is not an absolute direct-admin invocation ban. Permission evaluation (`lib/agent/permissions.ts:36`) intersects tool/agent allowlists, role, enabled state and approval policy. Resource checks precede governed service-role writes.
+## Permissions
 
-## Approval decision and resume
+`lib/agent/permissions.ts` is the single policy engine: tool allowlist per role, resource checks inside each tool, request-approver flags persisted in run state. Prompt text never grants authority the engine doesn't.
 
-- Operations/Admin decide; self-decision returns **403**, conflicting prior decisions **409**. A retry of the same decision cannot replace the stored decision/note and may re-enter safe resume (`app/api/agent/approvals/[id]/route.ts:48`). A racing first decision can return 409; inspect current state rather than switching decisions.
-- Decisions happen in the **approval inbox** (`/agent/approvals`, Operations/Admin nav): pending proposals with args snapshots, optional decision note, client-side guards that mirror the endpoint rules (self-decision blocked in UI, server still enforces). Ask X approval cards link there; the API remains the only enforcement point.
-- Migration [015_approval_resume.sql](../supabase/migrations/015_approval_resume.sql) adds `approval_wait_ms`, `approval_wait_started_at`, `pending_approval_id` and `execution_claimed_at`. The bound, decided approval is durably claimed before execution; only the claim winner proceeds.
-- Resumed tools use `requesterRead`, not the approver's `userClient` (`lib/agent/runtime.ts:354`). The service-role-only RPC verifies the persisted requester against **`auth.users.raw_app_meta_data.role`**, not the profile mirror (`supabase/migrations/015_approval_resume.sql:123`). Missing/changed authoritative identity fails authorization. Lead reads additionally check the requester's resource scope.
-- Permission, resource visibility, tool enablement and kill/budget state are checked before claiming and again before executing (`lib/agent/runtime.ts:191`, `lib/agent/runtime.ts:754`). Approval is not a permanent authorization grant.
-- Recorded human wait is excluded from active timeout accounting (`lib/agent/guardrails.ts:27`). This does not reset step/token consumption.
-- After a claim, interruption/timeout or uncertain effects produce **`RECONCILIATION_REQUIRED`**; the runtime does not blindly replay claimed work. This is at-most-once admission to approved execution, **not exactly-once delivery** or guaranteed completion.
+## Sessions and clarification
 
-Migration 015's SQL is **verified in an isolated in-memory PostgreSQL run** (PGlite; 28/28 checks including an idempotent rerun — see [local evidence](evidence/LOCAL_VERIFICATION.md)); it is not yet applied to a hosted project, and real multi-connection claim concurrency is untested. Its guarded legacy backfill only handles an unambiguously single pending approval. Decided, multiple-pending or missing-pending legacy states need the manual reconciliation described in [RUNBOOK](RUNBOOK.md).
+- `agent_runs.session_id` (migration 016) groups consecutive runs into a conversation; the in-app builder and the external API both accept an optional `sessionId` validated against the caller.
+- Ambiguous goals can be answered with a structured clarification (migration 017) the UI renders as an interactive prompt instead of a wrong guess.
+- Sessions are ephemeral by product decision ("New chat" resets; history is read-only + forkable) — there is no durable cross-session memory yet (see [ROADMAP](ROADMAP.md)).
 
-## Email remains dry-run
+## External clients and scopes
 
-`prepare_email` validates the visible lead's recipient address before inserting `sent_emails.status = 'dry_run'` (`lib/agent/tools/comms.ts:64`). It never sends mail, including after approval. Gmail transport belongs to n8n and its separate `GMAIL_DRY_RUN` setting.
+Machine clients (`agent_api_clients`) authenticate the external REST surface (`app/api/external/agent/runs`, `/api/external/briefing`). Secrets are stored hashed and shown once at provisioning. Scopes are an **allowlist enforced at provisioning time**: `agent.run` (general runs) and `briefing.generate` (briefing-only). A briefing client hitting the general run route gets `403 Client lacks the required scope` — scope isolation is covered by a regression test.
 
-Tool policy is `!ctx.dryRunEmail` (`lib/agent/tools/comms.ts:59`). The route passes server configuration and requester opt-in separately (`app/api/agent/runs/route.ts:86`). Runtime combines them with **OR** and persists the result in `current_state.require_approval` (`lib/agent/runtime.ts:101`). Resume retains the persisted requirement and can strengthen it from the current server setting (`lib/agent/runtime.ts:131`); delegated children inherit the effective requirement (`lib/agent/runtime.ts:368`). A false/omitted requester flag cannot weaken a server requirement. This is implemented with regression tests; live acceptance remains pending.
+## Morning briefing
 
-## Guards, persistence and delegation
+The briefing is a **deterministic assistant artifact**, not model output:
 
-Defaults: 12 tool attempts, 120 seconds active run time, 60,000 reported model tokens and 3 calls per turn (`lib/agent/guardrails.ts:20`); repeat refusal at `lib/agent/guardrails.ts:79`. Execution rechecks guards and limits tool waiting to the remaining active budget. A timeout cannot retract an in-flight side effect; uncertain execution is flagged, not retried blindly. Eligible idempotent unapproved calls can retry after fresh checks; approved calls do not use that automatic retry path.
+1. `lib/ops/snapshot.ts` computes counts (needs action / follow-ups due / at risk / total / pending approvals) and the top-5 priority leads — the exact same ranking code the dashboard uses.
+2. The same math exists as SQL: `compute_daily_briefing(user_id)` (migration 020), a `security definer` function executable only by `service_role`, so a scheduled machine path can generate a per-user, role-scoped briefing without ever reading above its visibility.
+3. Parity between the two is tested, and both were verified live to return identical numbers — dashboard, in-app builder and SQL cannot drift.
 
-`SupabaseAgentStateStore` (`lib/agent/store.ts:27`) persists runs, decisions and model-visible feedback. Opaque requestable provider parts support conversation reconstruction; thought-only parts are filtered by the model adapter. Traces contain arguments/results and may contain personal data; they are not anonymized reasoning logs.
+Delivery is **in-app only**: the agent proactively opens with the briefing (first open of the day, or the ☀ button) in a pinned ☀ Briefing session. Scheduled generation via n8n (`n8n/morning-briefing.json`) is generate-only — no push channels are wired (see [SECURITY](SECURITY.md)).
 
-Delegation preserves requester identity and `parent_run_id` (`lib/agent/runtime.ts:368`). Reporting cannot delegate further. Budgets remain per run; parent/child correlation is not a global aggregate budget. Persistence is not a worker queue: lead-webhook triage still starts in-process and storage acknowledgement is not completed triage.
+## Approval gate
 
-## Retrieval and UI
+Agent-proposed side effects (email drafts, recommended actions) never execute on their own. They end as drafts; a human decision on the lead page (Approve / Edit / Reject, recorded append-only in `lead_action_decisions`, migration 019) is the only path to execution — dispatched email or created task, with honest `sent (via Brevo)` / `sent (simulated)` states and an audit trail. Details: [ARCHITECTURE](ARCHITECTURE.md), [SECURITY](SECURITY.md).
 
-`search_knowledge` (`lib/agent/tools/knowledge.ts:66`) uses semantic retrieval with keyword fallback, up to three matches, 0.3 similarity threshold and 600-character excerpts. Direct PostgREST keyword filters sanitize syntax characters; resumed retrieval uses requester RPCs and role filtering. Source excerpts remain untrusted data, not authority to change policy or proof of correctness. Live SQL grants and retrieval/role matrices remain deployment checks.
+## Known limits
 
-Ask X exposes **Refresh run trace** for awaiting-approval/running messages (`app/(app)/agent/AgentChat.tsx:118`). This is manual refresh, not polling/streaming or an approval UI. Use it to fetch the persisted result after a separate approval decision.
-
-Employee run/list/detail and tool discovery live under `/api/agent`; approval decisions use `POST /api/agent/approvals/{id}`. External REST and signed lead intake are documented in [EXTERNAL_API](EXTERNAL_API.md). [RUNBOOK](RUNBOOK.md), [SECURITY](SECURITY.md) and [TESTING](TESTING.md) own operations, boundaries and verification. The [MCP stdio adapter](../mcp/README.md) now wraps external REST; the separate [native n8n MCP profile](WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools) uses classic qualification and service-role history, not the governed agent loop. Both are implemented and offline-verified; live acceptance and captures remain pending.
+- No durable multi-turn memory across sessions (session context is per-conversation only).
+- Trace capture includes tool inputs/outputs — treat trace access as data access.
+- The briefing's top-5 caps at five leads by design; the dashboard carries the full operational view.

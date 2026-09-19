@@ -7,11 +7,11 @@
 | Item | Status | What it supports |
 |---|---|---|
 | Repository implementation and source references | Available for inspection | Capability presence and design, not runtime acceptance |
-| Historical Tool Lab measurements | Retained in [AI_TOOL_LAB](../AI_TOOL_LAB.md) | Original small synthetic experiment only |
+| Historical Tool Lab measurements | Retained in git history (`AI_TOOL_LAB.md`, removed in the 2026-09-20 docs revision) | Original small synthetic experiment only |
 | Historical screenshots/videos | Retained in [README](../../README.md) | Earlier demonstration appearance, not current verification |
 | Working-tree local checks | 273/273 unit tests across 23 files, typecheck, build and 4-workflow validation pass (3 existing Gmail variable warnings); [dated evidence](../evidence/LOCAL_VERIFICATION.md) | Final firsthand results reported by primary, not rerun for this docs update; not scenario deployment |
 | Isolated SQL | 28/28 checks pass with `PGLITE_MODULE_PATH` set; a prior invocation without it failed `MODULE_NOT_FOUND` | Temporary dependency resolution prerequisite, not a migration failure; hosted rollout and real multi-connection checks pending |
-| MCP profiles 1 and 2 | Implemented and offline-verified; 36 adapter cases included in the unit total; [execution report](../EXECUTION_REPORT.md) | Handrolled stdio protocol is not SDK compliance certified; native n8n qualification includes authored signing Code-node logic. Live interoperability, tool calls and captures pending |
+| MCP profiles 1 and 2 | Implemented and offline-verified; 36 adapter cases included in the unit total; see [TESTING](../TESTING.md) | Handrolled stdio protocol is not SDK compliance certified; native n8n qualification includes authored signing Code-node logic. Live interoperability, tool calls and captures pending |
 | Primary hardening / final build | Hardening implemented; final build passes locally | Build is not live service, database or remote-CI evidence; no standalone lint is configured |
 | Scenario local+tunnel walkthrough | Not executed/verified here | No deployment result |
 | Current CI/live integration | Not verified here | No green-CI or live-success claim |

@@ -12,9 +12,9 @@ A follow-up change rebuilt the human side of the approval protocol: a **pending-
 
 ## Final checkpoint
 
-The primary's final firsthand results, supplied for this consistency update, are **273/273 unit tests across 23 files (including 36 MCP adapter cases), typecheck, build and 4-workflow validation PASS**, with **3 pre-existing Gmail variable warnings**. **28/28 isolated SQL checks PASS** after setting `PGLITE_MODULE_PATH` to the temporary dependency install. One invocation without that path failed `MODULE_NOT_FOUND` before SQL execution: a dependency-resolution/reproducibility issue, **not a migration failure**. For reproduction, point the variable to the temporary install root containing `node_modules`, as shown in the execution report.
+The primary's final firsthand results, supplied for this consistency update, are **273/273 unit tests across 23 files (including 36 MCP adapter cases), typecheck, build and 4-workflow validation PASS**, with **3 pre-existing Gmail variable warnings**. **28/28 isolated SQL checks PASS** after setting `PGLITE_MODULE_PATH` to the temporary dependency install. One invocation without that path failed `MODULE_NOT_FOUND` before SQL execution: a dependency-resolution/reproducibility issue, **not a migration failure**. For reproduction, point the variable to the temporary install root containing `node_modules`, as recorded in git history.
 
-These are reported firsthand execution results, not tests rerun by the docs editor. Both MCP profiles are implemented and offline-verified; live MCP, hosted migration application, remote CI, new captures and customer deployment remain pending. See the [execution report](../EXECUTION_REPORT.md) for chronology and reproduction commands. This is not a production-readiness claim.
+These are reported firsthand execution results, not tests rerun by the docs editor. Both MCP profiles are implemented and offline-verified; live MCP, hosted migration application, remote CI, new captures and customer deployment remain pending. Chronology and reproduction commands from the former execution report are in git history (file removed in the 2026-09-20 docs revision). This is not a production-readiness claim.
 
 ## Sanitized command evidence — earlier hardening checkpoint
 

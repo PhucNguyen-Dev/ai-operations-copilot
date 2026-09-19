@@ -1,6 +1,6 @@
 # Runbook — local demonstration and operations
 
-Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist, **not a record of completed setup or live verification**. Approval/runtime hardening and both MCP profiles are implemented with offline verification; 273/273 unit tests across 23 files, typecheck, validation of 4 n8n workflows (3 existing Gmail variable warnings) and the final build pass locally (2026-09-17). Isolated SQL passes 28 checks with `PGLITE_MODULE_PATH` set; hosted migration application, live MCP/other checks, remote CI and captures remain pending. See [local evidence](evidence/LOCAL_VERIFICATION.md) and the [execution report](EXECUTION_REPORT.md); this is not production readiness.
+Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist. Offline gates (317/317 unit tests across 27 files, lint, typecheck, build, n8n validation) pass on the current revision, and migrations 016–021 are applied in the demonstration Supabase project; remote CI and real-email delivery remain pending (see [TESTING](TESTING.md)).
 
 ## 1. Prepare privately
 

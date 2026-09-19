@@ -1,51 +1,41 @@
 # Security boundaries and limitations
 
-Source-based review of the hardened working tree for a synthetic-data local demonstration, not security certification. Offline checks (unit/type/n8n validation/build) and an isolated PGlite SQL verification of the approval migrations pass; hosted migration 015 application and live SQL/role/CI acceptance remain unverified. [Local evidence](evidence/LOCAL_VERIFICATION.md) records results; [ROADMAP](ROADMAP.md) locks remaining gates.
+Source-based review of the current working tree for a synthetic-data local demonstration — **not security certification**. It records what the code enforces, what it deliberately does not, and what remains unverified in a live deployment.
 
 ## Trust boundaries
 
-| Boundary | Existing mechanism | Limitation / validation needed |
+| Boundary | Mechanism | Limitation / notes |
 |---|---|---|
-| Employee session | Supabase Auth, server role gates and RLS client | Validate the final role/resource matrix; UI visibility is not authorization |
-| Initial employee agent reads | Requester's client in `app/api/agent/runs/route.ts:19` | Service-role persistence and writes still require resource checks |
-| Tool execution | Allowlist/role/policy engine, `lib/agent/permissions.ts:36`; resource checks inside tools | Prompt instructions do not replace server authorization |
-| Approval resume | Independent Operations/Admin decision, durable claim, service-role requester RPC using authoritative Auth role | Implemented; migration application/live grants and resource tests pending; uncertain claimed effects require reconciliation |
-| External agent REST | Hashed client secret, enabled flag, scopes, agent allowlist and run-history client filter | Reads use the service client (`app/api/external/agent/runs/route.ts:58`); **no tenant-level CRM isolation** |
-| Lead webhook | Shared-secret header plus HMAC envelope/replay-window validation | Trusted system/admin triage; not native Facebook/Zalo account authentication |
-| n8n pipeline | Signed internal intake, trusted workflow code, server credentials | Current launcher disables custom-role JWT minting (`scripts/start-n8n.mjs:40`); do not claim migration 008 makes hosted pipeline writes least-privilege |
-| Knowledge | Sanitized direct keyword filters; resumed reads verify authoritative requester via RPC and filter role/department | Live grants/semantic-keyword matrix pending; excerpts remain untrusted input |
-| Rate limit | Postgres RPC or memory alternative | Postgres RPC failure currently fails open (`lib/rate-limit.ts:88`); not a hard abuse/spend ceiling |
+| Employee session | Supabase Auth, server role gates, RLS client (`lib/auth-server.ts`) | UI visibility is not authorization; every API route re-checks the session |
+| Agent tool execution | Allowlist + role/policy engine (`lib/agent/permissions.ts`), resource checks inside each tool | Prompt instructions never replace server authorization |
+| Approval decisions | `lead_action_decisions` (migration 019): append-only, user-scoped RLS, one active decision per (lead, target); writes only through `app/api/leads/[id]/decisions/route.ts` | The route verifies the lead is visible to the caller before recording any decision |
+| Agent approvals (runs) | Durable claim + service-role requester RPC, decision re-validated against `auth.users` role at resume | At-most-once claim entry, not exactly-once effects; interrupted executions can require reconciliation |
+| Email dispatch | `lib/email/dispatch.ts`: Brevo HTTP API when `BREVO_API_KEY` + `BREVO_FROM_EMAIL` are configured, otherwise an honestly-labeled **simulated** dispatch. Recipient = the address already on the draft; no arbitrary-address sends | Credentials are server-side only; failures are typed (`failed` + `dispatch_error`) and retryable, never silently swallowed |
+| Task creation from approvals | Admin client writes with the approver as `created_by`, the lead's counselor as assignee — mirrors the n8n pipeline trust model (`tasks` has no authenticated insert policy by design) | Attribution is recorded, not assumed |
+| External agent REST | Hashed client secret, enabled flag, **scopes allowlist** (`agent.run`, `briefing.generate` — provisioning rejects anything else), agent allowlist, per-client run-history filter | Reads use the service client; there is **no tenant-level CRM isolation** for external callers |
+| Briefing compute door | `compute_daily_briefing(user_id)` SQL function (migration 020): `security definer`, execute revoked from public/anon/authenticated, granted only to `service_role`; caller identity is a machine client with `briefing.generate` scope | The target user id comes from the provisioning config, so briefings are role-scoped exactly like in-app reads |
+| Lead webhook | Shared-secret header + HMAC envelope/replay window | Trusted integrator, not native Facebook/Zalo auth |
+| n8n pipeline | Signed internal intake, server credentials, no custom-role JWT minting | Launcher settings are local-dev convenience, not a hardened public config |
+| Knowledge retrieval | Role/department filtering; untrusted document text is data, never instructions | Excerpts stay untrusted input |
+| Rate limit | Postgres RPC with memory fallback | RPC failure currently fails open (`lib/rate-limit.ts`) — not a hard abuse ceiling |
 
-## Approval and side effects
+## Notification channels: no push by design
 
-`prepare_email` records only a dry-run draft (`lib/agent/tools/comms.ts:64`). Approval does not send it. Keep n8n's separate Gmail path in dry-run mode for demonstrations and avoid real recipient addresses.
+Internal briefings and agent notifications are **in-app only**. The parent-facing Telegram bot (`@enrollauto_bot`) handles customer conversations and nothing else — no ops data is ever pushed through it, so the parent persona cannot leak internal state. Automated delivery to arbitrary channels (SMS, Instagram, TikTok DMs, YouTube) was evaluated and rejected: every free DM platform requires recipient opt-in by design, and social inboxes mix personas. If delivery outside the app is ever needed, the pattern is a **dedicated ops bot + per-recipient explicit opt-in + role-scoped per-user briefing generation** — the scaffold exists (`n8n/morning-briefing.json` is generate-only; push nodes are documented, not wired).
 
-Migration 015 implements a durable bound approval claim and service-role-only requester-read RPCs, SQL-verified in isolated PGlite (28 checks; single connection). Resume compares the saved identity/role with `auth.users.raw_app_meta_data.role`, not the profile mirror, and does not expose the approver's client to tools. Permission/resource/enabled/kill checks run again before execution. Same-decision retries preserve the decision, conflicting changes return 409, and self-decisions return 403.
+## Secrets
 
-The claim permits at-most-once entry to approved execution, not exactly-once effects. After interruption or timeout the effect can be uncertain: no blind replay, and `RECONCILIATION_REQUIRED` needs operator review. The claim SQL is verified in isolated PGlite; hosted application, managed-project grant/role behavior and real multi-connection concurrency need live acceptance; [RUNBOOK](RUNBOOK.md) covers ambiguous legacy rows. Server approval requirements and requester opt-in are combined with OR and persisted in `current_state.require_approval`. Resume retains/strengthens the requirement and children inherit it; requester flags cannot weaken it. This fix has regression coverage; live acceptance is still pending.
-
-The lead webhook acknowledges storage before background agent completion (`app/api/webhooks/lead/route.ts:182`). Process exit, provider errors or a kill switch can leave accepted leads without completed triage. Source/external-key uniqueness is intake deduplication, not a durable job queue or universal idempotency.
-
-## Secrets and local exposure
-
-- Configure keys outside versioned documentation; never include secret values, tokens, cookies, signed credentials or environment-file contents in screenshots or reports.
-- Service-role keys, webhook secrets, Gmail OAuth material, Telegram credentials and optional Gateway/PromptLedger keys remain server/operator secrets. Use disposable demo accounts; never reuse demo access for real data.
-- The n8n launcher permits workflow environment access and disables secure cookies for its local editor (`scripts/start-n8n.mjs:71`). Those local settings are not a hardened public deployment configuration.
-- A tunnel can expose more than one webhook path on the origin service. Keep the editor local, review tunnel exposure/access controls, use a disposable demo environment and close the tunnel after the authorized exercise. Do not equate a random URL with access control.
-- Migration 008 contains a custom pipeline role, but availability of a SQL role is not proof that hosted PostgREST can assume it. Verify the actual credential path without printing credentials.
+- All keys (`SUPABASE_*`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `BREVO_API_KEY`, external client secrets) are server-side env vars. `.env.example` documents names, never values.
+- External client secrets are shown once at provisioning and stored **hashed** (`agent_api_clients.secret_hash`); a leaked secret is rotated by disabling the client and provisioning a new one.
+- Never paste secret values, cookies or env dumps into chat, screenshots, issues or docs. Brevo API keys grant send access — treat them like mail credentials.
+- Verify the Brevo sender address before real sends; unverified senders are rejected by the provider.
 
 ## Personal data, prompts and traces
 
-Use synthetic leads, campaign metrics and course data. Even names, phone numbers, chat history, goals, task text and generated drafts may become personal data in a real deployment; this repository does not establish a consent or retention program for real students or minors.
+Use synthetic leads, metrics and course data. Names, phones, chat history, goals, drafts and email addresses may become personal data in a real deployment; this repository does not establish consent/retention for real students or minors.
 
-`lib/runtrace.ts:18` defines full input/output capture; `lib/runtrace.ts:116` sends optional telemetry to PromptLedger. Pipeline payload snapshots, agent feedback, n8n static chat state and shared response-cache values may also contain content. Do not describe logging as metadata-only or automatically redacted. Treat database access, observability access and optional satellite access as data-access decisions.
-
-PromptLedger run telemetry is best-effort and may fail independently from inference. A deployment-pin or trace entry does not imply that PromptLedger owns that prompt. Ownership and provider routing are mapped in [AI_DESIGN](AI_DESIGN.md).
-
-Before real-data use, define retention/deletion, redaction, access review, vendor data-processing terms, incident ownership and backup handling. No regulatory compliance, comprehensive audit immutability or enterprise isolation is claimed.
+Run traces (`lib/runtrace.ts`) capture full tool inputs/outputs; pipeline payloads and generated emails may contain content. Do not describe logging as metadata-only. Before real-data use: define retention/deletion, redaction, access review, vendor DPA, incident ownership. No regulatory compliance or enterprise isolation is claimed.
 
 ## Stop and recover
 
-Use the agent kill switch and tool-disable controls in [RUNBOOK](RUNBOOK.md). They affect subsequent checks, not necessarily an already-running provider request or side effect. Disable compromised external clients, stop the bot/tunnel and rotate affected credentials privately. Inspect only necessary redacted records; reconcile pending approvals and accepted-but-untriaged leads before restarting. Keep raw test results private and do not publish environment dumps.
-
-Validation commands and evidence boundaries: [TESTING](TESTING.md). No live service or secret configuration was inspected for this documentation consolidation.
+Use the agent kill switch and tool-disable controls in [RUNBOOK](RUNBOOK.md). They affect subsequent checks, not an in-flight provider request. To contain a suspected compromise: disable the affected external client, stop the bot/tunnel, rotate credentials privately, then reconcile pending approvals and accepted-but-untriaged leads before restarting. Validation commands: [TESTING](TESTING.md).

@@ -68,7 +68,7 @@ Priority legend: **P0** = core/must be fully functional, **P1** = important/func
 
 ## Agent-core and platform additions
 
-Current guide: [AGENT_CORE](AGENT_CORE.md). Original requirements: [archived Phase 9 specification](archive/PHASE_9_AGENTIC_CORE_UPGRADE.md). The IDs below extend the original inventory. Local regression checks and the final build pass; deployed SQL, live integrations and remote CI remain distinct gates.
+Current guide: [AGENT_CORE](AGENT_CORE.md). The IDs below extend the original inventory. Local regression checks and the final build pass; deployed SQL, live integrations and remote CI remain distinct gates.
 
 | ID | Feature | Current scope / source reference | Status |
 |---|---|---|---|
@@ -84,8 +84,8 @@ Current guide: [AGENT_CORE](AGENT_CORE.md). Original requirements: [archived Pha
 
 ## Integration and safety qualifiers
 
-- Agent `prepare_email` only inserts `dry_run` records (`lib/agent/tools/comms.ts:64`); approval is not sending.
-- Gateway handles configured `generateJSON` traffic, not agent turns/embeddings/n8n. PromptLedger owns selected prompt sources; telemetry alone is not ownership. [AI_DESIGN](AI_DESIGN.md) is canonical.
+- Agent `prepare_email` only inserts `dry_run` records (`lib/agent/tools/comms.ts:64`); the only path to real or simulated dispatch is a human approval through the lead decisions route (`lib/email/dispatch.ts`).
+- Gateway handles configured `generateJSON` traffic, not agent turns/embeddings/n8n. PromptLedger owns selected prompt sources; telemetry alone is not ownership.
 - `015_approval_resume.sql` implements authoritative requester scope, wait accounting and durable claims; its SQL passes an isolated PGlite verification (28 checks), but hosted application and real multi-connection concurrency remain pending. At-most-once claim admission is not exactly-once effects. See [RUNBOOK](RUNBOOK.md) for legacy/uncertain-state reconciliation.
 - Telegram quick commands and scheduled follow-ups are classic workflow extensions; see [TELEGRAM-CHATBOT](TELEGRAM-CHATBOT.md).
 - Both MCP profiles are implemented and offline-verified: [stdio REST adapter](../mcp/README.md) (36 unit cases) and [native n8n tools](WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools). The stdio protocol is handrolled, not SDK-backed or compliance certified; n8n qualification includes authored signing Code-node logic, so “config-only” means no app changes. Live MCP acceptance/captures, real school deployment, business outcomes and delivered training remain pending.

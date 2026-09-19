@@ -65,7 +65,7 @@ const SOPS: Sop[] = [
       'Every run is recorded in Automation Logs (/runs): status, per-step timings, AI output snapshot, errors.',
       'success = all rows written; failed = a structured failure record with the failing step and reason; nothing is silently dropped.',
       'Transient errors (API timeouts) retry automatically ×3–4 with backoff; permanent errors (validation, schema, bad key) never retry.',
-      'Email sending is dry-run by default (GMAIL_DRY_RUN=true); real sends require wiring Gmail credentials and flipping the flag.',
+      'Agent email drafts never auto-send: a human approves on the lead page, then dispatch goes out via Brevo (simulated, clearly labeled, until Brevo credentials are configured).',
     ],
     escalation: 'Unhandled failures appear via the error-handler workflow as failed runs with "Unhandled error at" — investigate in the n8n execution view.',
   },
