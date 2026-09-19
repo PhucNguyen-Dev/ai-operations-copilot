@@ -4,65 +4,24 @@ import CategoryBar from '@/components/category-bar'
 import { parseLeadFilters, LEAD_CATEGORIES, LEAD_PERIODS } from '@/lib/filters'
 import { requireUser, canViewAutomation } from '@/lib/auth'
 import PriorityActions from '@/components/priority-actions'
+import {
+  OPS_LEAD_SELECT,
+  computeOpsCounts,
+  computeCategoryMix,
+  rankPriorityLeads,
+  signalPhrase,
+  missingSignals,
+  startOfToday,
+  INTENT_PHRASE,
+  type OpsLeadRow,
+} from '@/lib/ops/snapshot'
 
 // =============================================================
 // Lead Dashboard — operations command center (not a lead database).
-// Answers "what needs my attention right now?" from REAL data only:
-// operational KPIs derive from existing tasks/lead_analyses fields,
-// Priority Actions rank by overdue follow-up → unactioned HOT →
-// score, and the table surfaces the AI's recommended_action inline.
-// No invented urgency copy, no fabricated states.
+// All operational metrics come from lib/ops/snapshot — the SAME
+// definitions the Ask X morning briefing uses, so the two surfaces
+// can never drift. No invented urgency copy, no fabricated states.
 // =============================================================
-
-type AnalysisRow = {
-  score: number
-  category: string
-  intent: string
-  recommended_action: string | null
-} | null
-
-type TaskRow = {
-  status: string
-  due_at: string | null
-} | null
-
-type LeadRow = {
-  id: string
-  name: string
-  email: string
-  status: string
-  created_at: string
-  course_interest: string | null
-  timeline: string | null
-  budget: string | null
-  lead_analyses: AnalysisRow[] | null
-  tasks: TaskRow[] | null
-}
-
-const INTENT_PHRASE: Record<string, string> = {
-  HIGH: 'High purchase intent',
-  MEDIUM: 'Moderate purchase intent',
-  LOW: 'Low purchase intent',
-}
-
-function signalPhrase(a: NonNullable<AnalysisRow>): string {
-  const intent = INTENT_PHRASE[a.intent] ?? null
-  return [a.category, a.score != null ? String(a.score) : null, intent].filter(Boolean).join(' · ')
-}
-
-function missingSignals(lead: LeadRow): string[] {
-  const out: string[] = []
-  if (!lead.timeline) out.push('Timeline missing')
-  if (!lead.budget) out.push('Budget missing')
-  if (!lead.course_interest) out.push('Course not identified')
-  return out
-}
-
-function startOfToday(): number {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
-}
 
 function filterHref(active: { category: string | null; periodKey: string; q: string }, category: string | null, periodKey: string) {
   const qs = new URLSearchParams()
@@ -87,9 +46,7 @@ export default async function Home({
 
   let query = supabase
     .from('leads')
-    .select(
-      'id, name, email, status, created_at, course_interest, timeline, budget, lead_analyses(score, category, intent, recommended_action), tasks(status, due_at, priority)'
-    )
+      .select(OPS_LEAD_SELECT)
     .order('created_at', { ascending: false })
     .limit(50)
 
@@ -124,59 +81,19 @@ export default async function Home({
     )
   }
 
-  const rows: LeadRow[] = data ?? []
+  // Postgres string-array columns come back as parsed arrays via the
+  // supabase-js types; a malformed payload surfaces as GenericStringError.
+  // Normalize: supabase-js types a malformed string-array payload as
+  // {error:true}&String — drop those and keep only real lead rows.
+  const rawRows = data as unknown[]
+  const rows: OpsLeadRow[] = (rawRows ?? []).filter(
+    (r): r is OpsLeadRow =>
+      Boolean(r) && typeof r === 'object' && 'id' in (r as Record<string, unknown>)
+  )
   const active = { category, periodKey: period.key, q }
-  const byCategory = { HOT: 0, WARM: 0, COLD: 0 }
-
-  // --- operational metrics, all derived from real rows ---
-  let needsAction = 0
-  let followUpsDue = 0
-  let atRisk = 0
-  for (const lead of rows) {
-    const analysis = lead.lead_analyses?.[0] ?? null
-    const tasks = (lead.tasks ?? []).filter((t): t is NonNullable<typeof t> => t !== null)
-    const openTasks = tasks.filter((t) => t.status !== 'done')
-    const overdue = openTasks.some((t) => t.due_at && new Date(t.due_at).getTime() < todayStart)
-    const dueToday = openTasks.some((t) => t.due_at && new Date(t.due_at).getTime() >= todayStart && new Date(t.due_at).getTime() < todayStart + 86_400_000)
-    if (analysis) {
-      // Analyzed lead with no open follow-up work = the AI recommended
-      // an action nobody has picked up yet.
-      if (openTasks.length === 0) needsAction += 1
-    } else if (lead.status === 'new') {
-      needsAction += 1
-    }
-    if (dueToday) followUpsDue += 1
-    if (overdue) atRisk += 1
-  }
-  for (const row of rows) {
-    const c = row.lead_analyses?.[0]?.category
-    if (c && c in byCategory) byCategory[c as keyof typeof byCategory] += 1
-  }
-
-  // --- Priority Actions: overdue → unactioned HOT → score ---
-  const urgent = rows
-    .map((lead) => {
-      const analysis = lead.lead_analyses?.[0] ?? null
-      const tasks = (lead.tasks ?? []).filter((t): t is NonNullable<typeof t> => t !== null)
-      const openTasks = tasks.filter((t) => t.status !== 'done')
-      const overdueTask = openTasks.find((t) => t.due_at && new Date(t.due_at).getTime() < todayStart)
-      const unactioned = analysis && openTasks.length === 0
-      let rank: 0 | 1 | 2 | null = null
-      if (overdueTask) rank = 0
-      else if (unactioned && analysis.category === 'HOT') rank = 1
-      else if (unactioned) rank = 2
-      if (rank === null) return null
-      return {
-        rank,
-        score: analysis?.score ?? 0,
-        dueAt: overdueTask?.due_at ?? null,
-        lead,
-        analysis,
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => a.rank - b.rank || b.score - a.score)
-    .slice(0, 5)
+  const byCategory = computeCategoryMix(rows)
+  const counts = computeOpsCounts(rows, todayStart, pendingApprovals)
+  const urgent = rankPriorityLeads(rows, todayStart)
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -222,25 +139,25 @@ export default async function Home({
 
       {/* Operational KPIs */}
       <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-5">
-        <div className={`rounded-lg border bg-white p-4 ${needsAction > 0 ? 'border-amber-300' : ''}`}>
-          <p className="text-2xl font-semibold">{needsAction}</p>
+        <div className={`rounded-lg border bg-white p-4 ${counts.needsAction > 0 ? 'border-amber-300' : ''}`}>
+          <p className="text-2xl font-semibold">{counts.needsAction}</p>
           <p className="text-sm text-gray-500">needs action</p>
         </div>
         <div className="rounded-lg border bg-white p-4">
-          <p className="text-2xl font-semibold">{followUpsDue}</p>
+          <p className="text-2xl font-semibold">{counts.followUpsDue}</p>
           <p className="text-sm text-gray-500">follow-ups due today</p>
         </div>
-        <div className={`rounded-lg border bg-white p-4 ${atRisk > 0 ? 'border-red-300 bg-red-50' : ''}`}>
-          <p className={`text-2xl font-semibold ${atRisk > 0 ? 'text-red-700' : ''}`}>{atRisk}</p>
+        <div className={`rounded-lg border bg-white p-4 ${counts.atRisk > 0 ? 'border-red-300 bg-red-50' : ''}`}>
+          <p className={`text-2xl font-semibold ${counts.atRisk > 0 ? 'text-red-700' : ''}`}>{counts.atRisk}</p>
           <p className="text-sm text-gray-500">at risk (overdue)</p>
         </div>
         <div className="rounded-lg border bg-white p-4">
-          <p className="text-2xl font-semibold">{rows.length}</p>
+          <p className="text-2xl font-semibold">{counts.total}</p>
           <p className="text-sm text-gray-500">total leads visible</p>
         </div>
         {showApprovals && (
-          <a href="/agent/approvals" className={`block rounded-lg border bg-white p-4 transition hover:border-[var(--brand)] ${pendingApprovals > 0 ? 'border-amber-300' : ''}`}>
-            <p className="text-2xl font-semibold">{pendingApprovals}</p>
+          <a href="/agent/approvals" className={`block rounded-lg border bg-white p-4 transition hover:border-[var(--brand)] ${counts.pendingApprovals > 0 ? 'border-amber-300' : ''}`}>
+            <p className="text-2xl font-semibold">{counts.pendingApprovals}</p>
             <p className="text-sm text-gray-500 underline decoration-dotted underline-offset-4">pending approvals →</p>
           </a>
         )}
@@ -260,14 +177,14 @@ export default async function Home({
           </div>
           <PriorityActions
             items={urgent.map((u) => ({
-              leadId: u.lead.id,
-              name: u.lead.name,
-              category: u.analysis?.category ?? null,
-              score: u.analysis?.score ?? null,
-              signal: INTENT_PHRASE[u.analysis?.intent ?? ''] ?? null,
-              missing: missingSignals(u.lead),
-              recommendedAction: u.analysis?.recommended_action ?? null,
-              overdueDueAt: u.dueAt,
+              leadId: u.id,
+              name: u.name,
+              category: u.category,
+              score: u.score,
+              signal: INTENT_PHRASE[u.intent ?? ''] ?? null,
+              missing: u.missing,
+              recommendedAction: u.recommendedAction,
+              overdueDueAt: u.overdueDueAt,
             }))}
           />
         </section>

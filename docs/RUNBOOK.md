@@ -108,6 +108,20 @@ This disables one registered tool at subsequent checks. Restore its prior config
 
 `kill-stack` is broad process cleanup, not a harmless health check. Do not use it on a machine running unrelated Node/tunnel work without inspecting the script and targets.
 
+## 6. Morning briefing operations
+
+The briefing is deterministic: numbers come from SQL via `lib/ops/snapshot` and (for the scheduled path) `compute_daily_briefing()` — never from a model. Zero tokens are spent.
+
+| Task | How |
+|---|---|
+| In-app generation | Auto-fires once per browser-day on Ask X open (ops/admin only), or the ☀ Generate button in Mission Control |
+| Scheduled generation (n8n) | POST `/api/external/briefing` with `x-api-client` / `x-api-secret` headers and body `{ "targetUserId": "<admin-uuid>" }`; the client needs the `briefing.generate` scope and the target must be an active admin/operations user |
+| Provision a scheduled client | Create the client in Agent → Governance with scopes `["briefing.generate"]` and store the secret once (hash-only at rest) |
+| Rotate the credential | Provision a new client → update n8n env → disable the old client (revocation is immediate) |
+| Verify | The run appears as the pinned ☀ Briefing session in /agent; Run Inspector shows `ops_snapshot` + `search_leads` steps with 0 tokens |
+
+If a scheduled briefing fails, check: client enabled + scope present, target user role is admin/operations, migration 020 applied (`compute_daily_briefing` exists).
+
 ## Troubleshooting
 
 | Symptom | Check / next action |
