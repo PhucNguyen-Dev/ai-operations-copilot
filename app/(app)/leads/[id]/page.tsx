@@ -38,22 +38,36 @@ export default async function LeadDetailPage({
   const { role } = await requireUser()
   const supabase = await createClient()
 
-  // Single query: RLS decides visibility. Zero rows = either the lead does
+  // RLS decides visibility. Zero rows = either the lead does
   // not exist or the caller is not allowed to see it — same 404 for both
-  // (no existence leak).
-  const { data: lead, error } = await supabase
-    .from('leads')
-    .select(
-      `id, name, email, phone, source, course_interest, budget, timeline,
-       message, status, created_at, assigned_counselor_id,
-       lead_analyses(score, category, intent, course, timeline, summary,
-                     recommended_action, model, created_at),
-       tasks(title, details, priority, status, due_at, created_at),
-       sent_emails(to_address, subject, body, status, sent_at, created_at),
-       profiles!leads_assigned_counselor_id_fkey(full_name, email)`
-    )
-    .eq('id', id)
-    .maybeSingle()
+  // (no existence leak). The ops-only pipeline-run lookup is independent,
+  // so both reads go out in parallel instead of two awaited round-trips.
+  const [leadResult, runResult] = await Promise.all([
+    supabase
+      .from('leads')
+      .select(
+        `id, name, email, phone, source, course_interest, budget, timeline,
+         message, status, created_at, assigned_counselor_id,
+         lead_analyses(score, category, intent, course, timeline, summary,
+                       recommended_action, model, created_at),
+         tasks(title, details, priority, status, due_at, created_at),
+         sent_emails(to_address, subject, body, status, sent_at, created_at),
+         profiles!leads_assigned_counselor_id_fkey(full_name, email)`
+      )
+      .eq('id', id)
+      .maybeSingle(),
+    canViewAutomation(role)
+      ? supabase
+          .from('automation_runs')
+          .select('id')
+          .eq('lead_id', id)
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+  const { data: lead, error } = leadResult
+  const runId = canViewAutomation(role) ? ((runResult.data as { id: string } | null)?.id ?? null) : null
 
   if (error) {
     console.error('[lead-detail] query failed:', error.message)
@@ -80,19 +94,6 @@ export default async function LeadDetailPage({
   const emails = (lead.sent_emails ?? []).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
-
-  // Runs link is ops/admin only (RLS would hide the data from everyone else).
-  let runId: string | null = null
-  if (canViewAutomation(role)) {
-    const { data: run } = await supabase
-      .from('automation_runs')
-      .select('id')
-      .eq('lead_id', lead.id)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    runId = run?.id ?? null
-  }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
