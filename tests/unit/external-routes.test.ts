@@ -131,4 +131,27 @@ describe('external client provisioning', () => {
     expect((await provision(request({ name: 'Test client', allowedAgents }))).status).toBe(201)
     expect(admin.query.insert).toHaveBeenCalledWith(expect.objectContaining({ allowed_agents: ['external-lead-support'], created_by: 'admin-1' }))
   })
+
+  it.each([
+    { scopes: ['unknown.scope'] },
+    { scopes: ['agent.run', 'nope'] },
+    { scopes: 'agent.run' },
+    { scopes: [123] },
+  ])('rejects invalid scopes: $scopes', async ({ scopes }) => {
+    const response = await provision(request({ name: 'Test client', scopes }))
+    expect(response.status).toBe(400)
+    expect(mocks.admin).not.toHaveBeenCalled()
+  })
+
+  it('provisions the briefing scope and defaults to agent.run without it', async () => {
+    const briefingDb = database({ id: 'briefing-client' })
+    mocks.admin.mockReturnValue(briefingDb)
+    expect((await provision(request({ name: 'n8n briefing', scopes: ['briefing.generate'] }))).status).toBe(201)
+    expect(briefingDb.query.insert).toHaveBeenCalledWith(expect.objectContaining({ scopes: ['briefing.generate'] }))
+
+    const defaultDb = database({ id: 'default-client' })
+    mocks.admin.mockReturnValue(defaultDb)
+    expect((await provision(request({ name: 'default client' }))).status).toBe(201)
+    expect(defaultDb.query.insert).toHaveBeenCalledWith(expect.objectContaining({ scopes: ['agent.run'] }))
+  })
 })

@@ -41,9 +41,23 @@ export async function POST(request: NextRequest) {
     name?: unknown
     allowedAgents?: unknown
     maxRunsPerHour?: unknown
+    scopes?: unknown
   } | null
   const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : ''
   if (!name) return NextResponse.json({ error: 'Field "name" is required' }, { status: 400 })
+
+  // Scopes are an allowlist — a client can only ever hold a scope the
+  // platform has defined. Unknown scope names are rejected outright.
+  const KNOWN_SCOPES = ['agent.run', 'briefing.generate']
+  if (body?.scopes !== undefined && (!Array.isArray(body.scopes) || body.scopes.some((s) => typeof s !== 'string'))) {
+    return NextResponse.json({ error: 'scopes must be an array of scope strings' }, { status: 400 })
+  }
+  const scopes = Array.isArray(body?.scopes) && body.scopes.length
+    ? (body.scopes as unknown[]).filter((s): s is string => typeof s === 'string')
+    : ['agent.run']
+  if (scopes.some((s) => !KNOWN_SCOPES.includes(s))) {
+    return NextResponse.json({ error: `scopes must contain known scopes only: ${KNOWN_SCOPES.join(', ')}` }, { status: 400 })
+  }
 
   if (body?.allowedAgents !== undefined && (!Array.isArray(body.allowedAgents) || body.allowedAgents.some((id) => typeof id !== 'string'))) {
     return NextResponse.json({ error: 'allowedAgents must be an array of registered agent IDs' }, { status: 400 })
@@ -63,7 +77,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('agent_api_clients')
-    .insert({ name, client_id: clientId, secret_hash: secretHash, allowed_agents: allowedAgents, max_runs_per_hour: maxRunsPerHour, created_by: userId })
+    .insert({ name, client_id: clientId, secret_hash: secretHash, scopes, allowed_agents: allowedAgents, max_runs_per_hour: maxRunsPerHour, created_by: userId })
     .select('id, name, client_id, scopes, allowed_agents, max_runs_per_hour, enabled, created_at')
     .single()
   if (error) {

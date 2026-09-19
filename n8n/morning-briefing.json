@@ -1,0 +1,86 @@
+{
+  "id": "briefing-daily-cron",
+  "name": "Ask X — Daily Morning Briefing",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "b2000000-0000-0000-0000-000000000201",
+      "name": "Every morning 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-480, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APP_BASE_URL || 'http://localhost:3000' }}/api/external/briefing",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-client", "value": "={{ $env.BRIEFING_CLIENT_ID }}" },
+            { "name": "x-api-secret", "value": "={{ $env.BRIEFING_CLIENT_SECRET }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ targetUserId: $env.BRIEFING_TARGET_USER_ID }) }}",
+        "options": {
+          "timeout": 30000,
+          "response": { "response": { "neverError": false } }
+        }
+      },
+      "id": "b2000000-0000-0000-0000-000000000202",
+      "name": "Generate briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reshape the deterministic briefing into one Telegram message.\n// Every number comes straight from compute_daily_briefing — this\n// script formats, it never computes.\nconst b = $input.first().json;\nconst c = b.counts || {};\nconst leads = b.priorityLeads || [];\nconst lines = [];\nlines.push('☀ *Morning briefing*');\nlines.push(b.headline || `${c.total ?? 0} leads visible`);\nif (leads.length) {\n  lines.push('');\n  lines.push('*Priority queue*');\n  for (const l of leads.slice(0, 5)) {\n    const overdue = l.overdue_due_at ? ' ⚠ OVERDUE' : '';\n    const action = l.recommended_action ? `\\n→ ${l.recommended_action}` : '';\n    lines.push(`• ${l.name} — ${l.category ?? 'unanalyzed'}${l.score != null ? ' · ' + l.score : ''}${overdue}${action}`);\n  }\n}\nif ((c.pendingApprovals ?? 0) > 0) {\n  lines.push('');\n  lines.push(`⏳ ${c.pendingApprovals} agent approval${c.pendingApprovals === 1 ? '' : 's'} waiting — open Agent Approvals`);\n}\nlines.push('');\nlines.push('Open /agent for the full briefing with lead cards.');\nreturn [{ json: { text: lines.join('\\n'), briefing: b } }];"
+      },
+      "id": "b2000000-0000-0000-0000-000000000203",
+      "name": "Format message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.BRIEFING_TELEGRAM_CHAT_ID, text: $json.text, parse_mode: 'Markdown' }) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "b2000000-0000-0000-0000-000000000204",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    }
+  ],
+  "connections": {
+    "Every morning 07:00": {
+      "main": [[{ "node": "Generate briefing", "type": "main", "index": 0 }]]
+    },
+    "Generate briefing": {
+      "main": [[{ "node": "Format message", "type": "main", "index": 0 }]]
+    },
+    "Format message": {
+      "main": [[{ "node": "Send to Telegram", "type": "main", "index": 0 }]]
+    }
+  }
+}
