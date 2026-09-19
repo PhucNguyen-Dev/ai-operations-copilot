@@ -1,11 +1,14 @@
 -- =============================================================
--- 020 — Briefing system principal + the narrow compute door
+-- 020 — Briefing scheduled path: the narrow compute door
 --
 -- The scheduled briefing path runs as a DEDICATED MACHINE IDENTITY,
--- never as a human. Trust model:
---   * The caller authenticates with an agent_api_clients credential
---     (sha256-hashed, timing-safe verify, revocable, rate-limited —
---     the SAME infra as the external API; no new secret store).
+-- never as a human: the machine identity IS the agent_api_clients
+-- credential (hashed, revocable, rate-limited) — runs are attributed
+-- to the target operator (user_id), the client (client_id) and
+-- user_role='system', so the audit trail honestly says "the machine
+-- asked, computing with this operator's visibility". No synthetic
+-- profile row exists — profiles.id must reference a real auth user.
+-- Trust model:
 --   * The route (app/api/external/briefing) allows ONLY the
 --     'briefing.generate' scope and ONLY ops/admin target users.
 --   * Data access goes through compute_daily_briefing(): one
@@ -14,20 +17,8 @@
 --     RLS is untouched: a leaked credential can call ONE function
 --     that returns a summary — it cannot query leads, agent runs,
 --     tasks, or write anything.
---   * Briefing runs written by the route carry user_role='system' and
---     the client id — audit honestly says "the machine asked".
 -- Idempotent; additive; nothing existing is altered.
 -- =============================================================
-
--- The machine principal (non-login; exists for attribution + FKs).
-insert into public.profiles (id, email, full_name, role)
-values (
-  '00000000-0000-0000-0000-00000000beef'::uuid,
-  'briefing-bot@system.local',
-  'Briefing Bot (system principal)',
-  'admin'
-)
-on conflict (id) do update set full_name = excluded.full_name;
 
 -- The one narrow door: briefing-shaped data only.
 -- SECURITY DEFINER is required to read across RLS for an arbitrary
