@@ -161,4 +161,48 @@ The feeling is also incomplete: Ask X accepts open-ended goals and compiles them
 
 ---
 
+## #10 — Dashboard/detail UX regressions after the command-center rebuild (2026-09-20)
+
+**Symptoms (four, one stretch):** chat dark-theme colors bled into the whole app ("the color ruined other features looks"); Next.js hydration mismatch on `<html className>`; "Open lead" from chat cards felt laggy; the agent kept misreading relative-date commands ("leads this week" answered with wrong scopes).
+
+**Root causes & fixes:** theme bleed = the dark class was being applied globally instead of scoped — fixed by scoping `.theme-dark` to `.askx-surface` containers only (globals.css, theme-toggle, bubble, workspace). Hydration error = server/client class mismatch from the theme-init script — fixed in the root layout. Latency = two serial Supabase queries on Lead Detail — parallelized. Misread commands = the real one: date scoping was prompt-level only; fixed by enforcing date bounds at the runtime/tool boundary so an unbounded search cannot claim to answer "this week" (eval scenario `date-bounded-search` now pins this). **Status: ALL FIXED + REGRESSION-TESTED.**
+
+---
+
+## #11 — `.next` corruption: "can you see the whole layout broken?" (2026-09-20, recurring)
+
+**Symptom:** running `npm run build` while the dev server was up corrupted the shared `.next` — chunks 404, hydration silently died, login stopped working, and eval runs failed for "mysterious" reasons. Hit **three+ times** (each looked like "the app broke", once mid-eval-suite).
+
+**Fix (structural, not another restart):** `npm run build` is now guarded (`scripts/build.mjs`) — it detects a live dev server via netstat and refuses; `BUILD_ANYWAY=1` builds an isolated `.next-build` artifact (smoke-testable via `npm run start:isolated` on :3100) so dev is never clobbered; `predev` warns about port conflicts and stale builds; 13 unit tests pin the decision logic. Verified live: refuse-with-dev-up, isolated build, production smoke test, dev untouched. **Status: FIXED PERMANENTLY (commit `a6485ad`).**
+
+---
+
+## #12 — Migration drift on the hosted Supabase (2026-09-20)
+
+**Problems:** (a) **Migration 015 was never applied** to the hosted project — the approval protocol silently 500'd the moment a run proposed an email for approval (found by the eval suite, not by manual use: the approval path was simply never exercised). Columns + three RPCs pasted in 4 blocks, verified. (b) **Migration 022's first SQL was wrong** — a FK referencing `agent_runs(session_id)`, which is deliberately non-unique (one session = many runs), so Postgres rejected it (`42830`); fixed by dropping the FK — integrity lives in the runtime ownership checks + RLS, same pattern as 016. (c) **SQL-paste ergonomics:** dollar-quoted `$$` blocks got truncated in the SQL editor ("unterminated dollar-quoted string") and multi-part migrations caused confusion ("so I have to paste to 3 query or sth?") — all migrations since are written paste-safe and given as ordered single blocks. Also hit `profiles_id_fkey` violation when seeding with a synthetic uuid that doesn't exist in `auth.users`. **Status: 001–022 ALL APPLIED + VERIFIED; paste-safe authoring is now the convention.**
+
+---
+
+## #13 — Approval→task creation failed: RLS by design (2026-09-20)
+
+**Symptom:** approving a recommended action returned an execution error; no task appeared.
+
+**Root cause:** two stacked bugs — `tasks` has **no authenticated-user insert policy by design** (deterministic writes go through the service role, same trust model as agent tables), and the route also used wrong columns (`created_by` is text, `assigned_counselor_id` was missing). Fixed by writing via the admin client with correct attribution (task assigned to the lead's counselor, created_by = deciding admin). Honest-error path worked as designed: the audit note said exactly what failed. **Status: FIXED + LIVE-VERIFIED (task created, attributed, prioritized).**
+
+---
+
+## #14 — Agent eval harness: five infrastructure bugs before real results (2026-09-20)
+
+**Problems found while first running the shipped eval suite:** per-test timeout of 60s killed every real-model scenario at exactly 1.0m (infra failure, not behavior); two eval processes ran concurrently and collided on fixtures (FK 409); a lingering port-3000 bind made Next pick :59133 so the runner logged into the wrong server; fixture leads had invalid emails with spaces (`Eval Hot Lead@eval.example`) — only the approval scenario surfaced it because only it must actually send; the runs API doesn't echo `sessionId`, so the runner now generates and passes it explicitly (as the UI does); stale fixtures and the outdated `unknown-lead-bounded` expectation (pre-clarification) were corrected. Payoff: the suite immediately proved **migration 015 was missing** — a real production bug no manual testing had caught. **Status: ALL FIXED; suite is the standing regression net.**
+
+---
+
+## #15 — Eval flakes under real-model variance + kill-switch restore race (2026-09-20, open papercut)
+
+**Symptoms (post-Briefing-v2 re-run):** one scenario (`session-follow-up`) failed in-suite but passed in isolation (31.8s, full governed chain) — root cause a transient `AI_UNREACHABLE` model error; `date-bounded-search` failed on first attempt because the kill-switch scenario's config restore **raced** the next scenario's first run (two runs died with `KILL_SWITCH`), then passed cleanly on retry.
+
+**Assessment:** model variance is inherent to real-model suites (retry-once is already the harness's answer); the kill-switch race is a genuine harness papercut — restore should gate/await before the next scenario starts. Both documented in TESTING.md so results are read honestly. **Status: MODEL VARIANCE ACCEPTED / KILL-SWITCH RACE FIX QUEUED.**
+
+---
+
 *Next entries: append above this line, newest first.*

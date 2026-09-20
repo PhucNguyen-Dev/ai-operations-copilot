@@ -75,18 +75,20 @@ Current guide: [AGENT_CORE](AGENT_CORE.md). The IDs below extend the original in
 | F-031 | Governed runtime | Scoped approval resume, durable claims, wait accounting and guard rechecks; `lib/agent/runtime.ts:144` | Implemented; local regressions pass; SQL/live gates pending |
 | F-032 | Central registry and employee REST | Tool schemas/metadata and introspection; `lib/agent/registry.ts:16`, `app/api/agent/runs/route.ts:40` | Implemented; server/requester OR approval policy and persistence regression-tested; live gates pending |
 | F-033 | Governed knowledge retrieval | Sanitized direct keyword filter and requester-scoped resume retrieval; `lib/agent/tools/knowledge.ts:66` | Implemented; unit coverage passes; live role/RPC checks pending |
-| F-034 | Agent behavior evaluation | Unit suite, PR/main-push CI and separate scheduled live evals; `.github/workflows/ci.yml:3` | Local unit suite passes; remote CI/live unverified |
-| F-035 | Ask X | Manual refresh for pending/running traces; `app/(app)/agent/AgentChat.tsx:118` | Implemented; browser walkthrough pending |
+| F-034 | Agent behavior evaluation | Unit suite, PR/main-push CI and the 12-scenario live eval suite; `.github/workflows/ci.yml:3`, `tests/e2e/agent-evals.spec.ts` | Implemented; remote CI verified green on pushed HEAD; evals re-confirmed post-Briefing-v2 (flakes documented in TESTING) |
+| F-035 | Ask X | Hybrid chat: Mission Control workspace + floating bubble, sessions, rich cards, refresh for pending/running traces; `app/(app)/agent/AgentWorkspace.tsx`, `components/chat/` | Implemented; live browser walkthrough performed |
 | F-036 | External REST | Client run-history 60/min rate limit, registered agent validation, owner-required creation; `app/api/external/agent/runs/route.ts:20` | Route tests pass; no CRM tenant isolation; MCP stdio wrapper implemented/offline-verified, live pending |
 | F-037 | Signed lead intake | Source aliases, unique external keys and in-process triage; `app/api/webhooks/lead/route.ts:96` | Present; durable dispatch not implemented; no live provider onboarding |
 | F-038 | Bounded delegation | Parent/child correlation and reporting child without delegation; `lib/agent/runtime.ts:368` | Present; per-run budgets, not aggregate parent/child budget |
 | F-039 | Shared limiter/cache | Postgres/memory backends with deliberate fail-open diagnostics; `lib/ai/cache.ts:51` | Backend unit tests pass; live Postgres checks pending |
+| F-040 | Durable session context | Capped per-session memory derived after each run and injected as untrusted reference on follow-ups; migration 022, `lib/agent/session-context.ts` | Implemented; eval-proven (follow-up steps 7→4); user isolation unit-tested |
+| F-041 | Briefing v2 | One grounded AI prioritization sentence (auditable `briefing_narrative` step, deterministic fallback) + review-first "Draft follow-up" prefill links; `lib/agent/briefing.ts` | Implemented; live-verified; 6 unit tests |
 
 ## Integration and safety qualifiers
 
 - Agent `prepare_email` only inserts `dry_run` records (`lib/agent/tools/comms.ts:64`); the only path to real or simulated dispatch is a human approval through the lead decisions route (`lib/email/dispatch.ts`).
 - Gateway handles configured `generateJSON` traffic, not agent turns/embeddings/n8n. PromptLedger owns selected prompt sources; telemetry alone is not ownership.
-- `015_approval_resume.sql` implements authoritative requester scope, wait accounting and durable claims; its SQL passes an isolated PGlite verification (28 checks), but hosted application and real multi-connection concurrency remain pending. At-most-once claim admission is not exactly-once effects. See [RUNBOOK](RUNBOOK.md) for legacy/uncertain-state reconciliation.
+- `015_approval_resume.sql` implements authoritative requester scope, wait accounting and durable claims; verified against isolated PGlite (28 checks) and **applied to the hosted project + exercised live by the eval suite** (approval claim → resume → execute). At-most-once claim admission is not exactly-once effects. See [RUNBOOK](RUNBOOK.md) for legacy/uncertain-state reconciliation.
 - Telegram quick commands and scheduled follow-ups are classic workflow extensions; see [TELEGRAM-CHATBOT](TELEGRAM-CHATBOT.md).
 - Both MCP profiles are implemented and offline-verified: [stdio REST adapter](../mcp/README.md) (36 unit cases) and [native n8n tools](WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools). The stdio protocol is handrolled, not SDK-backed or compliance certified; n8n qualification includes authored signing Code-node logic, so “config-only” means no app changes. Live MCP acceptance/captures, real school deployment, business outcomes and delivered training remain pending.
 
