@@ -3,6 +3,7 @@ import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
 import { canUseTool } from '@/lib/roles'
 import { CampaignAnalyzerForm } from '@/components/ai/campaign-analyzer-form'
+import ToolFooter from '@/components/tool-footer'
 
 export default async function CampaignAnalyzerPage() {
   const { role } = await requireUser()
@@ -17,6 +18,7 @@ export default async function CampaignAnalyzerPage() {
         subtitle="F-021 · Marketing — paste campaign metrics (CSV or text), get performance insights. Draft analysis for your review."
       />
       <CampaignAnalyzerForm />
+      <ToolFooter department="Marketing" />
     </main>
   )
 }

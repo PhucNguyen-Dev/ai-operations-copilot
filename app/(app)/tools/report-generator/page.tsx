@@ -3,6 +3,7 @@ import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
 import { canUseTool } from '@/lib/roles'
 import ReportGeneratorForm from '@/components/ai/report-generator-form'
+import ToolFooter from '@/components/tool-footer'
 
 export default async function ReportGeneratorPage() {
   const { role } = await requireUser()
@@ -17,6 +18,7 @@ export default async function ReportGeneratorPage() {
         subtitle="F-024 · Operations — real system aggregates for the selected period → executive report. Draft for your review."
       />
       <ReportGeneratorForm />
+      <ToolFooter department="Operations" />
     </main>
   )
 }

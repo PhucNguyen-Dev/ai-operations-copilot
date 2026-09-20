@@ -35,7 +35,7 @@ const SOPS: Sop[] = [
     audience: 'Admissions counselors',
     purpose: 'What to do when the pipeline delivers a qualified lead.',
     steps: [
-      'Check notifications (dashboard bell) — new HOT/WARM leads create a task with a due time.',
+      'Open the Lead Dashboard priority queue (ranked HOT and unactioned leads, with the AI recommended action) and check follow-up tasks by due time — new HOT/WARM leads create a task with a due date.',
       'Read the AI analysis: score, category, intent, summary, recommended action.',
       'Work HOT leads first; the recommended action includes the contact SLA (e.g., "within 30 minutes").',
       'Before contacting, open the lead detail: verify the analysis against the actual message of the lead.',

@@ -1,4 +1,5 @@
 import { requireUser, canUseTool, canViewAutomation, canSubmitLeads } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 import Sidebar, { type SidebarGroup } from '@/components/sidebar'
 import AgentBubble from '@/components/chat/AgentBubble'
 
@@ -14,6 +15,19 @@ function canAskAgent(role: string): boolean {
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { fullName, role } = await requireUser()
+
+  // Pending agent approvals drive the sidebar badge (ops/admin only).
+  // Count-only convenience over the governed protocol — the approvals
+  // inbox is the source of truth; a failed count just means no badge.
+  let pendingApprovals = 0
+  if (canViewAutomation(role)) {
+    const supabase = await createClient()
+    const { count } = await supabase
+      .from('agent_approvals')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    pendingApprovals = count ?? 0
+  }
 
   const groups: SidebarGroup[] = [
     { label: 'Workspace', items: [{ href: '/', label: 'Dashboard', icon: 'grid' }] },
@@ -77,7 +91,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <Sidebar groups={groups} fullName={fullName} role={role} />
+      <Sidebar
+        groups={groups}
+        fullName={fullName}
+        role={role}
+        badges={pendingApprovals > 0 ? { '/agent/approvals': pendingApprovals } : {}}
+      />
       <div className="app-content">{children}</div>
       <AgentBubble canUse={canAskAgent(role)} />
     </>

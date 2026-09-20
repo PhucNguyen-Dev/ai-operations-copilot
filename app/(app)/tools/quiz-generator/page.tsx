@@ -3,6 +3,7 @@ import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
 import { canUseTool } from '@/lib/roles'
 import QuizGeneratorForm from '@/components/ai/quiz-generator-form'
+import ToolFooter from '@/components/tool-footer'
 
 export default async function QuizGeneratorPage() {
   const { role } = await requireUser()
@@ -17,6 +18,7 @@ export default async function QuizGeneratorPage() {
         subtitle="F-023 · Academic — topic, difficulty, count → multiple-choice questions with answers and explanations. Draft for your review."
       />
       <QuizGeneratorForm />
+      <ToolFooter department="Academic" />
     </main>
   )
 }

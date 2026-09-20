@@ -3,6 +3,7 @@ import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
 import { canUseTool } from '@/lib/roles'
 import LessonPlannerForm from '@/components/ai/lesson-planner-form'
+import ToolFooter from '@/components/tool-footer'
 
 export default async function LessonPlannerPage() {
   const { role } = await requireUser()
@@ -17,6 +18,7 @@ export default async function LessonPlannerPage() {
         subtitle="F-022 · Academic — topic and duration → a structured, time-boxed lesson plan. Draft for your review."
       />
       <LessonPlannerForm />
+      <ToolFooter department="Academic" />
     </main>
   )
 }

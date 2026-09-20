@@ -51,7 +51,9 @@ export default async function ToolEvaluationPage() {
       />
 
       {evaluations.length === 0 && (
-        <p className="rounded-lg border bg-white p-6 text-sm text-gray-500">No evaluations recorded yet.</p>
+        <p className="rounded-lg border bg-white p-6 text-sm text-gray-500">
+          No adoption decisions recorded yet. Document one in <code className="rounded bg-gray-100 px-1">supabase/seed_governance.sql</code> after running the experiments in the <a href="/governance/tool-lab" className="font-medium text-gray-800 underline">AI Tool Lab</a> — the lab&apos;s raw evidence feeds this evaluation.
+        </p>
       )}
 
       <div className="space-y-6">

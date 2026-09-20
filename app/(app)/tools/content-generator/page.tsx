@@ -3,6 +3,7 @@ import NotAllowed from '@/components/not-allowed'
 import { requireUser } from '@/lib/auth'
 import { canUseTool } from '@/lib/roles'
 import ContentGeneratorForm from '@/components/ai/content-generator-form'
+import ToolFooter from '@/components/tool-footer'
 
 export default async function ContentGeneratorPage() {
   const { role } = await requireUser()
@@ -17,6 +18,7 @@ export default async function ContentGeneratorPage() {
         subtitle="F-020 · Marketing — campaign brief → headlines, ad copy, CTA variations. Every output is a draft for your review."
       />
       <ContentGeneratorForm />
+      <ToolFooter department="Marketing" />
     </main>
   )
 }

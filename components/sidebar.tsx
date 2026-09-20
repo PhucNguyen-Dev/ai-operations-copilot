@@ -13,6 +13,9 @@ export type SidebarGroup = {
   items: { href: string; label: string; icon: SidebarIconName }[]
 }
 
+/** Optional per-href count chips (e.g. pending agent approvals). */
+export type SidebarBadges = Record<string, number>
+
 /** 16×16 stroke icons (Lucide-style paths), inherit color via currentColor. */
 const ICONS: Record<SidebarIconName, ReactNode> = {
   grid: (
@@ -117,10 +120,12 @@ export default function Sidebar({
   groups,
   fullName,
   role,
+  badges = {},
 }: {
   groups: SidebarGroup[]
   fullName: string
   role: string
+  badges?: SidebarBadges
 }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
@@ -166,6 +171,14 @@ export default function Sidebar({
               >
                 <Icon name={item.icon} />
                 <span className="txt">{item.label}</span>
+                {(badges[item.href] ?? 0) > 0 && (
+                  <span
+                    className={`ml-auto shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold leading-none text-red-700 ${collapsed ? 'hidden' : ''}`}
+                    aria-label={`${badges[item.href]} pending approvals`}
+                  >
+                    {badges[item.href]}
+                  </span>
+                )}
               </Link>
             ))}
           </div>
