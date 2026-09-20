@@ -1,6 +1,6 @@
 # Runbook — local demonstration and operations
 
-Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist. Offline gates (344/344 unit tests across 29 files, lint, typecheck, guarded build, n8n validation) pass on the current revision, migrations 001–022 are applied in the demonstration Supabase project, and remote CI runs green on `main` via `npm run ci` (real-email delivery still pending the Brevo key — see [TESTING](TESTING.md)).
+Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist. Offline gates (350/350 unit tests across 30 files, lint, typecheck, guarded build, n8n validation) pass on the current revision, migrations 001–022 are applied in the demonstration Supabase project, and remote CI runs green on `main` via `npm run ci` (real-email delivery still pending the Brevo key — see [TESTING](TESTING.md)).
 
 ## 1. Prepare privately
 

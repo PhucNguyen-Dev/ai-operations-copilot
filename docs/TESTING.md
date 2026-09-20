@@ -1,6 +1,6 @@
 # Testing and evidence
 
-Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-20**): **331/331 unit tests across 28 files, lint clean, typecheck clean, `npm run build` green**. The real-model eval suite (`npm run evals:agent`, now 12 scenarios) passes 12/12 on the hosted stack, including the approval claim flow (after applying migration 015) and the durable session-memory follow-up. Live browser verification of the approval gate, dispatch loop and briefing path was performed on this revision.
+Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-20**): **350/350 unit tests across 30 files, lint clean, typecheck clean, `npm run build` green**. The real-model eval suite (`npm run evals:agent`, now 12 scenarios) passes 12/12 on the hosted stack, including the approval claim flow (after applying migration 015) and the durable session-memory follow-up. Live browser verification of the approval gate, dispatch loop and briefing path was performed on this revision.
 
 ## Offline checks
 

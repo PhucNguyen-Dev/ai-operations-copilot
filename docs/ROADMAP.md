@@ -12,7 +12,7 @@ Updated **2026-09-20** at commit set through `cad0da4`. The original "locked one
 | Morning briefing | Live: deterministic SQL snapshot as a pinned ☀ session, auto-generated daily on first open; scheduled cron path wired (`briefing.generate` scope, machine client provisioned, `/api/external/briefing` verified) |
 | Email execution | Live: Brevo HTTP dispatch behind env vars; simulated mode is the honest default. **Real sends pending user's Brevo key** (situations #8) |
 | External push (Telegram etc.) | **Declined by design** (situations #9) — delivery stays in-app |
-| Verification | 344 unit tests / 29 files, lint, typecheck, guarded build — all green; migrations 001–022 applied to hosted Supabase; remote CI green on `main` (`npm run ci`) |
+| Verification | 350 unit tests / 30 files, lint, typecheck, guarded build — all green; migrations 001–022 applied to hosted Supabase; remote CI green on `main` (`npm run ci`) |
 
 ## Next candidates, in priority order
 
