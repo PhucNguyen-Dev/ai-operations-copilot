@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { geminiAgentModel, type AgentModel } from '@/lib/agent/model'
 import {
   OPS_LEAD_SELECT,
   computeOpsCounts,
   rankPriorityLeads,
   briefingHeadline,
   startOfToday,
+  type OpsCounts,
   type OpsLeadRow,
   type OpsPriorityLead,
 } from '@/lib/ops/snapshot'
@@ -14,14 +16,15 @@ import {
 // Morning briefing builder — the deterministic assistant artifact.
 //
 // Design invariants (see the approved plan):
-//  * Numbers are computed by application code from real rows — ZERO
-//    model calls anywhere in this path. A wrong number cannot happen
-//    by generation; only by schema change.
+//  * Numbers are computed by application code from real rows — SQL
+//    is the ONLY source of numbers. The single optional model call
+//    (the prioritization narrative) is fed those verified facts and
+//    is never allowed to introduce its own.
 //  * The briefing "wears" the existing agent_runs schema:
-//      agent_id='briefing', status='completed', 0 tokens, and
-//      system-kind steps whose result_summary carries the REAL leads
-//      found. The session rail, rich LeadCards and Run Inspector all
-//      render it through existing code paths — no new UI plumbing.
+//      agent_id='briefing', status='completed', system-kind steps
+//      whose result_summary carries the REAL leads found. The session
+//      rail, rich LeadCards and Run Inspector all render it through
+//      existing code paths — no new UI plumbing.
 //  * Idempotent per user per day: a fresh briefing (< BRIEFING_FRESH_MS)
 //    is reused; anything older is regenerated on demand.
 //  * Reads run with the caller's client (session user OR the scoped
@@ -55,6 +58,81 @@ export type BriefingResult = {
   headline: string
   counts: ReturnType<typeof computeOpsCounts>
   priorityLeads: OpsPriorityLead[]
+  /** One model-written prioritization sentence, or null when absent (deterministic fallback). */
+  narrative: string | null
+}
+
+// =============================================================
+// Briefing narrative (v2) — ONE optional model-written sentence.
+//
+// Guardrails (all four must hold for the narrative to exist):
+//   1. Fed ONLY verified facts (counts + priority leads). The prompt
+//      forbids new numbers/claims; the briefing stays deterministic
+//      even when this fails — the headline is the fallback.
+//   2. Validated: one sentence, ≤ 220 chars, non-empty, no line breaks.
+//   3. Any failure (no key, timeout, garbage) → null, silently. The
+//      run is still completed; the step simply isn't written.
+//   4. Auditable when present: persisted as a system step with the
+//      model id, so Run Inspector shows exactly what the model said.
+// =============================================================
+
+export function buildNarrativePrompt(counts: OpsCounts, leads: OpsPriorityLead[]): string {
+  const facts = {
+    counts,
+    priority_leads: leads.slice(0, 5).map((l) => ({
+      name: l.name,
+      score: l.score,
+      category: l.category,
+      overdue: l.overdueDueAt != null,
+      recommended_action: l.recommendedAction,
+    })),
+  }
+  return [
+    'You are writing the opening line of an operations morning briefing.',
+    'Write exactly ONE sentence (max 220 characters) telling the operator what to start with and why.',
+    'You may ONLY reference the verified facts in this JSON — no new numbers, names, claims, or advice beyond them:',
+    JSON.stringify(facts),
+    'If nothing needs attention, say so plainly. Output the sentence only — no preamble, no quotes, no markdown.',
+  ].join('\n')
+}
+
+export function validateNarrative(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const text = raw.trim().replace(/^"|"$/g, '')
+  if (!text || text.length > 220 || /\n/.test(text)) return null
+  // Reject obvious non-sentences (markdown bullets, JSON fragments).
+  if (/^[-*#`\[{]/.test(text)) return null
+  return text
+}
+
+/** One model turn, no tools — the narrative is plain text, not an agent loop. */
+async function generateNarrative(
+  model: AgentModel,
+  counts: OpsCounts,
+  priorityLeads: OpsPriorityLead[]
+): Promise<{ narrative: string; model: string; tokensIn: number | null; tokensOut: number | null } | null> {
+  try {
+    const result = await Promise.race([
+      model.turn({
+        system:
+          'You write one-sentence operational briefings for a school admissions team. You use only the facts given. You never invent numbers or names.',
+        contents: [{ role: 'user', parts: [{ text: buildNarrativePrompt(counts, priorityLeads) }] }],
+        declarations: [],
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('narrative timeout')), 15_000)),
+    ])
+    if (!result.ok || !result.text) return null
+    const narrative = validateNarrative(result.text)
+    if (!narrative) return null
+    return {
+      narrative,
+      model: result.model,
+      tokensIn: result.usage?.tokensIn ?? null,
+      tokensOut: result.usage?.tokensOut ?? null,
+    }
+  } catch {
+    return null
+  }
 }
 
 /** Today's deterministic session uuid (UTC day) for one user. */
@@ -90,9 +168,10 @@ export async function generateBriefing(
   client: SupabaseClient,
   userId: string,
   userRole: string,
-  opts: { writeClient?: SupabaseClient; force?: boolean; clientId?: string } = {}
+  opts: { writeClient?: SupabaseClient; force?: boolean; clientId?: string; model?: AgentModel } = {}
 ): Promise<BriefingResult> {
   const writeClient = opts.writeClient ?? client
+  const model: AgentModel = opts.model ?? geminiAgentModel
   const sessionId = briefingSessionId(userId)
 
   if (!opts.force) {
@@ -107,6 +186,7 @@ export async function generateBriefing(
         headline: steps.headline,
         counts: steps.counts,
         priorityLeads: steps.priorityLeads,
+        narrative: steps.narrative ?? null,
       }
     }
   }
@@ -128,6 +208,10 @@ export async function generateBriefing(
   const priorityLeads = rankPriorityLeads(rows, todayStart)
   const headline = briefingHeadline(counts)
 
+  // v2 — the single optional model call. Deterministic values are final
+  // before this line; a failure here changes nothing but the narrative.
+  const narrative = await generateNarrative(model, counts, priorityLeads)
+
   // --- write the artifact: one completed run + real system steps ---
   const { data: run, error: runError } = await writeClient
     .from('agent_runs')
@@ -142,8 +226,8 @@ export async function generateBriefing(
       current_state: { kind: 'briefing', generated_at: new Date().toISOString() },
       step_count: 0,
       max_steps: 0,
-      tokens_in: 0,
-      tokens_out: 0,
+      tokens_in: narrative?.tokensIn ?? 0,
+      tokens_out: narrative?.tokensOut ?? 0,
       final_outcome: headline,
     })
     .select('id')
@@ -197,17 +281,35 @@ export async function generateBriefing(
       tokens_in: 0,
       tokens_out: 0,
     },
+    ...(narrative
+      ? [
+          {
+            run_id: run.id,
+            kind: 'system',
+            step_index: 2,
+            tool_name: 'briefing_narrative',
+            tool_version: '1',
+            permission_decision: 'allowed',
+            status: 'success',
+            args_snapshot: { facts: 'ops_snapshot + search_leads (verified only)' },
+            result_summary: { narrative: narrative.narrative, model: narrative.model },
+            latency_ms: 0,
+            tokens_in: narrative.tokensIn ?? 0,
+            tokens_out: narrative.tokensOut ?? 0,
+          },
+        ]
+      : []),
   ])
   if (stepError) throw new Error(`briefing steps insert failed: ${stepError.message}`)
 
-  return { runId: run.id, sessionId, reused: false, headline, counts, priorityLeads }
+  return { runId: run.id, sessionId, reused: false, headline, counts, priorityLeads, narrative: narrative?.narrative ?? null }
 }
 
 /** Read a briefing run's persisted snapshot back out (for reuse + API GET). */
 export async function loadBriefingSteps(
   client: SupabaseClient,
   runId: string
-): Promise<{ headline: string; counts: ReturnType<typeof computeOpsCounts>; priorityLeads: OpsPriorityLead[] }> {
+): Promise<{ headline: string; counts: ReturnType<typeof computeOpsCounts>; priorityLeads: OpsPriorityLead[]; narrative?: string | null }> {
   const steps = await client
     .from('agent_run_steps')
     .select('tool_name, result_summary')
@@ -217,12 +319,16 @@ export async function loadBriefingSteps(
   const snap = (steps.data ?? []).find((s) => s.tool_name === 'ops_snapshot')?.result_summary as
     | { counts?: ReturnType<typeof computeOpsCounts>; headline?: string }
     | undefined
+  const narrativeStep = (steps.data ?? []).find((s) => s.tool_name === 'briefing_narrative')?.result_summary as
+    | { narrative?: string }
+    | undefined
   const leads = (steps.data ?? []).find((s) => s.tool_name === 'search_leads')?.result_summary as
     | { leads?: Array<Record<string, unknown>> }
     | undefined
   return {
     headline: snap?.headline ?? 'Briefing unavailable',
     counts: snap?.counts ?? { needsAction: 0, followUpsDue: 0, atRisk: 0, total: 0, pendingApprovals: 0 },
+    narrative: narrativeStep?.narrative ?? null,
     priorityLeads: (leads?.leads ?? []).map((l) => ({
       id: String(l.id ?? ''),
       name: String(l.name ?? ''),

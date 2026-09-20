@@ -24,7 +24,7 @@ Updated **2026-09-20** at commit set through `cad0da4`. The original "locked one
 
 **4. ~~Whole-app pattern audit.~~ SHIPPED (2026-09-20).** [PATTERN_AUDIT](PATTERN_AUDIT.md): 21/21 screens reviewed; 10 keep-patterns, 5 ranked additions (top: sidebar decisions badge, bubble Escape key), 5 explicit rejections, 6 consistency findings (one stale SOP fix). Next build: the governance-papercut bundle from its recommendations.
 
-**5. Briefing v2 (polish).** Optional LLM prioritization line fed verified numbers (with designed fallback), plus act-from-briefing buttons. *Additive; the deterministic core does not change.*
+**5. ~~Briefing v2.~~ SHIPPED (2026-09-20).** One optional AI prioritization sentence per briefing — fed only verified SQL facts, validated, persisted as an auditable `briefing_narrative` step, silently absent on any failure (deterministic headline remains). Lead cards gained review-first "Draft follow-up" links that prefill the Ask X input verbatim from the real recommended action; nothing auto-runs. Verified live: narrative grounded + token-honest (344/38 on the step), prefill → governed run flow works.
 
 ## Explicitly not planned
 

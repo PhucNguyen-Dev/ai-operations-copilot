@@ -10,8 +10,8 @@ type Message={id:string;role:'user'|'assistant';text:string;runId?:string;status
 const suggestions=['Which of my leads need follow-up today?','Summarize my hottest lead and what the SOP says to do next.','What is the early-bird discount policy?']
 const newId=()=>crypto.randomUUID()
 export type ChatMessage = Message
-export default function ChatPanel({sessionId,onSessionIdChange,readOnly=false,onInspect,canDecide=false,initialMessages}:{sessionId:string|null;onSessionIdChange?:(id:string)=>void;readOnly?:boolean;onInspect?:(trace:Trace)=>void;canDecide?:boolean;initialMessages?:Message[]}){
- const [messages,setMessages]=useState<Message[]>(initialMessages ?? []),[input,setInput]=useState(''),[busy,setBusy]=useState(false),listRef=useRef<HTMLDivElement>(null)
+export default function ChatPanel({sessionId,onSessionIdChange,readOnly=false,onInspect,canDecide=false,initialMessages,initialInput=''}:{sessionId:string|null;onSessionIdChange?:(id:string)=>void;readOnly?:boolean;onInspect?:(trace:Trace)=>void;canDecide?:boolean;initialMessages?:Message[];initialInput?:string}){
+ const [messages,setMessages]=useState<Message[]>(initialMessages ?? []),[input,setInput]=useState(initialInput),[busy,setBusy]=useState(false),listRef=useRef<HTMLDivElement>(null)
  useEffect(()=>{if(initialMessages) setMessages(initialMessages)},[initialMessages])
  const recentContext=useMemo(()=>messages.slice(-4).map(m=>m.role+': '+m.text).join('\n').slice(0,4000),[messages])
  useEffect(()=>{listRef.current?.scrollTo({top:listRef.current.scrollHeight,behavior:'smooth'})},[messages])

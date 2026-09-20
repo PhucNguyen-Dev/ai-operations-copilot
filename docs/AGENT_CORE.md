@@ -32,6 +32,8 @@ Machine clients (`agent_api_clients`) authenticate the external REST surface (`a
 
 ## Morning briefing
 
+Deterministic core: numbers come from SQL via `lib/ops/snapshot` — never from a model. Since Briefing v2, one optional model call writes a single prioritization sentence after the numbers are final: it is fed only the verified facts (counts + top leads), validated (one sentence, ≤ 220 chars), and persisted as an auditable `briefing_narrative` system step on the run. Any failure — no key, timeout, malformed output — means **no narrative**, and the deterministic headline stands alone. Lead cards in the briefing carry a review-first "Draft follow-up" link that prefills the Ask X input with the lead's real recommended action; nothing auto-runs and all agent gates apply.
+
 The briefing is a **deterministic assistant artifact**, not model output:
 
 1. `lib/ops/snapshot.ts` computes counts (needs action / follow-ups due / at risk / total / pending approvals) and the top-5 priority leads — the exact same ranking code the dashboard uses.
