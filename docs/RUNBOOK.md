@@ -1,6 +1,6 @@
 # Runbook — local demonstration and operations
 
-Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist. Offline gates (317/317 unit tests across 27 files, lint, typecheck, build, n8n validation) pass on the current revision, and migrations 016–021 are applied in the demonstration Supabase project; remote CI and real-email delivery remain pending (see [TESTING](TESTING.md)).
+Target: a local Next.js app and, when needed, local n8n plus a temporary Telegram tunnel. This is an operator checklist. Offline gates (344/344 unit tests across 29 files, lint, typecheck, guarded build, n8n validation) pass on the current revision, migrations 001–022 are applied in the demonstration Supabase project, and remote CI runs green on `main` via `npm run ci` (real-email delivery still pending the Brevo key — see [TESTING](TESTING.md)).
 
 ## 1. Prepare privately
 
@@ -41,8 +41,9 @@ Apply reviewed SQL migrations in filename order on the disposable project, start
 | 012–013 | External API clients and lead source-key uniqueness |
 | 014 | Persistent limiter/cache |
 | 015 (`015_approval_resume.sql`) | Approval wait accounting, durable execution claims and service-role-only requester reads |
+| 016–022 | Agent sessions + clarification, lead action decisions, briefing RPC, email dispatch columns, durable session context |
 
-**Release-gate status:** migration 015's SQL is now **verified against isolated in-memory PostgreSQL** (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)), but it **has not been applied to any hosted/managed Supabase project** and real multi-connection concurrency is untested. Local Docker/psql/postgres tooling was initially unavailable; verification used a temporary PGlite install, not a database substitute for the hosted rollout.
+**Release-gate status:** migration 015 was verified against isolated in-memory PostgreSQL (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)) and — as of 2026-09-20 — **applied to the hosted Supabase project** and exercised live by the agent eval suite (approval claim → resume → execute). Migrations 016–022 are applied on the same project; new migrations still go through reviewed, ordered application on a disposable project first.
 
 The requester wrapper's `search_path = public, extensions` operator resolution is SQL-verified (`supabase/migrations/015_approval_resume.sql:111`). Execution on the selected hosted database, grants and the role/resource matrix remain pending. Review prerequisites and apply in order; do not blindly replay a wildcard.
 
@@ -63,6 +64,26 @@ npm run dev
 ```
 
 Use `http://localhost:3000` for the app. Agent tools/Ask X do not require n8n. Inspect the actual process/port rather than assuming a ready page is the latest code.
+
+### Building while the dev server is up
+
+`npm run build` is guarded (`scripts/build.mjs`): it detects a dev server on the dev port (same netstat approach as `kill-stack`) and **refuses** rather than corrupt the live server's `.next` — the failure that looked like "the app broke" three times in one week.
+
+| Situation | Command |
+|---|---|
+| Normal build (dev stopped) | `npm run build` |
+| Build while dev stays up | `BUILD_ANYWAY=1 npm run build` — isolated `.next-build`, dev untouched |
+| Smoke-test the isolated artifact | `npm run start:isolated` (port 3100) |
+
+`npm run dev` runs a non-blocking `predev` check first: it warns when the port is already serving (a second server would drift to :3001 with different local state) and when `.next` looks like a stale production build (`rm -rf .next` if hydration breaks).
+
+### Checking remote CI
+
+```sh
+npm run ci
+```
+
+Prints the latest GitHub Actions run for the current branch and exits 0 only on success. Set `GH_TOKEN` (or `GITHUB_TOKEN`) to avoid unauthenticated rate limits; if Actions are disabled or no runs exist, it says so. The ritual after pushing: `npm run ci` until it reports success — CI runs lint, typecheck, unit tests, n8n validation and a production build on every push to `main`.
 
 For classic admissions, stop the intended n8n instance before import, then:
 

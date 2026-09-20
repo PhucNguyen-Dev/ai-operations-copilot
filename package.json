@@ -3,8 +3,10 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/predev.mjs",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
+    "start:isolated": "node scripts/start-isolated.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -16,6 +18,7 @@
     "n8n": "node scripts/start-n8n.mjs",
     "ingest:knowledge": "node scripts/ingest-knowledge.mjs",
     "evals:agent": "node scripts/run-agent-evals.mjs",
+    "ci": "node scripts/ci-status.mjs",
     "bot": "node scripts/start-bot.mjs",
     "kill-stack": "node scripts/kill-stack.mjs",
     "push:n8n": "node scripts/validate-n8n.mjs && node scripts/push-workflow.mjs"

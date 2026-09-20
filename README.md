@@ -2,7 +2,7 @@
 
 An **AI operations copilot** for a simulated Vietnamese education center: governed lead automation, an approval-gated assistant, and role-scoped dashboards — built to demonstrate *controlled* AI automation, not autonomous behavior.
 
-**Status (2026-09-20):** the full governance chain works end-to-end — **AI recommends → human approves → system executes → audit trail proves it.** Email dispatch runs via Brevo when configured (honest simulated dispatch when not). 317 unit tests across 27 files, typecheck, ESLint and production build all pass. Migrations 001–021 applied on the hosted Supabase project.
+**Status (2026-09-20):** the full governance chain works end-to-end — **AI recommends → human approves → system executes → audit trail proves it.** Email dispatch runs via Brevo when configured (honest simulated dispatch when not). 344 unit tests across 29 files, typecheck, ESLint and the guarded production build all pass. Migrations 001–022 applied on the hosted Supabase project; remote CI green on `main`.
 
 ![Dashboard](docs/screenshots/01-dashboard-admin.png)
 
@@ -34,7 +34,7 @@ Node 22+, npm. Credentials live in `.env` (never committed) — see `.env.exampl
 
 ```sh
 npm install
-npm run dev          # app at http://localhost:3000
+npm run dev          # app at http://localhost:3000 (predev warns about port conflicts / stale builds)
 npm run n8n          # optional: classic pipeline + briefing cron
 npm run bot          # optional: Telegram parent chatbot
 ```
@@ -46,8 +46,9 @@ Migrations 001–021 are in `supabase/migrations/` and are applied to the config
 ```sh
 npm run lint
 npm run typecheck -- --incremental false
-npm test             # 317 tests / 27 files
-npm run build
+npm test             # unit suites (334 tests / 30 files)
+npm run build        # guarded: refuses while `npm run dev` is up (BUILD_ANYWAY=1 builds an isolated .next-build)
+npm run ci           # latest GitHub Actions status for the current branch
 ```
 
 ## Documentation
