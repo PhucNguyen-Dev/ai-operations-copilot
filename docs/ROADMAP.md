@@ -22,7 +22,7 @@ Updated **2026-09-20** at commit set through `cad0da4`. The original "locked one
 
 **3. ~~CI guard + dev/build separation.~~ SHIPPED (2026-09-20).** `npm run build` refuses while the dev server is live; `BUILD_ANYWAY=1` builds an isolated `.next-build` (smoke-tested via `npm run start:isolated` on :3100) so the dev server is never clobbered again. Non-blocking `predev` warning for port conflicts and stale builds; `npm run ci` surfaces the remote CI status for the branch. Verified live: refuse-with-dev-up, isolated build + production smoke test, dev untouched.
 
-**4. Whole-app pattern audit.** The planned review deliverable: AI-operations patterns present / worth adding / should **not** add across all screens — the roadmap for the build after next. *Effort: lowest; no code.*
+**4. ~~Whole-app pattern audit.~~ SHIPPED (2026-09-20).** [PATTERN_AUDIT](PATTERN_AUDIT.md): 21/21 screens reviewed; 10 keep-patterns, 5 ranked additions (top: sidebar decisions badge, bubble Escape key), 5 explicit rejections, 6 consistency findings (one stale SOP fix). Next build: the governance-papercut bundle from its recommendations.
 
 **5. Briefing v2 (polish).** Optional LLM prioritization line fed verified numbers (with designed fallback), plus act-from-briefing buttons. *Additive; the deterministic core does not change.*
 
