@@ -1,6 +1,6 @@
 # Architecture
 
-A portfolio-scale system with **three orchestration paths**: the governed agent runtime (Ask X) inside Next.js, fixed n8n workflows, and the approval-execution layer (Brevo dispatch / task creation) that closes the governance chain. All migrations 001–021 are applied on the hosted Supabase project. See [ROADMAP](ROADMAP.md) for state and [SECURITY](SECURITY.md) for boundaries.
+A portfolio-scale system with **three orchestration paths**: the governed agent runtime (Ask X) inside Next.js, fixed n8n workflows, and the approval-execution layer (Brevo dispatch / task creation) that closes the governance chain. All migrations 001–022 are applied on the hosted Supabase project. See [ROADMAP](ROADMAP.md) for state and [SECURITY](SECURITY.md) for boundaries.
 
 ## Components and flows
 
@@ -19,6 +19,8 @@ Staff browser
 Telegram → tunnel → n8n chatbot → admissions pipeline
 External machine client → scoped REST (agent.run | briefing.generate) → runtime / briefing
 n8n cron 07:00 → /api/external/briefing → in-app briefing generation
+MCP client → mcp/server.mjs (stdio adapter) → external REST API (live calls pending)
+MCP client → n8n McpTrigger (n8n/mcp-server-tools.json) → admissions pipeline (live acceptance pending)
 Agent model turns + knowledge embeddings → direct Gemini
 ```
 
@@ -30,6 +32,7 @@ Agent model turns + knowledge embeddings → direct Gemini
 - **n8n** owns the classic admissions workflow, the Telegram chatbot, the error handler and the daily briefing cron. It does not orchestrate the agent loop.
 - **Supabase** holds Auth, CRM, decisions, execution records, knowledge chunks and limiter/cache state. RLS governs every read; service-role writes are reserved for runtime/deterministic paths so the audit trail is tamper-proof.
 - **Gemini** supplies agent turns and embeddings. The runtime injects the current UTC clock into every system prompt and enforces explicit date bounds on relative-period lead searches (`PERIOD_BOUNDS_REQUIRED`).
+- **MCP profiles** attach two ways in: (a) [mcp/server.mjs](../mcp/server.mjs) is a dependency-free stdio adapter over the external REST API, and (b) [n8n/mcp-server-tools.json](../n8n/mcp-server-tools.json) is a native `McpTrigger` workflow onto the admissions pipeline. Both are implemented and offline-verified; **live MCP acceptance and captures are pending** — see [EXTERNAL_API](EXTERNAL_API.md) and [mcp/README](../mcp/README.md).
 
 ## Entry points and trust contexts
 

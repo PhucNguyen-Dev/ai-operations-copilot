@@ -1,6 +1,6 @@
 # Roadmap — current state and next candidates
 
-Updated **2026-09-20** at commit set through `cad0da4`. The original "locked one-week scope" (migrations through 015, docs handoff, PGlite verification) is **complete and retired** — see the [situations log](SITUATION_OCCUR.md) for the honest decision history. History archive removed in the docs cleanup.
+Updated **2026-09-20** at commit set through `8d1cd03`. The original "locked one-week scope" (migrations through 015, docs handoff, PGlite verification) is **complete and retired** — see the [situations log](SITUATION_OCCUR.md) for the honest decision history. History archive removed in the docs cleanup.
 
 ## Where the product stands
 

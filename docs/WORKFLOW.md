@@ -74,7 +74,7 @@ Employee `/api/agent/runs` and external REST also invoke the governed runtime. T
 
 Use the project's launcher so workflow configuration reaches n8n, but do not expose those values in logs/docs. The current launcher disables custom-role JWT minting; migration 008 alone does not establish least-privilege hosted writes. Review [SECURITY](SECURITY.md).
 
-HTTP node serialization, headers, response wrapping and PostgREST bulk-row shapes must match the checked-in workflow; there is no universal instruction to always add or always omit `Content-Type`. Validate the workflow before import and verify the actual response format during the authorized local exercise. Local unit/type checks and the final build pass for the hardened working tree; live workflow behavior and remote CI remain unverified. The classic E2E runner now writes ignored `test-results/e2e-results.json`, not a new public Markdown report.
+HTTP node serialization, headers, response wrapping and PostgREST bulk-row shapes must match the checked-in workflow; there is no universal instruction to always add or always omit `Content-Type`. Validate the workflow before import and verify the actual response format during the authorized local exercise. Local unit/type checks and the final build pass for the hardened working tree, and remote CI was green on `main` (2026-09-20); live workflow behavior remains unverified. The classic E2E runner now writes ignored `test-results/e2e-results.json`, not a new public Markdown report.
 
 ## 5. MCP profile 1: native n8n admissions tools
 
@@ -161,7 +161,7 @@ No n8n server, Inspector, import/publish command, or live tool call was run duri
 
 ### Verification and limitations
 
-Implementation checks: `node scripts/validate-n8n.mjs` exited 0 and reported **all four n8n workflow JSONs valid (3 warnings)**. Warnings are the pre-existing admissions `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` names missing from the local environment; the new workflow was clean. `npm run typecheck -- --incremental false` passed. No lint script exists in the inspected manifest; a maintainer-provided lint command is still needed.
+Implementation checks: `node scripts/validate-n8n.mjs` exited 0 and reported **all five n8n workflow JSONs valid** (warnings only for env vars absent from the local environment: the pre-existing admissions `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` names, plus briefing client vars when unset). `npm run typecheck -- --incremental false` passed, and `npm run lint` (ESLint, `eslint .`) passes.
 
 An ephemeral offline check against installed node implementations passed tool schemas, N defaults/clamping, bearer comparison semantics, response settings, and the new envelope against the unchanged pipeline validator (including tampered/stale/wrong-secret rejection). This is **not** evidence of an imported workflow, working task runner, live MCP handshake, self-subworkflow execution, Supabase access, or completed admissions run. Perform the user-run acceptance steps above before deployment.
 

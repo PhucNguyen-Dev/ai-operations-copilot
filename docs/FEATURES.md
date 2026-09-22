@@ -1,6 +1,6 @@
 # AI Operations Copilot — Feature Inventory
 
-Current inventory retaining the original F-001–F-030 IDs from the [historical product assumptions](PRODUCT_SPEC.md), extended for the agent core. **Present** means implementation or designed content exists, not that the final revision passed acceptance. Approval/runtime hardening and both MCP profiles are implemented with offline verification; 273/273 unit tests across 23 files, typecheck, build and validation of 4 workflows pass locally (3 existing Gmail variable warnings), while hosted migration application, live MCP/integrations, remote CI and captures are separate pending gates. This is not production readiness or a completed customer deployment. See [ROADMAP](ROADMAP.md) and [local evidence](evidence/LOCAL_VERIFICATION.md).
+Current inventory retaining the original F-001–F-030 IDs from the [historical product assumptions](PRODUCT_SPEC.md), extended for the agent core. **Present** means implementation or designed content exists, not that the final revision passed acceptance. Approval/runtime hardening and both MCP profiles are implemented with offline verification; 350/350 unit tests across 30 files, typecheck, build and validation of the 5 n8n workflow JSONs pass locally (env-var warnings only for optional values absent locally), migrations 001–022 are applied to the hosted project and remote CI was green on `main` (2026-09-20), while live MCP/integrations and captures remain separate pending gates. This is not production readiness or a completed customer deployment. See [ROADMAP](ROADMAP.md) and [local evidence](evidence/LOCAL_VERIFICATION.md).
 
 Priority legend: **P0** = core/must be fully functional, **P1** = important/functional prototype, **P2** = supporting/demonstration/documentation.
 
@@ -68,19 +68,19 @@ Priority legend: **P0** = core/must be fully functional, **P1** = important/func
 
 ## Agent-core and platform additions
 
-Current guide: [AGENT_CORE](AGENT_CORE.md). The IDs below extend the original inventory. Local regression checks and the final build pass; deployed SQL, live integrations and remote CI remain distinct gates.
+Current guide: [AGENT_CORE](AGENT_CORE.md). The IDs below extend the original inventory. Local regression checks and the final build pass, and remote CI was green on 2026-09-20; deployed SQL is applied to the hosted project, while live integrations remain a distinct gate.
 
 | ID | Feature | Current scope / source reference | Status |
 |---|---|---|---|
-| F-031 | Governed runtime | Scoped approval resume, durable claims, wait accounting and guard rechecks; `lib/agent/runtime.ts:144` | Implemented; local regressions pass; SQL/live gates pending |
+| F-031 | Governed runtime | Scoped approval resume, durable claims, wait accounting and guard rechecks; `lib/agent/runtime.ts:149` | Implemented; local regressions pass; SQL/live gates pending |
 | F-032 | Central registry and employee REST | Tool schemas/metadata and introspection; `lib/agent/registry.ts:16`, `app/api/agent/runs/route.ts:40` | Implemented; server/requester OR approval policy and persistence regression-tested; live gates pending |
 | F-033 | Governed knowledge retrieval | Sanitized direct keyword filter and requester-scoped resume retrieval; `lib/agent/tools/knowledge.ts:66` | Implemented; unit coverage passes; live role/RPC checks pending |
 | F-034 | Agent behavior evaluation | Unit suite, PR/main-push CI and the 12-scenario live eval suite; `.github/workflows/ci.yml:3`, `tests/e2e/agent-evals.spec.ts` | Implemented; remote CI verified green on pushed HEAD; evals re-confirmed post-Briefing-v2 (flakes documented in TESTING) |
 | F-035 | Ask X | Hybrid chat: Mission Control workspace + floating bubble, sessions, rich cards, refresh for pending/running traces; `app/(app)/agent/AgentWorkspace.tsx`, `components/chat/` | Implemented; live browser walkthrough performed |
-| F-036 | External REST | Client run-history 60/min rate limit, registered agent validation, owner-required creation; `app/api/external/agent/runs/route.ts:20` | Route tests pass; no CRM tenant isolation; MCP stdio wrapper implemented/offline-verified, live pending |
+| F-036 | External REST | Client run-history 60/min rate limit, registered agent validation, owner-required creation; `app/api/external/agent/runs/route.ts:32`, `lib/agent/agents.ts:59` | Route tests pass; no CRM tenant isolation; MCP stdio wrapper implemented/offline-verified, live pending |
 | F-037 | Signed lead intake | Source aliases, unique external keys and in-process triage; `app/api/webhooks/lead/route.ts:96` | Present; durable dispatch not implemented; no live provider onboarding |
-| F-038 | Bounded delegation | Parent/child correlation and reporting child without delegation; `lib/agent/runtime.ts:368` | Present; per-run budgets, not aggregate parent/child budget |
-| F-039 | Shared limiter/cache | Postgres/memory backends with deliberate fail-open diagnostics; `lib/ai/cache.ts:51` | Backend unit tests pass; live Postgres checks pending |
+| F-038 | Bounded delegation | Parent/child correlation and reporting child without delegation; `lib/agent/runtime.ts:387` | Present; per-run budgets, not aggregate parent/child budget |
+| F-039 | Shared limiter/cache | Postgres/memory backends with deliberate fail-open diagnostics; `lib/ai/cache.ts` | Backend unit tests pass; live Postgres checks pending |
 | F-040 | Durable session context | Capped per-session memory derived after each run and injected as untrusted reference on follow-ups; migration 022, `lib/agent/session-context.ts` | Implemented; eval-proven (follow-up steps 7→4); user isolation unit-tested |
 | F-041 | Briefing v2 | One grounded AI prioritization sentence (auditable `briefing_narrative` step, deterministic fallback) + review-first "Draft follow-up" prefill links; `lib/agent/briefing.ts` | Implemented; live-verified; 6 unit tests |
 

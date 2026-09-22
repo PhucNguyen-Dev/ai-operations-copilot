@@ -4,6 +4,8 @@ An **AI operations copilot** for a simulated Vietnamese education center: govern
 
 **Status (2026-09-20):** the full governance chain works end-to-end — **AI recommends → human approves → system executes → audit trail proves it.** Email dispatch runs via Brevo when configured (honest simulated dispatch when not). 350 unit tests across 30 files, typecheck, ESLint and the guarded production build all pass. Migrations 001–022 applied on the hosted Supabase project; remote CI green on `main`.
 
+**MCP:** both profiles are implemented and offline-verified — the stdio REST adapter (36 adapter unit tests) and the native n8n tools workflow (workflow JSON validated) — with live captures pending.
+
 ![Dashboard](docs/screenshots/01-dashboard-admin.png)
 
 ## What it does
@@ -39,14 +41,14 @@ npm run n8n          # optional: classic pipeline + briefing cron
 npm run bot          # optional: Telegram parent chatbot
 ```
 
-Migrations 001–021 are in `supabase/migrations/` and are applied to the configured Supabase project. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
+Migrations 001–022 are in `supabase/migrations/` and are applied to the configured Supabase project. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
 
 ## Verify
 
 ```sh
 npm run lint
 npm run typecheck -- --incremental false
-npm test             # unit suites (334 tests / 30 files)
+npm test             # unit suites (350 tests / 30 files)
 npm run build        # guarded: refuses while `npm run dev` is up (BUILD_ANYWAY=1 builds an isolated .next-build)
 npm run ci           # latest GitHub Actions status for the current branch
 ```
@@ -63,6 +65,11 @@ npm run ci           # latest GitHub Actions status for the current branch
 | [RUNBOOK](docs/RUNBOOK.md) | Operations: services, migrations, Brevo, troubleshooting |
 | [TESTING](docs/TESTING.md) | Test suites and what they pin |
 | [SITUATION_OCCUR](docs/SITUATION_OCCUR.md) | Honest log of user questions, decisions and incidents |
+| [ROADMAP](docs/ROADMAP.md) | Current state, verification status and next candidates |
+| [PATTERN_AUDIT](docs/PATTERN_AUDIT.md) | Whole-app UI/UX pattern audit and ranked recommendations |
+| [LOCAL_VERIFICATION](docs/evidence/LOCAL_VERIFICATION.md) | Dated evidence ledger — single source for verification results |
+| [Case study](docs/case-study/README.md) · [DISCOVERY](docs/case-study/DISCOVERY.md) · [DEPLOYMENT](docs/case-study/DEPLOYMENT.md) · [RESULTS](docs/case-study/RESULTS.md) | Simulated school scenario: assumptions, plan, results framework |
 | [TELEGRAM-CHATBOT](docs/TELEGRAM-CHATBOT.md) · [WORKFLOW](docs/WORKFLOW.md) · [EXTERNAL_API](docs/EXTERNAL_API.md) | Bot, n8n workflows, machine API |
+| [MCP profile 2 (stdio adapter)](mcp/README.md) | External REST ↔ MCP stdio bridge |
 
-*Not production-hardened: single-tenant demo scope, simulated email default, no remote CI. The point is the governance design, and it is real.*
+*Not production-hardened: single-tenant demo scope, simulated email default; remote CI is green on `main` (2026-09-20). The point is the governance design, and it is real.*

@@ -2,7 +2,7 @@
 
 Two independent Next.js surfaces exist: credential-based agent REST and a shared-secret signed lead webhook. They use the governed runtime, but neither is proof of a live partner connection or multi-tenant isolation. **Both MCP profiles are implemented with offline verification; live acceptance remains pending.**
 
-- [Profile 2: stdio adapter](../mcp/README.md) wraps this REST API via [mcp/server.mjs](../mcp/server.mjs), exposing `list_capabilities`, `run_agent_goal` and `get_run_trace`. Its 36 unit cases are included in the final 273-test pass; [scripts/verify-mcp.mjs](../scripts/verify-mcp.mjs) supports offline discovery and opt-in live checks. It is a handrolled protocol implementation, not an SDK-backed or compliance-certified server.
+- [Profile 2: stdio adapter](../mcp/README.md) wraps this REST API via [mcp/server.mjs](../mcp/server.mjs), exposing `list_capabilities`, `run_agent_goal` and `get_run_trace`. Its 36 unit cases are included in the 350-test suite; [scripts/verify-mcp.mjs](../scripts/verify-mcp.mjs) supports offline discovery and opt-in live checks. It is a handrolled protocol implementation, not an SDK-backed or compliance-certified server.
 - [Profile 1: native n8n tools](WORKFLOW.md#5-mcp-profile-1-native-n8n-admissions-tools) exposes classic-pipeline qualification and service-role recent agent runs through [n8n/mcp-server-tools.json](../n8n/mcp-server-tools.json). It does not inherit the governed REST API's scopes, approvals or rate limits. Its signing Code node means “config-only” describes no application-code changes, not no authored code.
 
 Inspector interoperability, live calls and redacted captures for both profiles remain pending; offline verification is not production readiness (see [TESTING](TESTING.md)).
@@ -23,7 +23,7 @@ Operations/Admin session routes provision clients (secret returned once), list n
 
 Keep the issued secret privately; do not include it in evidence or checked-in commands. Optional `allowedAgents` must be an array of registered agent IDs; malformed/unknown entries return 400. Omitted or empty arrays use `external-lead-support`. Registration validation does not grant tools outside the permission engine.
 
-`POST /api/external/agent/runs` checks `agent.run`, the client's `allowed_agents`, and the client's per-hour budget (`app/api/external/agent/runs/route.ts:20`). Default external agent: `external-lead-support`, with CRM/history/knowledge read tools and finish/escalation outcomes. No CRM write tool is in its allowlist (`lib/agent/agents.ts:56`).
+`POST /api/external/agent/runs` checks `agent.run`, the client's `allowed_agents`, and the client's per-hour budget (`app/api/external/agent/runs/route.ts:32`). Default external agent: `external-lead-support`, with CRM/history/knowledge read tools and finish/escalation outcomes. No CRM write tool is in its allowlist (`lib/agent/agents.ts:59`).
 
 **Critical distinction:** runtime `userClient` and `adminClient` are both the service client (`app/api/external/agent/runs/route.ts:58`). The API does not give callers raw database credentials, but permitted CRM read tools can read across employee scopes. There is no per-client tenant ownership filter for CRM records. Own-run filtering is audit visibility, not tenant isolation. Only grant credentials to trusted integrations authorized for that dataset.
 
@@ -45,7 +45,7 @@ Example request body, **not an executed request**:
 }
 ```
 
-`goal` must be 5–2000 trimmed characters. Run output fields are `runId`, `status`, `finalOutcome`, `error`, `pendingApprovalId`, `stepCount` (`lib/agent/runtime.ts:67`). Do not infer completion from HTTP 200: inspect the run status and error. Auth/validation/policy/rate errors use 401/400/403/429; 429 includes `Retry-After`; unexpected failures can return 500.
+`goal` must be 5–2000 trimmed characters. Run output fields are `runId`, `status`, `finalOutcome`, `error`, `pendingApprovalId`, `stepCount` (`lib/agent/runtime.ts:68`). Do not infer completion from HTTP 200: inspect the run status and error. Auth/validation/policy/rate errors use 401/400/403/429; 429 includes `Retry-After`; unexpected failures can return 500.
 
 Run creation returns **500** if the client has no `created_by` provisioning identity; it no longer substitutes a zero UUID. Run list and detail GETs share a **60 reads/minute/client** bucket and return 429 with `Retry-After` when blocked. This new read limit applies to run history, not every external endpoint. Creation retains its separate per-hour client budget.
 
@@ -75,6 +75,6 @@ Supporting a Facebook-shaped payload is not native provider signature verificati
 
 ## Setup, testing and scope
 
-External-client schema is in migration 012; lead-source keys in 013; limiter/cache in 014. Apply the complete ordered schema through `015_approval_resume.sql` per [RUNBOOK](RUNBOOK.md), including its legacy reconciliation review. Application to a live database is unverified.
+External-client schema is in migration 012; lead-source keys in 013; limiter/cache in 014; approval resume in 015. Apply the complete ordered schema in filename order per [RUNBOOK](RUNBOOK.md), including 015's legacy reconciliation review. Migrations 001–022, including `015_approval_resume.sql`, were **applied to the hosted project and verified on 2026-09-20** (situations #12); re-verify grants and the role/resource matrix on any new database.
 
 Verification scripts are listed in [TESTING](TESTING.md). They may provision clients, create records and consume quota; no current run result is claimed here. Use the local app or an explicitly authorized temporary tunnel, never an assumed production host. See [SECURITY](SECURITY.md) before exposing the API.

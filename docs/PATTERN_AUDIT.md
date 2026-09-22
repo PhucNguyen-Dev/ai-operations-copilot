@@ -56,7 +56,7 @@ revision; page inventory cross-checked **21/21** pages under `app/**/page.tsx`.
 |---|---|---|
 | C1 | **"Dashboard bell" in the AI Lead Handling SOP does not exist.** `governance/sop` step 1 tells counselors to check notifications from a bell; no bell/notification component exists anywhere (code search: 0 matches). | **Stale copy — fix the SOP text** |
 | C2 | **Bubble is missing the promised Escape handler** (spec Stage 5). | **Gap — add (rec #2)** |
-| C3 | **`governance/training` is NOT orphaned.** The docs cleanup deleted only the file `docs/TRAINING.md`; the in-app feature is linked from the governance hub and from `/guidelines` (role-aware deep link). | Healthy |
+| C3 | **`governance/training` is NOT orphaned.** The docs cleanup deleted only the historical training Markdown file from `docs/` (retired permanently in the 2026-09-20 docs revision); the in-app feature is linked from the governance hub and from `/guidelines` (role-aware deep link). | Healthy |
 | C4 | **Five `tools/*` pages are first-class, not legacy.** F-020–F-024 with role gates (`canUseTool`) and draft-only outputs; governance lab/evaluation pages reference the same feature IDs. The real gap is discoverability (rec #4), not existence. | Healthy, discoverability gap |
 | C5 | **AI-tag consistency is good but not total.** Lead detail, chat email cards and tool pages all label AI output; the chat knowledge card ("Sources consulted") does not carry an AI tag — acceptable since citations are attributed, but worth one look if cards grow. | Minor |
 | C6 | **Status color maps are triplicated** (runs list/detail, admin, lead badges). Same values today; drift risk tomorrow. | Refactor (rec #5) |

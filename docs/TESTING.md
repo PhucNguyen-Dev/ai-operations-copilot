@@ -40,6 +40,8 @@ Run only against an authorized disposable project with synthetic records.
 | `node scripts/verify-external-api.mjs` | External auth, discovery, run attribution | Temp client + run records |
 | `node scripts/verify-lead-webhook.mjs` | Signed intake, duplicate handling | Synthetic leads + triage |
 | `node scripts/verify-persistent-infra.mjs` | Postgres limiter/cache round-trip | Infra state mutation |
+| `node scripts/verify-mcp.mjs` | MCP stdio adapter: initialize + three tool schemas against the spawned adapter | No HTTP by default (dummy credentials); `RUN_MCP_LIVE=1` opts into one live API run (quota + run/audit/approval records) |
+| `node scripts/verify-approval-sql.mjs` | 28-check isolated SQL harness (approval resume, RLS, knowledge, claims) on PGlite | Requires `PGLITE_MODULE_PATH` pointing at a temp install of `@electric-sql/pglite` + `@electric-sql/pglite-pgvector` (installed under the OS temp directory, not workspace deps); in-memory only, no hosted DB touched |
 
 ## Live acceptance performed (2026-09-20)
 
@@ -51,8 +53,8 @@ Run only against an authorized disposable project with synthetic records.
 
 - Migrations are applied manually (SQL Editor); each new migration needs the same application + column check (`021` verified: enum value + dispatch columns present).
 - Real Brevo send with a verified sender and a real recipient inbox (currently everything is simulated by design — see [SECURITY](SECURITY.md)).
-- Remote CI results on GitHub Actions — local green does not establish CI green; check the actual run.
-- Playwright e2e and agent evals against the current build.
+- Remote CI was green on GitHub Actions at `017c03a` (2026-09-20); check the actual run with `npm run ci` after each push rather than assuming it.
+- Playwright e2e against the current build (the 12-scenario agent eval suite was re-run on 2026-09-20 — see above).
 
 ## Reporting results safely
 
@@ -60,4 +62,4 @@ Record revision, date, environment class, exact command, outcome, skips and limi
 
 ## Documentation checks
 
-A dependency-free local checker resolves Markdown links relative to each file (external URLs and inline code ignored). Broken links in keeper docs are fixed rather than historical — the archive folders were removed in the 2026-09-20 docs revision, so every link must resolve to a live file.
+Keeper-doc Markdown links are reviewed during documentation passes; **no scripted link-checker exists in the repository**. Every link must resolve to a live file — the archive folders and retired docs (execution report, AI tool lab/evaluation, training, design notes) were removed in the 2026-09-20 docs revision and must not be re-linked.

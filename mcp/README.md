@@ -1,6 +1,6 @@
 # MCP profile 2: thin stdio adapter
 
-Node 22+, no build step, no dependencies or installation required. This adapter calls the existing [external agent REST API](../docs/EXTERNAL_API.md); it does not import or change application code. It is implemented and offline-verified, with 36 unit cases included in the final 273-test pass. Live API calls, Inspector interoperability and captures remain pending; see the [execution report](../docs/EXECUTION_REPORT.md). This is a handrolled protocol implementation, not SDK-backed or MCP compliance certified, and not a production-readiness claim.
+Node 22+, no build step, no dependencies or installation required. This adapter calls the existing [external agent REST API](../docs/EXTERNAL_API.md); it does not import or change application code. It is implemented and offline-verified, with 36 unit cases included in the 350-test suite. Live API calls, Inspector interoperability and captures remain pending; see the [situations log](../docs/SITUATION_OCCUR.md) for decision history. This is a handrolled protocol implementation, not SDK-backed or MCP compliance certified, and not a production-readiness claim.
 
 ## Run
 

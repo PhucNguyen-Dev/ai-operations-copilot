@@ -7,14 +7,14 @@
 | Item | Status | What it supports |
 |---|---|---|
 | Repository implementation and source references | Available for inspection | Capability presence and design, not runtime acceptance |
-| Historical Tool Lab measurements | Retained in git history (`AI_TOOL_LAB.md`, removed in the 2026-09-20 docs revision) | Original small synthetic experiment only |
-| Historical screenshots/videos | Retained in [README](../../README.md) | Earlier demonstration appearance, not current verification |
-| Working-tree local checks | 273/273 unit tests across 23 files, typecheck, build and 4-workflow validation pass (3 existing Gmail variable warnings); [dated evidence](../evidence/LOCAL_VERIFICATION.md) | Final firsthand results reported by primary, not rerun for this docs update; not scenario deployment |
-| Isolated SQL | 28/28 checks pass with `PGLITE_MODULE_PATH` set; a prior invocation without it failed `MODULE_NOT_FOUND` | Temporary dependency resolution prerequisite, not a migration failure; hosted rollout and real multi-connection checks pending |
+| Historical Tool Lab measurements | Retained in git history only (removed in the 2026-09-20 docs revision) | Original small synthetic experiment only |
+| Historical screenshots | [docs/screenshots/](../screenshots/) (6 shots; [README](../../README.md) references `01-dashboard-admin.png`); **no video files exist in the repository** | Earlier demonstration appearance only; video/demo capture is a PENDING deliverable, not retained evidence |
+| Working-tree local checks | 350/350 unit tests across 30 files, typecheck, build and 5-workflow validation pass (env-var warnings only for optional values absent locally); [dated evidence](../evidence/LOCAL_VERIFICATION.md) | Latest firsthand results recorded in the evidence ledger (2026-09-20); not scenario deployment |
+| Isolated SQL | 28/28 checks pass with `PGLITE_MODULE_PATH` set; a prior invocation without it failed `MODULE_NOT_FOUND` | Temporary dependency resolution prerequisite, not a migration failure; migrations 001–022 applied to hosted 2026-09-20 (situation #12); real multi-connection checks still pending |
 | MCP profiles 1 and 2 | Implemented and offline-verified; 36 adapter cases included in the unit total; see [TESTING](../TESTING.md) | Handrolled stdio protocol is not SDK compliance certified; native n8n qualification includes authored signing Code-node logic. Live interoperability, tool calls and captures pending |
-| Primary hardening / final build | Hardening implemented; final build passes locally | Build is not live service, database or remote-CI evidence; no standalone lint is configured |
+| Primary hardening / final build | Hardening implemented; final build passes locally | Build is not live service or database evidence; lint is configured (`npm run lint`) and remote CI was green on 2026-09-20 |
 | Scenario local+tunnel walkthrough | Not executed/verified here | No deployment result |
-| Current CI/live integration | Not verified here | No green-CI or live-success claim |
+| Current CI/live integration | Remote CI green on `main` at `017c03a` (2026-09-20); live integration not verified here | CI green is not a live-success or deployment claim |
 | Interviews, real users, training delivery | Not performed/claimed | No customer/adoption evidence |
 | Business impact | Unmeasured | No time-saved, conversion, ROI or cost-reduction result |
 

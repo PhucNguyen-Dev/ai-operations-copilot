@@ -1,6 +1,6 @@
 # Telegram parent chatbot — local runbook
 
-A simulated school lead-capture demonstration implemented in n8n, not the Next.js agent runtime. Current live bot operation is **unverified**; retained screenshots/videos describe historical demonstrations. The target is local n8n plus a temporary tunnel, not a production school service.
+A simulated school lead-capture demonstration implemented in n8n, not the Next.js agent runtime. Current live bot operation is **unverified**. Repository screenshots live under `docs/screenshots/` (the README references `01-dashboard-admin.png`); **no video files exist in the repository** — video/demo capture is a pending deliverable, not retained evidence. The target is local n8n plus a temporary tunnel, not a production school service.
 
 ## Behavior and data
 

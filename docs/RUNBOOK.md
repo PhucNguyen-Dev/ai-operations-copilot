@@ -45,7 +45,7 @@ Apply reviewed SQL migrations in filename order on the disposable project, start
 
 **Release-gate status:** migration 015 was verified against isolated in-memory PostgreSQL (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)) and — as of 2026-09-20 — **applied to the hosted Supabase project** and exercised live by the agent eval suite (approval claim → resume → execute). Migrations 016–022 are applied on the same project; new migrations still go through reviewed, ordered application on a disposable project first.
 
-The requester wrapper's `search_path = public, extensions` operator resolution is SQL-verified (`supabase/migrations/015_approval_resume.sql:111`). Execution on the selected hosted database, grants and the role/resource matrix remain pending. Review prerequisites and apply in order; do not blindly replay a wildcard.
+The requester wrapper's `search_path = public, extensions` operator resolution is SQL-verified (`supabase/migrations/015_approval_resume.sql:111`). Execution on the hosted database completed 2026-09-20 (see release-gate status above; grants exercised by the live eval suite). On any **new** database, re-verify grants and the role/resource matrix, review prerequisites and apply in order; do not blindly replay a wildcard.
 
 ### Migration 015 and legacy reconciliation
 
@@ -155,6 +155,30 @@ Approving an email draft on Lead Detail now EXECUTES: the draft is claimed atomi
 | Free tier | 300 emails/day - ample for admissions follow-ups; 401/429 errors mean bad key or exceeded quota |
 | Failed dispatch | Draft shows status failed + reason on Lead Detail; approve again to retry (the claim guard allows it because status returned to failed, not sent) |
 | Deployment note | Migration 021 must be applied (email_status sent_simulated + dispatched_at/dispatched_by/dispatch_error columns) |
+
+## 8. MCP profiles and offline harnesses
+
+### Stdio adapter (profile 2)
+
+Full reference: [mcp/README](../mcp/README.md). The adapter does not load `.env`; set the three variables in the shell or MCP host environment:
+
+| Variable | Value |
+|---|---|
+| `COPILOT_API_URL` | App base URL, e.g. `http://localhost:3000` (optional deployment path prefix) |
+| `COPILOT_API_CLIENT` | Provisioned external client ID |
+| `COPILOT_API_SECRET` | That client's secret (supplied privately; never committed) |
+
+```sh
+node mcp/server.mjs
+```
+
+Optional Inspector (may download into npm's cache): `npx @modelcontextprotocol/inspector node mcp/server.mjs` — set the three variables in the Inspector's stdio server environment before connecting.
+
+Offline verification: `node scripts/verify-mcp.mjs` spawns the real adapter and checks initialization plus three tool schemas with **no HTTP requests** and dummy credentials by default; set `RUN_MCP_LIVE=1` to opt into one live API run (consumes quota, creates run/audit records). Live MCP/Inspector captures remain pending.
+
+### Isolated SQL harness
+
+`node scripts/verify-approval-sql.mjs` runs the 28-check approval-SQL harness on in-memory PGlite. It requires **`PGLITE_MODULE_PATH`** pointing at a temporary install root containing `node_modules` with `@electric-sql/pglite` and `@electric-sql/pglite-pgvector` (installed under the OS temp directory, not workspace dependencies). Without that path the run fails `MODULE_NOT_FOUND` before any SQL executes — a dependency-resolution prerequisite, not a migration failure. The harness never touches the hosted database.
 
 ## Troubleshooting
 
