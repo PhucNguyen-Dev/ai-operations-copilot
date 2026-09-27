@@ -144,6 +144,51 @@ describe('startStreamedRun reliability ladder (B4)', () => {
     expect(output.error).toContain('role')
   })
 
+  it('ends as cancelled when a run is stopped — and never re-POSTs it', async () => {
+    // Migration 024: the one client-side mistake that would matter. If a
+    // stopped run were treated as "stream ended without a final", the
+    // ladder would POST the goal again and restart governed work the user
+    // just halted. 'cancelled' must be terminal at every step of it.
+    vi.useFakeTimers()
+    try {
+      const startStreamedRun = await S()
+      const events: { type?: string }[] = []
+      const brokenStream = {
+        ok: true,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        body: {
+          getReader: () => ({
+            read: vi
+              .fn()
+              .mockResolvedValueOnce({
+                done: false,
+                value: new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'run_started', runId: 'r4', stepCount: 0 })}\n\n` +
+                    `data: ${JSON.stringify({ type: 'run_cancelled', reason: 'CANCELLED: stopped by an operator', stepCount: 1 })}\n\n`
+                ),
+              })
+              .mockRejectedValueOnce(new Error('socket hangup')),
+          }),
+        },
+      } as unknown as Response
+      mocks.fetch
+        .mockResolvedValueOnce(brokenStream)
+        .mockResolvedValueOnce(
+          Response.json({ run: { status: 'cancelled', final_outcome: null, error: 'CANCELLED: stopped by an operator', step_count: 1 } })
+        )
+      const promise = startStreamedRun({ goal: 'hello' }, (e) => events.push(e as { type?: string }), 1)
+      await vi.advanceTimersByTimeAsync(10)
+      const { output, fallbackUsed } = await promise
+      expect(fallbackUsed).toBe(false)
+      expect(output.status).toBe('cancelled')
+      expect(output.error).toMatch(/CANCELLED/)
+      expect(events.some((e) => e.type === 'run_cancelled')).toBe(true)
+      expect(mocks.fetch).toHaveBeenCalledTimes(2) // stream + 1 poll, NO second POST
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('polls the durable run to terminal when the stream dies mid-run (never re-POSTs)', async () => {
     vi.useFakeTimers()
     try {

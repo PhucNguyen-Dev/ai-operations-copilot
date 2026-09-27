@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   admin: vi.fn(),
   storeDecide: vi.fn(),
   storeGetApproval: vi.fn(),
+  storeGetRun: vi.fn(),
   resume: vi.fn(),
 }))
 
@@ -21,6 +22,7 @@ vi.mock('@/lib/agent/store', () => ({
   SupabaseAgentStateStore: class {
     async decideApproval(...args: unknown[]) { return mocks.storeDecide(...args) }
     async getApproval(...args: unknown[]) { return mocks.storeGetApproval(...args) }
+    async getRun(...args: unknown[]) { return mocks.storeGetRun(...args) }
   },
 }))
 
@@ -45,6 +47,8 @@ beforeEach(() => {
   mocks.session.mockResolvedValue({ userId: 'ops-1', role: 'operations' })
   mocks.admin.mockReturnValue({})
   mocks.resume.mockResolvedValue({ runId: 'run-1', status: 'completed' })
+  // Default: the run is live and untouched by migration 024's stop path.
+  mocks.storeGetRun.mockResolvedValue({ id: 'run-1', status: 'running' })
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -77,6 +81,34 @@ describe('agent approvals decision route', () => {
     expect(mocks.resume).toHaveBeenCalledWith(expect.anything(), { runId: 'run-1', approvalId: 'approval-1' })
     const body = await response.json()
     expect(body.approval.status).toBe('approved')
+  })
+
+  it('refuses a decision on a cancelled run instead of resurrecting it', async () => {
+    // Migration 024: stopping a suspended run withdraws its pending
+    // approval, so the decision finds nothing to decide. The run must not
+    // resume, and the operator gets a reason rather than a generic 409.
+    mocks.serverClient.mockResolvedValue(userDatabase({ ...APPROVAL, status: 'rejected' }))
+    mocks.storeDecide.mockResolvedValue(null)
+    mocks.storeGetRun.mockResolvedValue({ id: 'run-1', status: 'cancelled' })
+    const response = await decide(request('approval-1', { decision: 'approved' }), { params: Promise.resolve({ id: 'approval-1' }) })
+    expect(response.status).toBe(409)
+    expect(mocks.resume).not.toHaveBeenCalled()
+    const body = await response.json()
+    expect(body.error).toMatch(/cancelled/i)
+  })
+
+  it('refuses a decision on a run cancelled while the inbox still showed it pending', async () => {
+    // The realistic race: the browser holds a stale 'pending' view, the
+    // row was already withdrawn, so the decision returns null. Same
+    // refusal, same reason — the run must not come back to life.
+    mocks.serverClient.mockResolvedValue(userDatabase(APPROVAL))
+    mocks.storeDecide.mockResolvedValue(null)
+    mocks.storeGetRun.mockResolvedValue({ id: 'run-1', status: 'cancelled' })
+    const response = await decide(request('approval-1', { decision: 'approved' }), { params: Promise.resolve({ id: 'approval-1' }) })
+    expect(response.status).toBe(409)
+    expect(mocks.resume).not.toHaveBeenCalled()
+    const body = await response.json()
+    expect(body.error).toMatch(/cancelled/i)
   })
 
   it('refuses a conflicting decision on an already-decided approval', async () => {

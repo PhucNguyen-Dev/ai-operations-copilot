@@ -16,6 +16,9 @@ import { resumeAgentRun, type RuntimeDeps } from '@/lib/agent/runtime'
 // and the model must re-plan or escalate.
 // =============================================================
 
+/** One phrasing per situation: a stopped run is not a stale decision. */
+const CANCELLED_RUN_MESSAGE = 'This run was cancelled — the approval can no longer execute.'
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getApiUser(request)
   if ('response' in session) return session.response
@@ -52,9 +55,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     )
   }
   const priorStatus = pending[0].status as 'pending' | 'approved' | 'rejected'
-  if (priorStatus !== 'pending' && priorStatus !== decision) {
-    return NextResponse.json({ error: `Approval already decided (${priorStatus})` }, { status: 409 })
-  }
 
   let adminClient
   try {
@@ -66,6 +66,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     )
   }
   const store = new SupabaseAgentStateStore(adminClient)
+
+  // Migration 024 — a stopped run answers first, in both shapes the
+  // decision can arrive: a client still showing the approval as pending
+  // (the row was withdrawn underneath it), or a client re-clicking a
+  // decision made before the stop landed. Either way the reason is
+  // stated: "already decided" would leave the reviewer guessing why
+  // nothing executed, and resuming is what must never happen.
+  if (priorStatus !== 'pending' && priorStatus !== decision) {
+    const currentRun = await store.getRun(pending[0].run_id)
+    if (currentRun?.status === 'cancelled') {
+      return NextResponse.json({ error: CANCELLED_RUN_MESSAGE }, { status: 409 })
+    }
+    return NextResponse.json({ error: `Approval already decided (${priorStatus})` }, { status: 409 })
+  }
   const deps: RuntimeDeps = {
     store,
     model: geminiAgentModel,
@@ -76,6 +90,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const decided = await store.decideApproval(id, decision, userId, note)
   if (!decided) {
+    // Migration 024: an operator stopped the run, which withdrew its
+    // pending approval. This decision has nowhere to go, and the generic
+    // "already decided" message would leave the reviewer guessing why
+    // nothing executed.
+    const currentRun = await store.getRun(pending[0].run_id)
+    if (currentRun?.status === 'cancelled') {
+      return NextResponse.json({ error: CANCELLED_RUN_MESSAGE }, { status: 409 })
+    }
     if (priorStatus === decision) {
       const existing = await store.getApproval(id)
       return NextResponse.json({ approval: { id, status: priorStatus }, run: await resumeAgentRun(deps, { runId: existing!.run_id, approvalId: id }) })
@@ -86,6 +108,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Approved or rejected, the run resumes so the agent can execute the
   // frozen action or re-plan around the rejection, respectively. The
   // loop runs under the original requester's persisted principal.
+  //
+  // Migration 024: if a stop lands between the decision and this resume,
+  // resumeAgentRun refuses and reports status 'cancelled' — the decision
+  // is recorded (it really happened), and the body says plainly that
+  // nothing executed.
   const output = await resumeAgentRun(deps, { runId: decided.run_id, approvalId: id })
   return NextResponse.json({ approval: { id: decided.id, status: decided.status }, run: output })
 }
