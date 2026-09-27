@@ -4,7 +4,7 @@ Target: a local Next.js app and, when needed, local n8n plus a temporary Telegra
 
 ## 1. Prepare privately
 
-Use Node 22 and npm. Configure a disposable Supabase project and synthetic data. Keep credentials in private local configuration; never paste values into docs, terminal transcripts or issue reports. This consolidation did not inspect environment files.
+Use Node 22+ and npm for the app. The optional classic pipeline needs **Node ≥ 24**: the pinned `n8n@2.37.7` declares `engines.node >=24.0.0`, so `npm run n8n` fails on 22 (install still succeeds there, with an `EBADENGINE` warning). Run n8n under a Node 24 toolchain even when the app runs on 22. Configure a disposable Supabase project and synthetic data. Keep credentials in private local configuration; never paste values into docs, terminal transcripts or issue reports. This consolidation did not inspect environment files.
 
 | Configuration name | Used by |
 |---|---|
@@ -42,8 +42,9 @@ Apply reviewed SQL migrations in filename order on the disposable project, start
 | 014 | Persistent limiter/cache |
 | 015 (`015_approval_resume.sql`) | Approval wait accounting, durable execution claims and service-role-only requester reads |
 | 016–022 | Agent sessions + clarification, lead action decisions, briefing RPC, email dispatch columns, durable session context |
+| 023 (`023_intake_outbox.sql`) | Durable lead-intake outbox + `claim_lead_intake_job` / `release_lead_intake_job` |
 
-**Release-gate status:** migration 015 was verified against isolated in-memory PostgreSQL (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)) and — as of 2026-09-20 — **applied to the hosted Supabase project** and exercised live by the agent eval suite (approval claim → resume → execute). Migrations 016–022 are applied on the same project; new migrations still go through reviewed, ordered application on a disposable project first.
+**Release-gate status:** migration 015 was verified against isolated in-memory PostgreSQL (PGlite 0.5.8, [evidence](evidence/LOCAL_VERIFICATION.md)) and — as of 2026-09-20 — **applied to the hosted Supabase project** and exercised live by the agent eval suite (approval claim → resume → execute). Migrations 016–022 are applied on the same project; new migrations still go through reviewed, ordered application on a disposable project first. **023 is written and reviewed but not yet applied** — until it is, the lead webhook saves the lead and then fails to enqueue counselling/triage, so the durable path (and `/api/agent/intake-worker`) does nothing.
 
 The requester wrapper's `search_path = public, extensions` operator resolution is SQL-verified (`supabase/migrations/015_approval_resume.sql:111`). Execution on the hosted database completed 2026-09-20 (see release-gate status above; grants exercised by the live eval suite). On any **new** database, re-verify grants and the role/resource matrix, review prerequisites and apply in order; do not blindly replay a wildcard.
 

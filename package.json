@@ -2,6 +2,9 @@
   "name": "ai-operations-copilot",
   "version": "0.2.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "predev": "node scripts/predev.mjs",
     "dev": "next dev",

@@ -84,7 +84,14 @@ not require n8n. Postgres is hosted (Supabase), nothing else to boot.
 **Related discovery the same day:** the pinned n8n 2.37.7 requires **Node ≥ 24** while the
 project's README specifies Node 22 — on this machine n8n runs via nvm's Node 24.11.0 with a
 PATH scoped to n8n commands only. Worth reconciling the README requirement vs the n8n pin.
-**Status: RESOLVED locally / README-RECONCILIATION OPEN.**
+
+**RECONCILED (2026-09-27):** the requirement is real and now documented rather than glossed.
+Verified from the installed package, not memory: `node_modules/n8n/package.json` declares
+`engines.node >=24.0.0`, while this machine's default toolchain is `v22.23.2` (so the app runs
+correctly on 22 and the *optional* pipeline does not). README, RUNBOOK and `package.json`
+(`engines.node: >=22` for the app) now state the split explicitly, and the RUNBOOK's n8n section
+says to use a Node 24 toolchain. No single floor is honest here: 22 is the app floor, 24 is the
+classic-pipeline floor. **Status: RESOLVED (README-RECONCILIATION CLOSED).**
 
 ---
 
@@ -210,6 +217,20 @@ The feeling is also incomplete: Ask X accepts open-ended goals and compiles them
 ## #16 — Situation #1 stray rows: cleanup tooling delivered (2026-09-25)
 
 The wrong-target run's leftover task + dry_run draft for the wrong lead (open cleanup from #1) now have a dedicated, narrow-scope script: `node scripts/cleanup-situation1.mjs` reports what it WOULD delete (dry-run default) and deletes only with `--yes`, scoped to `~emma%` leads, `agent:*` creators and the incident window. Awaiting the user's one `--yes` run (or manual SQL). **Status: TOOL DELIVERED / APPLY PENDING.**
+
+---
+
+## #17 — Interview-prep doc lost, not restored (2026-09-27)
+
+**What happened:** an interview-preparation document (a 15-section walkthrough of the project:
+architecture, governance chain, evals, honest limits) was written in an earlier session but never
+committed, and it did not survive a restart. The README's documentation table still linked
+docs/INTERVIEW_PREP.md, so the docs advertised a file that does not exist.
+
+**Decision (2026-09-27):** not restored. The date it was written for (Fri 2026-09-26) has passed,
+and the effort is better spent on product work — see the run-cancellation bundle.
+The dangling README row was removed so the documentation table stays truthful; the loss of the
+file itself is recorded here rather than papered over. **Status: DECLINED / README LINK REMOVED.**
 
 ---
 

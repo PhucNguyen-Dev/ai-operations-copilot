@@ -32,7 +32,7 @@ Next.js 15, React 19, TypeScript, Tailwind v4, Supabase/Postgres (RLS everywhere
 
 ## Run locally
 
-Node 22+, npm. Credentials live in `.env` (never committed) — see `.env.example` for every variable including Brevo dispatch.
+Node 22+ and npm for the app. **The optional n8n pipeline needs Node 24+:** the pinned `n8n@2.37.7` declares `engines.node >=24.0.0`, so `npm run n8n` does not run on 22 (installing there still works but emits an `EBADENGINE` warning). Credentials live in `.env` (never committed) — see `.env.example` for every variable including Brevo dispatch.
 
 ```sh
 npm install
@@ -41,7 +41,7 @@ npm run n8n          # optional: classic pipeline + briefing cron
 npm run bot          # optional: Telegram parent chatbot
 ```
 
-Migrations 001–022 are in `supabase/migrations/` and are applied to the configured Supabase project. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
+Migrations 001–022 are in `supabase/migrations/` and applied to the configured Supabase project. **023 (durable lead-intake outbox) is the one exception** — it is written paste-safe but not yet applied, so the webhook's durable retry path is inert until it runs. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
 
 ## Verify
 
@@ -67,7 +67,6 @@ npm run ci           # latest GitHub Actions status for the current branch
 | [SITUATION_OCCUR](docs/SITUATION_OCCUR.md) | Honest log of user questions, decisions and incidents |
 | [ROADMAP](docs/ROADMAP.md) | Current state, verification status and next candidates |
 | [PATTERN_AUDIT](docs/PATTERN_AUDIT.md) | Whole-app UI/UX pattern audit and ranked recommendations |
-| [INTERVIEW_PREP](docs/INTERVIEW_PREP.md) | Project walkthrough for interview prep: compressed architecture, Q&A defenses, honest limits |
 | [LOCAL_VERIFICATION](docs/evidence/LOCAL_VERIFICATION.md) | Dated evidence ledger — single source for verification results |
 | [Case study](docs/case-study/README.md) · [DISCOVERY](docs/case-study/DISCOVERY.md) · [DEPLOYMENT](docs/case-study/DEPLOYMENT.md) · [RESULTS](docs/case-study/RESULTS.md) | Simulated school scenario: assumptions, plan, results framework |
 | [TELEGRAM-CHATBOT](docs/TELEGRAM-CHATBOT.md) · [WORKFLOW](docs/WORKFLOW.md) · [EXTERNAL_API](docs/EXTERNAL_API.md) | Bot, n8n workflows, machine API |
