@@ -413,6 +413,182 @@ export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTu
 }
 
 // -------------------------------------------------------------
+// Agent loop turn — STREAMING. Same contract as generateAgentTurn
+// (identical resolved result), but the model response is consumed as
+// a stream: visible text deltas are delivered through onDelta as they
+// arrive (Ask X progressive rendering), while the resolved value is
+// the exact AgentTurnAiResult the runtime already persists (turnParts,
+// calls, usage, model). Function-call-only turns emit no deltas.
+// Deliberately NOT routed through the Gateway (JSON-mode only) and
+// never cached (the conversation changes every turn).
+// Retry policy: one retry on transient failure — the retry is
+// NON-STREAMED. Deltas already emitted belong to a discarded response
+// (the runtime persists only the RESOLVED turn), and a retry must not
+// emit more deltas.
+// -------------------------------------------------------------
+
+export type StreamTurnOptions = AgentTurnOptions & {
+  /** Called with each incremental text chunk as it arrives (visible text only; thought parts excluded). */
+  onDelta?: (chunk: string) => void
+}
+
+export async function generateAgentTurnStream(opts: StreamTurnOptions): Promise<AgentTurnAiResult> {
+  const startedAt = Date.now()
+  const fail = (error: AiError): AgentTurnAiResult => ({
+    ok: false,
+    error: clientSafe(error),
+    durationMs: Date.now() - startedAt,
+  })
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return fail({ code: 'AI_NOT_CONFIGURED', message: 'missing key', retryable: false })
+  const model = process.env.AI_MODEL || DEFAULT_MODEL
+
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: opts.system }] },
+    contents: opts.contents,
+    tools: [{ functionDeclarations: opts.declarations }],
+    generationConfig: { temperature: opts.temperature ?? 0 },
+  })
+
+  type RawTurn = { parts: Record<string, unknown>[]; modelVersion: string | null; usage: AiUsage | null }
+
+  const readSse = async (response: Response): Promise<RawTurn> => {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('empty stream body')
+    const decoder = new TextDecoder()
+    let buffer = ''
+    const parts: Record<string, unknown>[] = []
+    let modelVersion: string | null = null
+    let usage: AiUsage | null = null
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim()
+        buffer = buffer.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        let chunk: {
+          candidates?: { content?: { parts?: Record<string, unknown>[] } }[]
+          modelVersion?: string
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
+        }
+        try {
+          chunk = JSON.parse(payload)
+        } catch {
+          continue // not a complete SSE event — skip the malformed line
+        }
+        const chunkParts = chunk.candidates?.[0]?.content?.parts ?? []
+        for (const p of chunkParts) {
+          parts.push(p)
+          const t = (p as { text?: unknown }).text
+          if (typeof t === 'string' && t && !(p as { thought?: unknown }).thought) opts.onDelta?.(t)
+        }
+        if (chunk.modelVersion) modelVersion = chunk.modelVersion
+        if (chunk.usageMetadata) {
+          usage = {
+            promptTokens: typeof chunk.usageMetadata.promptTokenCount === 'number' ? chunk.usageMetadata.promptTokenCount : null,
+            completionTokens: typeof chunk.usageMetadata.candidatesTokenCount === 'number' ? chunk.usageMetadata.candidatesTokenCount : null,
+          }
+        }
+      }
+    }
+    return { parts, modelVersion, usage }
+  }
+
+  const readJson = async (response: Response): Promise<RawTurn> => {
+    const json = (await response.json().catch(() => null)) as {
+      candidates?: { content?: { parts?: Record<string, unknown>[] } }[]
+      modelVersion?: string
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
+    } | null
+    if (!json) throw new Error('unparseable response body')
+    const usageMeta = json.usageMetadata
+    return {
+      parts: json.candidates?.[0]?.content?.parts ?? [],
+      modelVersion: json.modelVersion ?? null,
+      usage: usageMeta
+        ? {
+            promptTokens: typeof usageMeta.promptTokenCount === 'number' ? usageMeta.promptTokenCount : null,
+            completionTokens: typeof usageMeta.candidatesTokenCount === 'number' ? usageMeta.candidatesTokenCount : null,
+          }
+        : null,
+    }
+  }
+
+  const run = async (streamed: boolean): Promise<AgentTurnAiResult> => {
+    let response: Response
+    try {
+      response = await fetch(
+        streamed
+          ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`
+          : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+          body,
+          // Streams legitimately run longer than one-shot calls.
+          signal: AbortSignal.timeout(TIMEOUT_MS + 60_000),
+        }
+      )
+    } catch (e) {
+      return fail({ code: 'AI_UNREACHABLE', message: String(e), retryable: true })
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 300)
+      const cls = classifyHttpStatus(response.status)
+      console.error(`[ai:${opts.tool}] ${streamed ? 'stream' : 'turn'} HTTP ${response.status}: ${detail}`)
+      return fail({ ...cls, message: `Gemini HTTP ${response.status}` })
+    }
+
+    let raw: RawTurn
+    try {
+      raw = streamed ? await readSse(response) : await readJson(response)
+    } catch (e) {
+      return fail({ code: 'AI_UNREACHABLE', message: String(e), retryable: true })
+    }
+
+    const turnParts = raw.parts.filter(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        ((p as { functionCall?: unknown }).functionCall ||
+          (typeof (p as { text?: unknown }).text === 'string' && !(p as { thought?: unknown }).thought))
+    )
+    const calls = extractFunctionCalls({ candidates: [{ content: { parts: raw.parts } }] })
+    // Visible text = requestable parts only (thought parts excluded) —
+    // matches what the model actually "said" publicly.
+    const text = extractText({ candidates: [{ content: { parts: turnParts } }] })
+
+    if (calls.length === 0 && !text?.trim()) {
+      return fail({ code: 'AI_BAD_OUTPUT', message: 'empty response', retryable: false })
+    }
+
+    return {
+      ok: true,
+      calls,
+      turnParts,
+      text: text?.trim() ? text : null,
+      model: (raw.modelVersion ?? model).replace(/^models\//, ''),
+      durationMs: Date.now() - startedAt,
+      usage: raw.usage,
+    }
+  }
+
+  const first = await run(true)
+  if (first.ok) return first
+  // One transient retry, mirroring generateAgentTurn — non-streamed so
+  // a discarded response's deltas are never double-emitted.
+  if (first.error.retryable) return run(false)
+  return first
+}
+
+// -------------------------------------------------------------
 // Embeddings (Phase 9 Milestone B — governed RAG). Same convention as
 // every AI call in this app: this is the only module that talks to the
 // provider, failures are normalized AiResults, transient errors retry

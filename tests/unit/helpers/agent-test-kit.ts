@@ -356,6 +356,7 @@ export const TEST_AGENT: AgentDefinition = {
   allowedRoles: ['admissions'],
   allowedTools: ['echo', 'boom', 'make_draft', 'escalate_to_human', 'finish', 'delegate_to_agent'],
   systemPrompt: 'test system prompt',
+  ledgerPrompt: false, // test agents are not registry-governed
 }
 
 /** The specialist child agent — deliberately has NO delegation tool. */
@@ -366,6 +367,7 @@ export const TEST_SPECIALIST: AgentDefinition = {
   allowedRoles: [],
   allowedTools: ['echo', 'finish'],
   systemPrompt: 'test specialist prompt',
+  ledgerPrompt: false, // test agents are not registry-governed
 }
 
 export const TEST_AGENTS: Record<string, AgentDefinition> = {

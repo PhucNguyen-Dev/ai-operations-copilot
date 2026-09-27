@@ -1,7 +1,7 @@
 import { buildSessionContext, renderSessionContext } from '@/lib/agent/session-context'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { traceAiRun } from '@/lib/runtrace'
-import { getAgent, type AgentDefinition } from '@/lib/agent/agents'
+import { getAgent, resolveAgentPrompt, type AgentDefinition, type ResolvedAgentPrompt } from '@/lib/agent/agents'
 import {
   activeRunTimeMs,
   callSignature,
@@ -63,7 +63,24 @@ export type RuntimeDeps = {
   tools?: Record<string, ToolDefinition<never, never>>
   agents?: Record<string, AgentDefinition>
   requesterScoped?: boolean
+  /**
+   * Bundle B — progressive-run events (streaming clients). Purely
+   * additive: when absent, nothing is emitted and the loop behaves
+   * exactly as before. Events are advisory — the durable trace remains
+   * the only source of truth for scoring, resume and audit.
+   */
+  onEvent?: (event: RuntimeEvent) => void
 }
+
+/** Streaming client events (Bundle B). `text` accumulates per turn; `stepCount` mirrors the durable run row. */
+export type RuntimeEvent =
+  | { type: 'run_started'; runId: string; stepCount: number }
+  | { type: 'turn_delta'; text: string; stepCount: number }
+  | { type: 'turn_complete'; text: string; stepCount: number }
+  | { type: 'tool_executed'; tool: string; stepCount: number }
+  | { type: 'awaiting_approval'; approvalId: string; tool: string; stepCount: number }
+  | { type: 'run_completed'; outcome: string; stepCount: number }
+  | { type: 'run_failed'; error: string; stepCount: number }
 
 export type AgentRunOutput = {
   runId: string
@@ -93,13 +110,24 @@ export async function startAgentRun(
     clientId?: string
       sessionId?: string | null
       ephemeralContext?: string
-      /** 9.12 multi-agent handoff: set on child runs for trace correlation. */
+      /** 9.12 multi-agent handoff: set on correlation. */
     parentRunId?: string
     requireApproval?: boolean
   }
 ): Promise<AgentRunOutput> {
-  const agent = getAgent(input.agentId, deps.agents)
-  if (!agent) return immediateFailure(input.agentId, `unknown agent ${input.agentId}`)
+  const baseAgent = getAgent(input.agentId, deps.agents)
+  if (!baseAgent) return immediateFailure(input.agentId, `unknown agent ${input.agentId}`)
+  // Bundle C: resolve the prompt BEFORE the run row exists — an
+  // unconfigured Ledger serves the committed prompt; a configured-but-
+  // broken Ledger fails the run immediately and honestly (no silent
+  // stale prompt, no half-persisted run).
+  let resolved: ResolvedAgentPrompt
+  try {
+    resolved = await resolveAgentPrompt(baseAgent)
+  } catch (e) {
+    return immediateFailure(null, `PROMPT_UNAVAILABLE: ${String(e)}`)
+  }
+  const agent = resolved.agent
 
   const limits: GuardrailLimits = { ...DEFAULT_GUARDRAIL_LIMITS, ...deps.limits }
   const serverRequiresApproval = (deps.dryRunEmail ?? process.env.GMAIL_AGENT_DRY_RUN !== 'false') === false
@@ -117,6 +145,11 @@ export async function startAgentRun(
       current_state: {
         ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
         require_approval: requireApproval,
+        // Bundle C: the prompt identity actually in effect, persisted on
+        // the run so "which prompt version produced this run" is
+        // answerable from the row itself AND from PromptLedger traces.
+        prompt_source: resolved.source,
+        prompt_version: resolved.version,
       },
       step_count: 0,
       max_steps: limits.maxSteps,
@@ -152,8 +185,18 @@ export async function resumeAgentRun(
 ): Promise<AgentRunOutput> {
   let run = await deps.store.getRun(input.runId)
   if (!run) return immediateFailure(null, `run ${input.runId} not found`)
-  const agent = getAgent(run.agent_id, deps.agents)
-  if (!agent) return immediateFailure(run.id, `unknown agent ${run.agent_id}`)
+  const baseAgent = getAgent(run.agent_id, deps.agents)
+  if (!baseAgent) return immediateFailure(run.id, `unknown agent ${run.agent_id}`)
+  // Bundle C: re-resolve the prompt best-effort — the human has already
+  // decided, so a registry blip must not fail the approved action; the
+  // fallback is the in-code prompt and the run's persisted identity
+  // keeps the trace truthful either way.
+  let agent = baseAgent
+  try {
+    agent = (await resolveAgentPrompt(baseAgent)).agent
+  } catch {
+    /* keep the in-code prompt */
+  }
 
   const notSuspended: AgentRunOutput = {
     runId: run.id,
@@ -499,6 +542,9 @@ async function driveRun(
       ...patch,
     })
 
+  const emit = (event: RuntimeEvent) => safeEmit(deps, event)
+  emit({ type: 'run_started', runId: run.id, stepCount: state.stepCount })
+
   for (;;) {
     // --- guardrails before every turn (9.6) ---
     if (await store.isKillSwitchOn()) {
@@ -523,7 +569,31 @@ async function driveRun(
     // week") are unanswerable for a model without an anchor date, so
     // the persisted run-start time is injected into the system prompt
     // (deterministic across resume replays). ---
-    const turn = await deps.model.turn({ system: `${agent.systemPrompt}\n\nCurrent UTC time at run start: ${run.started_at}. Use this to resolve relative periods ("this week", "today", "last month") into explicit ISO bounds — never guess dates.`, contents, declarations })
+    const turnRequest = { system: `${agent.systemPrompt}\n\nCurrent UTC time at run start: ${run.started_at}. Use this to resolve relative periods ("this week", "today", "last month") into explicit ISO bounds — never guess dates.`, contents, declarations }
+    // Streaming (Bundle B): when the model adapter can stream and a
+    // listener is attached, visible text deltas flow out as they arrive.
+    // The RESOLVED result is identical to turn() — persistence, resume
+    // and guards only ever see it. A transient stream failure falls
+    // back to one non-streamed attempt (same policy as the adapter); a
+    // permanent one surfaces exactly as a failed turn always has.
+    const turn =
+      deps.onEvent && deps.model.turnStream
+        ? await (async () => {
+            let acc = ''
+            const streamed = await deps.model.turnStream!(turnRequest, (chunk) => {
+              acc += chunk
+              emit({ type: 'turn_delta', text: acc, stepCount: state.stepCount })
+            })
+            if (streamed.ok) {
+              emit({ type: 'turn_complete', text: streamed.text ?? '', stepCount: state.stepCount })
+              return streamed
+            }
+            if (!streamed.retryable) return streamed
+            const fallback = await deps.model.turn(turnRequest)
+            if (fallback.ok) emit({ type: 'turn_complete', text: fallback.text ?? '', stepCount: state.stepCount })
+            return fallback
+          })()
+        : await deps.model.turn(turnRequest)
     if (!turn.ok) {
       await store.recordStep({
         run_id: run.id,
@@ -770,6 +840,7 @@ async function driveRun(
         })
         state.stepCount += 1
         await persistProgress({ status: 'awaiting_approval', pending_approval_id: approval.id, approval_wait_started_at: new Date().toISOString() })
+        emit({ type: 'awaiting_approval', approvalId: approval.id, tool: call.name, stepCount: state.stepCount })
         return {
           runId: run.id,
           status: 'awaiting_approval',
@@ -796,6 +867,7 @@ async function driveRun(
       contents.push(modelPartsContent(turnParts))
       contents.push(functionResponsePart(call.name, executed.response))
       await persistProgress({})
+      emit({ type: 'tool_executed', tool: call.name, stepCount: state.stepCount })
     }
   }
 }
@@ -956,6 +1028,7 @@ async function executeToolCall(
       tokens_out: state.tokensOut,
     })
     emitRunTrace(run, newStatus, null, state, new Date(run.started_at).getTime())
+    safeEmit(deps, { type: 'run_completed', outcome: outcomeText, stepCount: state.stepCount })
     // Persist session memory AFTER the terminal update so the fresh
     // final_outcome is what gets derived into the next run's context.
     // Steps are re-listed (not the run-start snapshot) so this run's own
@@ -1037,11 +1110,14 @@ function emitRunTrace(
   state: LoopState,
   startedAtMs: number
 ): void {
+  // Bundle C: the run's persisted prompt identity (set at creation from
+  // the registry resolution; resumes keep it — it lives on the row).
+  const cs = (run.current_state ?? {}) as Record<string, unknown>
   traceAiRun({
     app: 'ops-copilot',
     name: `agent:${run.agent_id}`,
-    promptVersion: null,
-    promptSource: 'runtime',
+    promptVersion: typeof cs.prompt_version === 'number' ? cs.prompt_version : null,
+    promptSource: typeof cs.prompt_source === 'string' ? cs.prompt_source : 'runtime',
     model: state.lastModel,
     input: run.goal,
     output: status === 'completed' ? (run.final_outcome ?? '') : '',
@@ -1051,6 +1127,15 @@ function emitRunTrace(
     tokensIn: state.tokensIn,
     tokensOut: state.tokensOut,
   })
+}
+
+/** Deliver one runtime event; a broken listener never affects the governed loop. */
+function safeEmit(deps: RuntimeDeps, event: RuntimeEvent): void {
+  try {
+    deps.onEvent?.(event)
+  } catch (e) {
+    console.error('[agent-runtime] event listener threw (ignored):', e instanceof Error ? e.message : e)
+  }
 }
 
 async function failRun(
@@ -1085,6 +1170,7 @@ async function failRun(
     tokens_out: state.tokensOut,
   })
   emitRunTrace(run, 'failed', message, state, new Date(run.started_at).getTime())
+  safeEmit(deps, { type: 'run_failed', error: message, stepCount: state.stepCount })
   return { runId: run.id, status: 'failed', finalOutcome: null, error: message, pendingApprovalId: null, stepCount: state.stepCount }
 }
 

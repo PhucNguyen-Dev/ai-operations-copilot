@@ -1,4 +1,4 @@
-import { generateAgentTurn } from '@/lib/gemini'
+import { generateAgentTurn, generateAgentTurnStream } from '@/lib/gemini'
 import type { FunctionDeclaration } from '@/lib/agent/types'
 
 // =============================================================
@@ -37,6 +37,13 @@ export type AgentTurnOutput =
 
 export interface AgentModel {
   turn(req: AgentTurnRequest): Promise<AgentTurnOutput>
+  /**
+   * Streaming variant (Bundle B): same resolved contract as turn(),
+   * with incremental text delivered through onDelta. Adapters that
+   * cannot stream may fall back to turn() — the runtime's persistence
+   * and guards only ever see the resolved result.
+   */
+  turnStream?(req: AgentTurnRequest, onDelta: (chunk: string) => void): Promise<AgentTurnOutput>
 }
 
 /** Production adapter — one Gemini function-calling turn. */
@@ -47,6 +54,30 @@ export const geminiAgentModel: AgentModel = {
       system: req.system,
       contents: req.contents,
       declarations: req.declarations,
+    })
+    if (!result.ok) {
+      return { ok: false, error: `${result.error.code}: ${result.error.message}`, retryable: result.error.retryable, durationMs: result.durationMs }
+    }
+    return {
+      ok: true,
+      calls: result.calls,
+      turnParts: result.turnParts,
+      text: result.text,
+      model: result.model,
+      durationMs: result.durationMs,
+      usage: result.usage
+        ? { tokensIn: result.usage.promptTokens, tokensOut: result.usage.completionTokens }
+        : null,
+    }
+  },
+
+  async turnStream(req, onDelta) {
+    const result = await generateAgentTurnStream({
+      tool: 'agent-runtime',
+      system: req.system,
+      contents: req.contents,
+      declarations: req.declarations,
+      onDelta,
     })
     if (!result.ok) {
       return { ok: false, error: `${result.error.code}: ${result.error.message}`, retryable: result.error.retryable, durationMs: result.durationMs }
