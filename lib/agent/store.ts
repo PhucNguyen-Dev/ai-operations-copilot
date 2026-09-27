@@ -4,6 +4,7 @@ import type {
   AgentRunRecord,
   AgentStateStore,
   AgentStepRecord,
+  CancelRunRequest,
 } from '@/lib/agent/types'
 import { parseSessionContext, type SessionContext } from '@/lib/agent/session-context'
 
@@ -188,6 +189,40 @@ export class SupabaseAgentStateStore implements AgentStateStore {
       .limit(1)
     if (error) throw new Error(`kill switch load failed: ${error.message}`)
     return ((data ?? [])[0]?.kill_switch as boolean | undefined) ?? false
+  }
+
+  // Migration 024 — per-run stop requests. The flag is read from the
+  // durable row at every barrier, never inferred from the run object the
+  // loop already holds: the request can land while this loop is mid-turn,
+  // and it may come from a different process entirely.
+  async isCancelRequested(runId: string): Promise<boolean> {
+    const { data, error } = await this.admin
+      .from('agent_runs')
+      .select('cancel_requested_at')
+      .eq('id', runId)
+      .limit(1)
+    if (error) throw new Error(`cancel flag load failed: ${error.message}`)
+    return ((data ?? [])[0]?.cancel_requested_at as string | null | undefined) != null
+  }
+
+  async requestCancel(runId: string, actorId: string): Promise<CancelRunRequest> {
+    // One atomic RPC (migration 024): claim the request, and for a
+    // suspended run also end it and withdraw its pending approval in the
+    // same transaction. Idempotent — a terminal run is reported, not
+    // rewritten.
+    const { data, error } = await this.admin.rpc('request_agent_run_cancel', {
+      p_run_id: runId,
+      p_actor: actorId,
+    })
+    if (error) throw new Error(`cancel request failed: ${error.message}`)
+    const row = (data ?? {}) as Partial<CancelRunRequest>
+    return {
+      claimed: row.claimed === true,
+      found: row.found !== false,
+      status: typeof row.status === 'string' ? row.status : null,
+      cancelRequested: row.cancelRequested === true,
+      closedApprovalId: typeof row.closedApprovalId === 'string' ? row.closedApprovalId : null,
+    }
   }
 
   async isToolEnabled(toolName: string): Promise<boolean> {

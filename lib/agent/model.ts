@@ -20,6 +20,13 @@ export type AgentTurnRequest = {
   system: string
   contents: AgentContent[]
   declarations: FunctionDeclaration[]
+  /**
+   * Caller cancellation (migration 024): the runtime aborts the in-flight
+   * model call when an operator stops the run. Adapters that ignore it
+   * still behave correctly — the durable flag ends the run at the next
+   * barrier — so this is a latency optimisation, not a correctness gate.
+   */
+  signal?: AbortSignal
 }
 
 export type AgentTurnOutput =
@@ -54,6 +61,7 @@ export const geminiAgentModel: AgentModel = {
       system: req.system,
       contents: req.contents,
       declarations: req.declarations,
+      signal: req.signal,
     })
     if (!result.ok) {
       return { ok: false, error: `${result.error.code}: ${result.error.message}`, retryable: result.error.retryable, durationMs: result.durationMs }
@@ -78,6 +86,7 @@ export const geminiAgentModel: AgentModel = {
       contents: req.contents,
       declarations: req.declarations,
       onDelta,
+      signal: req.signal,
     })
     if (!result.ok) {
       return { ok: false, error: `${result.error.code}: ${result.error.message}`, retryable: result.error.retryable, durationMs: result.durationMs }

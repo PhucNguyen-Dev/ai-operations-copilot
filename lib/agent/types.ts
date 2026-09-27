@@ -136,6 +136,24 @@ export type AgentRunRecord = {
   approval_wait_ms?: number
   approval_wait_started_at?: string | null
   pending_approval_id?: string | null
+  /** Operator stop request (migration 024). The runtime reads it at every barrier. */
+  cancel_requested_at?: string | null
+  /** Profile that asked for the stop — audit; not the run's owner. */
+  cancelled_by?: string | null
+}
+
+/**
+ * Outcome of an operator stop request (migration 024). `claimed: false`
+ * means the run was already terminal (or missing) — an idempotent
+ * answer, not a failure.
+ */
+export type CancelRunRequest = {
+  claimed: boolean
+  found: boolean
+  status: string | null
+  cancelRequested: boolean
+  /** Set when a suspended run's pending approval was withdrawn. */
+  closedApprovalId?: string | null
 }
 
 export type AgentStepRecord = {
@@ -199,6 +217,18 @@ export interface AgentStateStore {
 
   /** Global kill switch (9.6) — checked at loop entry and before every step. */
   isKillSwitchOn(): Promise<boolean>
+  /**
+   * Per-run stop request (migration 024) — read FRESH at every barrier,
+   * never cached from the in-memory run, because the request can arrive
+   * from another process (a different server instance, or the route)
+   * while this one is mid-loop.
+   */
+  isCancelRequested(runId: string): Promise<boolean>
+  /**
+   * Record an operator stop request atomically. Terminal for a suspended
+   * run (nothing is driving its loop); a flag only for a running one.
+   */
+  requestCancel(runId: string, actorId: string): Promise<CancelRunRequest>
   /** Absent row = enabled. */
   isToolEnabled(toolName: string): Promise<boolean>
 

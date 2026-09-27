@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cacheGet, cacheKey, cacheSet } from '@/lib/ai/cache'
 import { gatewayConfigured, gatewayGenerate } from '@/lib/gateway-client'
@@ -24,6 +25,7 @@ export type AiErrorCode =
   | 'AI_UNREACHABLE' // network error, 429, 5xx — transient
   | 'AI_BAD_OUTPUT' // empty / malformed / truncated response
   | 'AI_SCHEMA_MISMATCH' // parsed but failed the tool's validator — permanent
+  | 'AI_ABORTED' // the caller cancelled the request (a run was stopped) — never retried
 
 export type AiError = {
   code: AiErrorCode
@@ -34,9 +36,42 @@ export type AiError = {
 
 export type AiUsage = { promptTokens: number | null; completionTokens: number | null }
 
+/**
+ * T2 evidence ("what the caller knew") for the run trace. Each field is
+ * optional on purpose: a path that only sees parsed data (the AI Gateway, a
+ * cache hit) must leave them ABSENT rather than guess, and a trace without
+ * them is still a complete T1 record.
+ */
+export type AiEvidence = {
+  /** The model we asked for — never a claim about what actually served it. */
+  requestedModel?: string | null
+  /** Provider finish reason, e.g. STOP / MAX_TOKENS. */
+  finishReason?: string | null
+  /** `sha256:<hex>` of the raw completion text we received. */
+  outputHash?: string | null
+  streaming?: boolean
+}
+
 export type AiResult<T> =
-  | { ok: true; data: T; model: string; durationMs: number; cached?: boolean; usage?: AiUsage | null }
+  | ({ ok: true; data: T; model: string; durationMs: number; cached?: boolean; usage?: AiUsage | null } & AiEvidence)
   | { ok: false; error: AiError; durationMs: number }
+
+/**
+ * `sha256:<hex>` of exactly what the model returned — the canonical form the
+ * registry compares in GET /api/runs/drift. Hash the RAW text, before any
+ * parse/normalize step, so two different answers can never collapse into one
+ * hash. The format matches sdk/promptledger_sdk.py and connector/client.js.
+ */
+export function outputEvidenceHash(text: string): string {
+  return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`
+}
+
+/** The provider's finish reason for the first candidate, when it reported one. */
+function readFinishReason(json: unknown): string | null {
+  const candidates = (json as { candidates?: { finishReason?: unknown }[] } | null)?.candidates
+  const reason = candidates?.[0]?.finishReason
+  return typeof reason === 'string' ? reason : null
+}
 
 export type ValidationResult<T> =
   | { ok: true; data: T }
@@ -49,6 +84,25 @@ const CLIENT_MESSAGES: Record<AiErrorCode, string> = {
   AI_UNREACHABLE: 'The AI service is unreachable or busy — try again in a moment.',
   AI_BAD_OUTPUT: 'The AI returned an unusable response — try again.',
   AI_SCHEMA_MISMATCH: 'The AI returned an unexpected response format — try again.',
+  AI_ABORTED: 'The request was stopped before the model finished.',
+}
+
+/**
+ * Combine the per-call timeout with an optional caller signal. Provider
+ * calls are abortable so an operator stop takes effect mid-turn instead
+ * of waiting for the current response — best-effort latency, never the
+ * correctness mechanism (the durable cancel flag is).
+ */
+function requestSignal(timeoutMs: number, external?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return external ? AbortSignal.any([timeout, external]) : timeout
+}
+
+/** A caller-initiated abort is a first-class outcome, not a network failure. */
+function abortedError(external?: AbortSignal): AiError | null {
+  return external?.aborted
+    ? { code: 'AI_ABORTED', message: 'the caller cancelled this request', retryable: false }
+    : null
 }
 
 function clientSafe(error: AiError): AiError {
@@ -121,6 +175,11 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
   // as the final gate inside gatewayGenerate. Static switch, no runtime
   // auto-failover (deliberate — see lib/gateway-client.ts). ---
   if (gatewayConfigured()) {
+    // T2 note: this path deliberately returns NO T2 evidence. The Gateway owns
+    // the model call, so all we see is parsed data — no raw completion to hash
+    // and no finish reason to report. Recording a hash of our re-serialized
+    // object would be a different artifact wearing the same name, and drift
+    // would then compare apples to oranges. Absent beats invented.
     const result = await gatewayGenerate({ ...opts, schema: TOOL_SCHEMAS[opts.tool] })
     lastGeneration = {
       tool: opts.tool,
@@ -253,6 +312,15 @@ export async function generateJSON<T>(opts: GenerateJsonOptions<T>): Promise<AiR
       model: modelVersion.replace(/^models\//, ''),
       durationMs: Date.now() - startedAt,
       usage,
+      // --- T2 (PromptLedger): what this caller genuinely knows about the call.
+      // requestedModel is the model we asked for; finishReason comes from the
+      // candidate (null when the provider did not report one); outputHash is
+      // over the raw completion text so drift can be detected without a
+      // gateway in the path. Nothing here is inferred from `data`.
+      requestedModel: model,
+      finishReason: readFinishReason(json),
+      outputHash: outputEvidenceHash(text),
+      streaming: false,
     }
     lastGeneration = { tool: opts.tool, ok: true, durationMs: result2.durationMs, cached: false, at: new Date().toISOString() }
     await cacheSet(key, result2.data)
@@ -281,6 +349,8 @@ export type AgentTurnOptions = {
   contents: unknown[]
   declarations: { name: string; description: string; parameters: object }[]
   temperature?: number
+  /** Caller cancellation (migration 024 operator stop). Aborts the in-flight request. */
+  signal?: AbortSignal
 }
 
 export type AgentTurnAiResult =
@@ -349,12 +419,21 @@ export async function generateAgentTurn(opts: AgentTurnOptions): Promise<AgentTu
           method: 'POST',
           headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
           body,
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: requestSignal(TIMEOUT_MS, opts.signal),
         }
       )
     } catch (e) {
+      const aborted = abortedError(opts.signal)
+      if (aborted) return fail(aborted)
       lastError = { code: 'AI_UNREACHABLE', message: String(e), retryable: true }
       continue
+    }
+
+    // Aborted between headers and body — do not spend the attempt parsing
+    // (or retrying) a response the caller no longer wants.
+    {
+      const aborted = abortedError(opts.signal)
+      if (aborted) return fail(aborted)
     }
 
     if (!response.ok) {
@@ -532,11 +611,18 @@ export async function generateAgentTurnStream(opts: StreamTurnOptions): Promise<
           headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
           body,
           // Streams legitimately run longer than one-shot calls.
-          signal: AbortSignal.timeout(TIMEOUT_MS + 60_000),
+          signal: requestSignal(TIMEOUT_MS + 60_000, opts.signal),
         }
       )
     } catch (e) {
+      const aborted = abortedError(opts.signal)
+      if (aborted) return fail(aborted)
       return fail({ code: 'AI_UNREACHABLE', message: String(e), retryable: true })
+    }
+
+    {
+      const aborted = abortedError(opts.signal)
+      if (aborted) return fail(aborted)
     }
 
     if (!response.ok) {
@@ -550,6 +636,10 @@ export async function generateAgentTurnStream(opts: StreamTurnOptions): Promise<
     try {
       raw = streamed ? await readSse(response) : await readJson(response)
     } catch (e) {
+      // A stop mid-stream cancels the reader; that is a cancellation, not
+      // an unreachable provider — and never a candidate for the retry.
+      const aborted = abortedError(opts.signal)
+      if (aborted) return fail(aborted)
       return fail({ code: 'AI_UNREACHABLE', message: String(e), retryable: true })
     }
 
@@ -582,6 +672,9 @@ export async function generateAgentTurnStream(opts: StreamTurnOptions): Promise<
 
   const first = await run(true)
   if (first.ok) return first
+  // A cancelled request is terminal by definition — retrying it would
+  // restart work the operator just stopped.
+  if (first.error.code === 'AI_ABORTED') return first
   // One transient retry, mirroring generateAgentTurn — non-streamed so
   // a discarded response's deltas are never double-emitted.
   if (first.error.retryable) return run(false)

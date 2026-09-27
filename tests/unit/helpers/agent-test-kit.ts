@@ -3,6 +3,7 @@ import type {
   AgentRunRecord,
   AgentStateStore,
   AgentStepRecord,
+  CancelRunRequest,
   ToolContext,
   ToolDefinition,
 } from '@/lib/agent/types'
@@ -25,6 +26,9 @@ export class MemoryAgentStore implements AgentStateStore {
   toolFlags = new Map<string, boolean>()
   killSwitch = false
   sessionContexts = new Map<string, SessionContext>()
+  /** Migration 024 — runs with a recorded stop request (the durable flag). */
+  cancelRequested = new Set<string>()
+  cancelledBy = new Map<string, string>()
 
   async createRun(run: Omit<AgentRunRecord, 'id' | 'started_at' | 'updated_at'>): Promise<AgentRunRecord> {
     const now = new Date().toISOString()
@@ -132,6 +136,64 @@ export class MemoryAgentStore implements AgentStateStore {
 
   async isKillSwitchOn(): Promise<boolean> {
     return this.killSwitch
+  }
+
+  async isCancelRequested(runId: string): Promise<boolean> {
+    return this.cancelRequested.has(runId)
+  }
+
+  /**
+   * Mirrors request_agent_run_cancel (migration 024) so the memory store
+   * remains a faithful proof of the runtime's contract: claim only a
+   * non-terminal, not-already-stopped run; a suspended run ends here and
+   * its pending approval is withdrawn; a running run only gets the flag.
+   */
+  async requestCancel(runId: string, actorId: string): Promise<CancelRunRequest> {
+    const run = this.runs.get(runId)
+    if (!run) return { claimed: false, found: false, status: null, cancelRequested: false, closedApprovalId: null }
+    if (run.status !== 'running' && run.status !== 'awaiting_approval') {
+      return {
+        claimed: false,
+        found: true,
+        status: run.status,
+        cancelRequested: this.cancelRequested.has(runId),
+        closedApprovalId: null,
+      }
+    }
+    if (this.cancelRequested.has(runId)) {
+      return { claimed: false, found: true, status: run.status, cancelRequested: true, closedApprovalId: null }
+    }
+
+    this.cancelRequested.add(runId)
+    this.cancelledBy.set(runId, actorId)
+    const now = new Date().toISOString()
+    const next: AgentRunRecord = { ...run, cancel_requested_at: now, cancelled_by: actorId, updated_at: now }
+    let closedApprovalId: string | null = null
+
+    if (run.status === 'awaiting_approval') {
+      next.status = 'cancelled'
+      next.completed_at = now
+      next.error = 'CANCELLED: stopped by an operator while awaiting approval'
+      next.approval_wait_ms =
+        (run.approval_wait_ms ?? 0) +
+        (run.approval_wait_started_at ? Math.max(0, Date.now() - new Date(run.approval_wait_started_at).getTime()) : 0)
+      next.approval_wait_started_at = null
+      for (const [id, approval] of this.approvals) {
+        if (approval.run_id === runId && approval.status === 'pending') {
+          this.approvals.set(id, {
+            ...approval,
+            status: 'rejected',
+            decided_by: actorId,
+            decision_note: 'Run cancelled by an operator — this action was never executed.',
+            decided_at: now,
+          })
+          closedApprovalId = id
+        }
+      }
+    }
+
+    this.runs.set(runId, next)
+    return { claimed: true, found: true, status: next.status, cancelRequested: true, closedApprovalId }
   }
 
   async isToolEnabled(toolName: string): Promise<boolean> {

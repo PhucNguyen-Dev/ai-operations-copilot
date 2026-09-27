@@ -167,6 +167,7 @@ const CLIENT_MESSAGES: Record<AiError['code'], string> = {
   AI_UNREACHABLE: 'The AI service is unreachable or busy — try again in a moment.',
   AI_BAD_OUTPUT: 'The AI returned an unusable response — try again.',
   AI_SCHEMA_MISMATCH: 'The AI returned an unexpected response format — try again.',
+  AI_ABORTED: 'The request was stopped before the model finished.',
 }
 
 function clientSafeError(error: AiError): AiError {

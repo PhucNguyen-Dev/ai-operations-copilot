@@ -18,6 +18,7 @@ import {
   userTextPart,
   type AgentContent,
   type AgentModel,
+  type AgentTurnOutput,
   type FeedbackPayload,
 } from '@/lib/agent/model'
 import { evaluateToolPermission } from '@/lib/agent/permissions'
@@ -70,6 +71,13 @@ export type RuntimeDeps = {
    * the only source of truth for scoring, resume and audit.
    */
   onEvent?: (event: RuntimeEvent) => void
+  /**
+   * Migration 024 — how often to re-read the durable stop flag while a
+   * model turn is in flight (ms). Default 2s; `0` disables the watcher
+   * for tests that flip the flag themselves. Correctness never depends
+   * on it: the flag is re-read at every barrier regardless.
+   */
+  cancelPollMs?: number
 }
 
 /** Streaming client events (Bundle B). `text` accumulates per turn; `stepCount` mirrors the durable run row. */
@@ -81,6 +89,7 @@ export type RuntimeEvent =
   | { type: 'awaiting_approval'; approvalId: string; tool: string; stepCount: number }
   | { type: 'run_completed'; outcome: string; stepCount: number }
   | { type: 'run_failed'; error: string; stepCount: number }
+  | { type: 'run_cancelled'; reason: string; stepCount: number }
 
 export type AgentRunOutput = {
   runId: string
@@ -211,6 +220,14 @@ export async function resumeAgentRun(
       notSuspended.error = 'RECONCILIATION_REQUIRED: run is already processing; interrupted execution must not be replayed'
     } else if (run.status === 'failed') {
       notSuspended.error = 'RECONCILIATION_REQUIRED: claimed execution failed and must not be replayed'
+    } else if (run.status === 'cancelled') {
+      // Migration 024 — a stop is final, and this is the enforcement
+      // point that matters: a stale approval inbox can still POST a
+      // decision, and no UI state may be load-bearing for governance.
+      // The database agrees (request_agent_run_cancel withdrew the
+      // pending approval; claim_agent_approval only claims a run still
+      // awaiting_approval) — this makes the refusal explicit and readable.
+      notSuspended.error = 'CANCELLED: this run was stopped — the approval can no longer execute'
     }
     return notSuspended
   }
@@ -240,7 +257,12 @@ export async function resumeAgentRun(
     const guard = await actionGuard(deps, run, {
       stepCount: run.step_count, tokensIn: run.tokens_in, tokensOut: run.tokens_out, lastModel: null,
     }, limits)
-    if (guard) return { ...notSuspended, error: guard }
+    // A stop that landed while this run was suspended wins: the decision
+    // is recorded, but nothing executes and nothing resumes.
+    if (guard?.kind === 'cancel') {
+      return { ...notSuspended, status: 'cancelled', error: `CANCELLED: ${guard.reason}` }
+    }
+    if (guard) return { ...notSuspended, error: guard.reason }
     if (approval.status === 'approved') {
       const tool = getTool(approval.tool_name, deps.tools)
       if (!tool) return { ...notSuspended, error: 'UNKNOWN_TOOL: approved tool is no longer registered' }
@@ -397,10 +419,45 @@ async function verifyRequester(ctx: ToolContext): Promise<void> {
   }
 }
 
-async function actionGuard(deps: RuntimeDeps, run: AgentRunRecord, state: LoopState, limits: GuardrailLimits): Promise<string | null> {
-  if (await deps.store.isKillSwitchOn()) return 'KILL_SWITCH: agent execution is disabled platform-wide'
+const CANCELLED_REASON = 'stopped by an operator'
+
+/**
+ * Why the loop cannot continue. 'cancel' and 'fail' end a run
+ * differently — one is a refusal to keep spending and acting, the other
+ * is an error — and the audit trail should not blur them.
+ */
+type StopDecision = { kind: 'cancel'; reason: string } | { kind: 'fail'; reason: string }
+
+/**
+ * THE pre-action barrier: platform kill switch, this run's stop request,
+ * then the guardrail budgets. Checked before every model turn AND before
+ * every tool execution, so a stop lands at the last boundary that can
+ * still cause a side effect.
+ *
+ * Both flags are read FRESH from the store: the request can arrive from a
+ * different process (the cancel route) while this loop holds its own
+ * in-memory copy of the run, so the in-memory row must never be the
+ * authority for either control.
+ */
+async function actionGuard(deps: RuntimeDeps, run: AgentRunRecord, state: LoopState, limits: GuardrailLimits): Promise<StopDecision | null> {
+  const [killSwitchOn, cancelRequested] = await Promise.all([
+    deps.store.isKillSwitchOn(),
+    deps.store.isCancelRequested(run.id),
+  ])
+  // The kill switch keeps its original precedence — it is the older,
+  // platform-wide control and its behavior must not change. A run that
+  // trips both is reported as the run it is: failed by the kill switch.
+  if (killSwitchOn) return { kind: 'fail', reason: 'KILL_SWITCH: agent execution is disabled platform-wide' }
+  if (cancelRequested) return { kind: 'cancel', reason: CANCELLED_REASON }
   const guard = evaluateRunGuards({ ...run, step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut }, limits)
-  return guard.ok ? null : `${guard.reason.toUpperCase()}: ${guard.message}`
+  return guard.ok ? null : { kind: 'fail', reason: `${guard.reason.toUpperCase()}: ${guard.message}` }
+}
+
+/** Route a stop decision to the terminal writer that matches its intent. */
+function endRun(deps: RuntimeDeps, run: AgentRunRecord, stop: StopDecision, state: LoopState): Promise<AgentRunOutput> {
+  return stop.kind === 'cancel'
+    ? cancelRun(deps, run, stop.reason, state)
+    : failRun(deps, run, stop.reason, state)
 }
 
 async function authorizeAction(
@@ -546,38 +603,37 @@ async function driveRun(
   emit({ type: 'run_started', runId: run.id, stepCount: state.stepCount })
 
   for (;;) {
-    // --- guardrails before every turn (9.6) ---
-    if (await store.isKillSwitchOn()) {
-      return failRun(deps, run, 'KILL_SWITCH: agent execution is disabled platform-wide', state)
-    }
-    const guard = evaluateRunGuards(
-      {
-        step_count: state.stepCount,
-        tokens_in: state.tokensIn,
-        tokens_out: state.tokensOut,
-        max_steps: run.max_steps,
-        started_at: run.started_at,
-        approval_wait_ms: run.approval_wait_ms,
-        approval_wait_started_at: run.approval_wait_started_at,
-      },
-      limits
-    )
-    if (!guard.ok) return failRun(deps, run, `${guard.reason.toUpperCase()}: ${guard.message}`, state)
+    // --- the pre-turn barrier: kill switch, this run's stop request,
+    // then the guardrail budgets (9.6 + migration 024) ---
+    const stopBeforeTurn = await actionGuard(deps, run, state, limits)
+    if (stopBeforeTurn) return endRun(deps, run, stopBeforeTurn, state)
 
     // --- model turn: the model chooses intent and next action ONLY.
     // The runtime owns the clock: relative-period instructions ("this
     // week") are unanswerable for a model without an anchor date, so
     // the persisted run-start time is injected into the system prompt
     // (deterministic across resume replays). ---
-    const turnRequest = { system: `${agent.systemPrompt}\n\nCurrent UTC time at run start: ${run.started_at}. Use this to resolve relative periods ("this week", "today", "last month") into explicit ISO bounds — never guess dates.`, contents, declarations }
+    // Migration 024: the call is abortable — the controller is created
+    // before the request so the in-flight provider call can be cancelled.
+    const turnAbort = new AbortController()
+    const turnRequest = { system: `${agent.systemPrompt}\n\nCurrent UTC time at run start: ${run.started_at}. Use this to resolve relative periods ("this week", "today", "last month") into explicit ISO bounds — never guess dates.`, contents, declarations, signal: turnAbort.signal }
     // Streaming (Bundle B): when the model adapter can stream and a
     // listener is attached, visible text deltas flow out as they arrive.
     // The RESOLVED result is identical to turn() — persistence, resume
     // and guards only ever see it. A transient stream failure falls
     // back to one non-streamed attempt (same policy as the adapter); a
     // permanent one surfaces exactly as a failed turn always has.
-    const turn =
-      deps.onEvent && deps.model.turnStream
+    //
+    // The watcher polls the durable stop flag while the turn is in flight
+    // and cancels the request, so a stop takes effect immediately instead
+    // of after the current turn returns. The abort is a latency
+    // optimisation only — if it never fires (or the provider ignores it),
+    // the flag is still caught at the barrier above and before every tool
+    // execution below.
+    const stopWatcher = watchForCancel(deps, run.id, turnAbort)
+    let turn: AgentTurnOutput
+    try {
+      turn = deps.onEvent && deps.model.turnStream
         ? await (async () => {
             let acc = ''
             const streamed = await deps.model.turnStream!(turnRequest, (chunk) => {
@@ -594,6 +650,12 @@ async function driveRun(
             return fallback
           })()
         : await deps.model.turn(turnRequest)
+    } finally {
+      stopWatcher()
+    }
+    // A stop that arrived during the turn ends the run as cancelled —
+    // never as a provider failure, and never with the turn's result.
+    if (turnAbort.signal.aborted) return cancelRun(deps, run, CANCELLED_REASON, state)
     if (!turn.ok) {
       await store.recordStep({
         run_id: run.id,
@@ -661,7 +723,7 @@ async function driveRun(
       const call = honored[ci]
 
       const actionStop = await actionGuard(deps, run, state, limits)
-      if (actionStop) return failRun(deps, run, actionStop, state)
+      if (actionStop) return endRun(deps, run, actionStop, state)
 
       // --- loop guard (9.6): refuse the (N+1)th consecutive identical
       // call — observation loops burn budget without changing state. ---
@@ -926,7 +988,7 @@ async function executeToolCall(
     return { terminal: await failRun(deps, run, denied, state) }
   }
   const stop = await actionGuard(deps, run, state, limits)
-  if (stop) return { terminal: await failRun(deps, run, stop, state) }
+  if (stop) return { terminal: await endRun(deps, run, stop, state) }
   state.stepCount += 1
   await store.updateRun(run.id, { step_count: state.stepCount, tokens_in: state.tokensIn, tokens_out: state.tokensOut })
   const started = Date.now()
@@ -936,9 +998,13 @@ async function executeToolCall(
     return { terminal: await failRun(deps, run, `RECONCILIATION_REQUIRED: ${outcome.error}; execution may still complete [attempted tool=${tool.name}, args=${JSON.stringify(args)}, approval_id=${approvalId ?? 'none'}]`, state) }
   }
   if (!outcome.ok && outcome.retryable && tool.idempotency === 'idempotent' && !approvalId) {
+    // Re-authorize AND re-check the barrier before a retry: a stop or a
+    // kill switch that landed during the failed attempt must not be
+    // overtaken by a second execution of the same tool.
     const retryDenied = await authorizeAction(deps, agent, tool, args, ctx, false)
     const retryStop = await actionGuard(deps, run, { ...state, stepCount: state.stepCount - 1 }, limits)
-    if (retryDenied || retryStop) return { terminal: await failRun(deps, run, retryDenied ?? retryStop!, state) }
+    if (retryDenied) return { terminal: await failRun(deps, run, retryDenied, state) }
+    if (retryStop) return { terminal: await endRun(deps, run, retryStop, state) }
     outcome = await invoke()
     if (!outcome.ok && outcome.error.startsWith('TOOL_TIMEOUT')) {
       return { terminal: await failRun(deps, run, `RECONCILIATION_REQUIRED: ${outcome.error}; execution may still complete [attempted tool=${tool.name}, args=${JSON.stringify(args)}, approval_id=${approvalId ?? 'null'}]`, state) }
@@ -1172,6 +1238,97 @@ async function failRun(
   emitRunTrace(run, 'failed', message, state, new Date(run.started_at).getTime())
   safeEmit(deps, { type: 'run_failed', error: message, stepCount: state.stepCount })
   return { runId: run.id, status: 'failed', finalOutcome: null, error: message, pendingApprovalId: null, stepCount: state.stepCount }
+}
+
+/**
+ * Terminal writer for an operator stop (migration 024). Mirrors failRun
+ * step for step — one system step, the terminal run update, the ledger
+ * trace, the client event — with two deliberate differences:
+ *
+ *   * the run status is 'cancelled', the value agent_run_status has
+ *     reserved since migration 010 and nothing had ever written;
+ *   * the step status is 'skipped', not 'failed', because nothing here
+ *     failed — the platform refused to continue, on purpose. The precise
+ *     reason rides in the step's error text, which the inspector shows.
+ */
+async function cancelRun(
+  deps: RuntimeDeps,
+  run: AgentRunRecord,
+  reason: string,
+  state: LoopState
+): Promise<AgentRunOutput> {
+  // The stop request was written to the durable row by another process,
+  // so the loop's own snapshot cannot name the operator who asked for it.
+  // Re-read once — this path is rare — and never let an audit enrichment
+  // failure stop the terminal write.
+  const fresh = await deps.store.getRun(run.id).catch(() => null)
+  const cancelledBy = fresh?.cancelled_by ?? run.cancelled_by ?? null
+  const requestedAt = fresh?.cancel_requested_at ?? run.cancel_requested_at ?? null
+  const message = `CANCELLED: ${reason}`
+  await deps.store.recordStep({
+    run_id: run.id,
+    kind: 'system',
+    tool_name: null,
+    tool_version: null,
+    permission_decision: null,
+    status: 'skipped',
+    approval_id: null,
+    args_snapshot: null,
+    result_summary: { cancelled: true, cancelled_by: cancelledBy, cancel_requested_at: requestedAt },
+    feedback_snapshot: null,
+    error: message,
+    latency_ms: null,
+    tokens_in: 0,
+    tokens_out: 0,
+    finished_at: new Date().toISOString(),
+  })
+  await deps.store.updateRun(run.id, {
+    status: 'cancelled',
+    error: message,
+    completed_at: new Date().toISOString(),
+    // Terminal paths bypass persistProgress — carry the final counters so
+    // the tokens already spent by a stopped run stay visible.
+    step_count: state.stepCount,
+    tokens_in: state.tokensIn,
+    tokens_out: state.tokensOut,
+  })
+  emitRunTrace(run, 'cancelled', message, state, new Date(run.started_at).getTime())
+  safeEmit(deps, { type: 'run_cancelled', reason: message, stepCount: state.stepCount })
+  return {
+    runId: run.id,
+    status: 'cancelled',
+    finalOutcome: null,
+    error: message,
+    pendingApprovalId: null,
+    stepCount: state.stepCount,
+  }
+}
+
+/**
+ * Poll the durable stop flag while one model call is in flight and abort
+ * it when the flag flips. Returns a stop function that always clears the
+ * timer.
+ *
+ * Two properties worth stating: the timer is unref'd (it can never hold
+ * the process open), and a failed poll is logged and ignored — a read
+ * blip must not turn into a spurious cancellation, and the barrier after
+ * the turn re-reads the flag anyway.
+ */
+function watchForCancel(deps: RuntimeDeps, runId: string, controller: AbortController): () => void {
+  const pollMs = deps.cancelPollMs ?? 2_000
+  if (pollMs <= 0) return () => {}
+  const timer = setInterval(() => {
+    void deps.store
+      .isCancelRequested(runId)
+      .then((requested) => {
+        if (requested) controller.abort()
+      })
+      .catch((e) => {
+        console.error('[agent-runtime] cancel poll failed (ignored):', e instanceof Error ? e.message : e)
+      })
+  }, pollMs)
+  ;(timer as unknown as { unref?: () => void }).unref?.()
+  return () => clearInterval(timer)
 }
 
 function immediateFailure(agentIdOrRunId: string | null, message: string): AgentRunOutput {
