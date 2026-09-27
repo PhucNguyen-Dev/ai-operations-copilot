@@ -83,6 +83,10 @@ function storeThatCrashesMidDrive(): TriageDeps['store'] {
     }),
     listSteps: async () => [],
     getSessionContext: async () => null,
+    // Migration 024: the barrier reads the stop flag alongside the kill
+    // switch. Both must exist, or the missing one throws before the
+    // intended failure does (and the created promise goes unhandled).
+    isCancelRequested: async () => false,
     isKillSwitchOn: async () => {
       throw new Error('kill switch boom')
     },
