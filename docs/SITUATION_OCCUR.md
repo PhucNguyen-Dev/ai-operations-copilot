@@ -246,4 +246,42 @@ file itself is recorded here rather than papered over. **Status: DECLINED / READ
 
 ---
 
+## #18 — "plan next": hygiene wrap + the stop button (2026-09-27)
+
+**The ask:** review where the product stands and plan the next body of work; then implement it in full.
+
+**What was found first (the uncomfortable part).** 29 files of verified work — the durable-intake,
+streaming and prompt-ownership bundles — were sitting **uncommitted**, and migration 023 was sitting
+**unapplied**: the lead webhook's commit point saved the lead and then enqueued into a table that
+does not exist, so triage silently never ran. Ten minutes of work was one restart away from being
+lost, and a documented capability was inert in the hosted database. Both are now handled (five
+commits on `main`; 023 is the user's paste, see #12 for why the convention is manual). The README's
+Node floor and a link to a deleted doc were also untrue and are now stated correctly.
+
+**What shipped:** run cancellation — see ROADMAP item 9 for the contract. The design decision worth
+recording: `agent_run_status` has carried `'cancelled'` since migration 010 and **nothing had ever
+written it**, so this was completing a reserved vocabulary rather than inventing one. Two properties
+were treated as the point of the feature rather than nice-to-haves: a stop is enforced by the
+platform at every pre-action barrier (not by hiding a button in the UI), and a cancelled run can
+never be resurrected by an approval that arrives late — the withdrawal of its pending approval plus
+`claim_agent_approval`'s existing guard make that structural, and `resumeAgentRun` refuses outright.
+
+**Deviation from the approved plan, and why.** The plan proposed a real-model eval scenario
+("start a run that suspends for approval, cancel it, attempt to approve"). That was dropped in favour
+of `scripts/verify-run-cancel.mjs`, a deterministic acceptance check that exercises the **real RPC**
+against the **real database** and cleans up after itself. Reason: the model-dependent version cannot
+be executed here, and an unexecuted scenario in the standing eval net risks a false red — while the
+SQL function is the one layer the unit tests genuinely cannot reach (they run against a memory store
+that mirrors its contract, which is a proof of *our* semantics, not of the SQL).
+
+**Open, and honestly not done:** migration 023 and 024 still need the usual paste-safe application;
+`scripts/verify-run-cancel.mjs` has therefore **never run** — the SQL is reviewed and unit-tested at
+its boundaries, but not executed; the Stop controls have not been clicked in a browser; and the eval
+suite has not been re-run on this revision. Known limits are written down rather than smoothed over:
+a tool already executing is not interruptible, and a stop request on a run whose driving process is
+gone stays `running` for an operator to reconcile (RUNBOOK §5 has the SQL).
+**Status: SHIPPED ON DISK / HOSTED APPLICATION + LIVE VERIFICATION PENDING.**
+
+---
+
 *Next entries: append above this line, newest first.*

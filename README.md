@@ -2,7 +2,7 @@
 
 An **AI operations copilot** for a simulated Vietnamese education center: governed lead automation, an approval-gated assistant, and role-scoped dashboards — built to demonstrate *controlled* AI automation, not autonomous behavior.
 
-**Status (2026-09-20):** the full governance chain works end-to-end — **AI recommends → human approves → system executes → audit trail proves it.** Email dispatch runs via Brevo when configured (honest simulated dispatch when not). 350 unit tests across 30 files, typecheck, ESLint and the guarded production build all pass. Migrations 001–022 applied on the hosted Supabase project; remote CI green on `main`.
+**Status (2026-09-27):** the full governance chain works end-to-end — **AI recommends → human approves → system executes → audit trail proves it** — and a human can **stop** it: runs are cancellable, with the stop enforced by the platform at every pre-action barrier. Email dispatch runs via Brevo when configured (honest simulated dispatch when not). 386 unit tests across 34 files, typecheck, ESLint and the guarded production build all pass. Migrations 001–022 applied on the hosted Supabase project; **023 (durable lead intake) and 024 (run cancellation) are written, paste-safe, and awaiting their SQL-editor application.** Remote CI green on `main`.
 
 **MCP:** both profiles are implemented and offline-verified — the stdio REST adapter (36 adapter unit tests) and the native n8n tools workflow (workflow JSON validated) — with live captures pending.
 
@@ -12,9 +12,9 @@ An **AI operations copilot** for a simulated Vietnamese education center: govern
 
 - **Operations command center** — the dashboard answers *"what needs my attention right now?"*: operational KPIs (needs action / follow-ups due / at risk / total / pending approvals), a ranked Priority Actions queue (overdue follow-up → unactioned HOT → score), and the AI's recommended action inline in every table row. All metrics come from one shared snapshot module shared with the briefing, so surfaces can never drift.
 - **Approval gate with execution** — Lead Detail is a decision workspace: AI Assessment + Recommended Action with **Approve / Edit / Reject**. Approving an email draft dispatches it (Brevo HTTP API when configured; audited `sent_simulated` when not — double-click races lose the claim). Approving an action creates the follow-up task. Every decision is an append-only audit record.
-- **Ask X — the governed assistant** — a floating bubble on every page plus a full Mission Control workspace at `/agent`: session history, rich lead/task/knowledge/email cards, run inspector, clarification-before-action for ambiguous requests, and a **proactive morning briefing** computed by SQL (zero model calls) — pinned as today's ☀ Briefing session, auto-generated on first open of the day.
+- **Ask X — the governed assistant** — a floating bubble on every page plus a full Mission Control workspace at `/agent`: session history, rich lead/task/knowledge/email cards, run inspector, clarification-before-action for ambiguous requests, streaming progress with a **Stop** control, and a **proactive morning briefing** computed by SQL (zero model calls) — pinned as today's ☀ Briefing session, auto-generated on first open of the day.
 - **Classic admissions pipeline** — Telegram or web intake → signed n8n webhook → AI qualification → CRM → email draft → counselor task → run logs. Deterministic, inspectable, dry-run by default.
-- **Governance** — role-scoped RLS everywhere (counselor sees assigned leads, ops/admin all, marketing/teacher none), per-tool enable flags, a kill switch, an agent approvals inbox with self-approval forbidden, and scope-restricted machine clients (`agent.run`, `briefing.generate`).
+- **Governance** — role-scoped RLS everywhere (counselor sees assigned leads, ops/admin all, marketing/teacher none), per-tool enable flags, a kill switch, **per-run cancellation** (requester or Operations/Admin; a stopped run can never be resumed by a late approval), an agent approvals inbox with self-approval forbidden, and scope-restricted machine clients (`agent.run`, `briefing.generate`).
 
 ## Architecture at a glance
 
@@ -41,14 +41,14 @@ npm run n8n          # optional: classic pipeline + briefing cron
 npm run bot          # optional: Telegram parent chatbot
 ```
 
-Migrations 001–022 are in `supabase/migrations/` and applied to the configured Supabase project. **023 (durable lead-intake outbox) is the one exception** — it is written paste-safe but not yet applied, so the webhook's durable retry path is inert until it runs. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
+Migrations 001–022 are in `supabase/migrations/` and applied to the configured Supabase project. **023 (durable lead-intake outbox) and 024 (run cancellation) are the exceptions** — both are written paste-safe but not yet applied, so the webhook's durable retry path and the Stop controls stay inert until they run. Brevo email dispatch is optional: set `BREVO_API_KEY` + `BREVO_FROM_EMAIL` for real sends; without them approvals record honest simulated dispatches.
 
 ## Verify
 
 ```sh
 npm run lint
 npm run typecheck -- --incremental false
-npm test             # unit suites (350 tests / 30 files)
+npm test             # unit suites (386 tests / 34 files)
 npm run build        # guarded: refuses while `npm run dev` is up (BUILD_ANYWAY=1 builds an isolated .next-build)
 npm run ci           # latest GitHub Actions status for the current branch
 ```

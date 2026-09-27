@@ -12,7 +12,7 @@ Updated **2026-09-20** at commit set through `8d1cd03`. The original "locked one
 | Morning briefing | Live: deterministic SQL snapshot as a pinned ☀ session, auto-generated daily on first open; scheduled cron path wired (`briefing.generate` scope, machine client provisioned, `/api/external/briefing` verified) |
 | Email execution | Live: Brevo HTTP dispatch behind env vars; simulated mode is the honest default. **Real sends pending user's Brevo key** (situations #8) |
 | External push (Telegram etc.) | **Declined by design** (situations #9) — delivery stays in-app |
-| Verification | 350→**373+ unit tests / 33 files**, lint, typecheck, guarded build — all green; migrations 001–022 applied to hosted Supabase (**023 pending SQL-editor application**, paste-safe by convention); the 12-scenario eval suite re-confirmed post-Briefing-v2; kill-switch restore race FIXED in the harness (beforeEach reset) |
+| Verification | 350→**386 unit tests / 34 files**, lint, typecheck, guarded build — all green; migrations 001–022 applied to hosted Supabase (**023 and 024 written, paste-safe, not yet applied** — the durable intake path and the cancellation RPC are inert until they are); the 12-scenario eval suite re-confirmed post-Briefing-v2; kill-switch restore race FIXED in the harness (beforeEach reset) |
 
 ## Next candidates, in priority order
 
@@ -31,6 +31,8 @@ Updated **2026-09-20** at commit set through `8d1cd03`. The original "locked one
 **7. ~~Streaming Ask X (B).~~ SHIPPED (2026-09-25).** `POST /api/agent/runs/stream` (SSE) + `generateAgentTurnStream` + runtime `onEvent` events; ChatPanel renders progressive text and live tool steps in bubble and Mission Control. Governance identical to the JSON route (client ladder: stream → poll durable run → one fallback POST). JSON route untouched; external API unchanged.
 
 **8. ~~Gateway/Ledger unification (C).~~ SHIPPED (2026-09-25).** Agent prompts are registry-owned: committed `prompts/<agent-id>.json` (single source), live resolution via PromptLedger with fail-closed semantics, persisted `prompt_source`/`prompt_version` on runs and in run traces. The Gateway agent-turn endpoint (loop turns still bypass the Gateway) is spec'd, not implemented: [GATEWAY_AGENT_TURN_SPEC](GATEWAY_AGENT_TURN_SPEC.md).
+
+**9. ~~Run cancellation (operator stop).~~ SHIPPED (2026-09-27).** Migration 024 + `request_agent_run_cancel`: a durable per-run stop request, enforced at every pre-action barrier (before each model turn, each tool execution, each approval resume) rather than by a UI gesture. A suspended run is ended and its approval withdrawn atomically, so "cancel, then approve" cannot execute; `resumeAgentRun` refuses a cancelled run outright. The in-flight model call is aborted for immediate effect, and the terminal system step is recorded as `skipped` with the reason — the trace states what ran before the stop, never that nothing happened. Migration 023 (durable lead intake) and 024 both still await their paste-safe SQL-editor application; `scripts/verify-run-cancel.mjs` is the acceptance check for 024 once applied. **Only 023/024 application and a live eval re-run are outstanding.**
 
 ## Explicitly not planned
 

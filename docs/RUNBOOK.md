@@ -111,7 +111,41 @@ These SQL examples mutate the selected database; confirm the disposable target a
 update agent_runtime_config set kill_switch = true;
 ```
 
-This stops execution at subsequent guard checks; it does not retract a side effect or guarantee cancellation of an in-flight model call. Restore the prior value only after investigating the cause.
+This stops execution at subsequent guard checks; it does not retract a side effect. Restore the prior value only after investigating the cause. For an in-flight model call, use per-run cancellation below — the kill switch does not reach into a call already in flight, whereas a stop aborts it.
+
+### Stopping one run (migration 024)
+
+| Where | How | What happens |
+|---|---|---|
+| Ask X / Mission Control | **Stop** while a run is working; **Stop this run** on an awaiting-approval card | Request recorded; a running run ends as `cancelled` at its next barrier; a suspended run ends immediately and its approval is withdrawn |
+| Run inspector (Operations/Admin) | **Stop this run** / **Withdraw & stop this run** | Same, then the panel re-reads the durable run |
+| API | `POST /api/agent/runs/{id}/cancel` | Requester or Operations/Admin. Idempotent: a terminal run is *reported*, not rewritten |
+| SQL (fallback) | see below | For a stuck/orphaned run |
+
+What a stop guarantees: no further tool executes, and the trace says exactly which steps ran before it stopped. What it does not do: retract a side effect that already happened, or interrupt a tool call mid-execution (it is bounded by that tool's timeout).
+
+```sql
+-- Fallback for a run whose driving process is gone. A stop request on an
+-- orphaned run is never noticed by anything, so the row stays 'running'
+-- with cancel_requested_at set; this is the operator write that closes it.
+select id, status, cancel_requested_at, cancelled_by from public.agent_runs where status = 'running';
+
+update public.agent_runs
+set status = 'cancelled', completed_at = now(),
+    error = 'CANCELLED: stopped by an operator (reconciled by hand — no driving process)'
+where id = '<run-id>' and status = 'running';
+
+-- Then withdraw any approval it left pending, so it can never execute.
+update public.agent_approvals
+set status = 'rejected', decision_note = 'Run cancelled by an operator — this action was never executed.', decided_at = now()
+where run_id = '<run-id>' and status = 'pending';
+```
+
+After applying migration 024, verify the function against the real database — the script creates its own synthetic run, asserts the documented outcomes, and deletes what it created:
+
+```sh
+node scripts/verify-run-cancel.mjs
+```
 
 ```sql
 insert into agent_tool_config (tool_name, enabled)
@@ -123,6 +157,7 @@ This disables one registered tool at subsequent checks. Restore its prior config
 
 | Action | Interface |
 |---|---|
+| Stop a run | `POST /api/agent/runs/{id}/cancel` (also the Stop controls in Ask X and the run inspector) |
 | Decide approval | Session-authenticated `POST /api/agent/approvals/{id}` with `decision` and optional `note` |
 | Provision/revoke external client | Operations/Admin `/api/agent/external-clients`; revoke via `PATCH /api/agent/external-clients/{id}` with `enabled: false` |
 | Refresh knowledge | `npm run ingest:knowledge`, after reviewing document scope and provider cost |

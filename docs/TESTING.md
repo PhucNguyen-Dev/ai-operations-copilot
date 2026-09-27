@@ -1,6 +1,8 @@
 # Testing and evidence
 
-Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-25**, production-hardening/streaming/prompt-ownership bundles): **373 unit tests across 33 files, lint clean, typecheck clean** (new: intake outbox + fail-mode limiter, streaming SSE parse/reliability-ladder, prompt-resolution pins; backend-fallback limiter tests updated to the fail-closed policy). The real-model eval suite (`npm run evals:agent`, 12 scenarios) last passed 12/12 on the hosted stack at Briefing v2; the kill-switch restore race is now **fixed in the harness** (`beforeEach` reset), leaving real-model variance as the only known flake source. **Migration 023 (lead-intake outbox) needs the usual paste-safe SQL-editor application to the hosted Supabase before the webhook's durable path goes live.** Live browser verification of the streaming UI and an eval re-run on this revision are still pending.
+Commands come from `package.json`. Latest firsthand results on the committed revision (**2026-09-27**, cancellation bundle): **386 unit tests across 34 files, lint clean, typecheck clean** (new since 2026-09-25: run cancellation — 6 runtime tests covering the mid-run barrier, the zero-cost pre-turn stop, the mid-turn abort, the suspended-run withdrawal and resume refusal, terminal-run idempotency and kill-switch precedence; 2 approvals-route refusals; 1 stream-ladder guard proving a stopped run never re-POSTs). The real-model eval suite (`npm run evals:agent`, 12 scenarios) last passed 12/12 on the hosted stack at Briefing v2; the kill-switch restore race is **fixed in the harness** (`beforeEach` reset), leaving real-model variance as the only known flake source.
+
+**Two migrations are written but NOT applied to the hosted project** (paste-safe, one block each): **023 (lead-intake outbox)** — until it runs, the webhook's durable path is inert and `/api/agent/intake-worker` has nothing to drain; **024 (run cancellation)** — until it runs, the Stop controls answer 500 and `scripts/verify-run-cancel.mjs` cannot pass, because the RPC does not exist. Live browser verification of the Stop controls (and the streaming UI from the previous bundle) and an eval re-run on this revision are still pending.
 
 ## Offline checks
 
@@ -16,7 +18,7 @@ npm run build
 
 | Suite | Focus |
 |---|---|
-| Agent runtime + tools | Bounded steps/time/tokens, kill switch, tool disable, date-bounds guard, delegation limits |
+| Agent runtime + tools | Bounded steps/time/tokens, kill switch, tool disable, date-bounds guard, delegation limits, **run cancellation** (barrier enforcement, zero-cost pre-turn stop, mid-turn abort recorded as a stop rather than a provider failure, terminal-run idempotency, kill-switch precedence) |
 | Approvals (`agent_approvals`) | Durable claim semantics, identity/role revalidation, 409/403 paths, reconciliation flags |
 | Lead decisions (migration 019) | Append-only decisions, one active per (lead, target), RLS-scope enforcement |
 | Email dispatch (`tests/unit/email-dispatch.test.ts`) | Decision table: configured → Brevo send, unconfigured → simulated, provider error → typed retryable failure; idempotent claim |
@@ -37,6 +39,7 @@ Run only against an authorized disposable project with synthetic records.
 | `npm run test:integration` | Real Gemini client | Provider credentials + quota |
 | `npm run test:e2e` | Playwright auth + role/RLS visibility | Local app, seeded users |
 | `npm run evals:agent` | Real-model scenarios + trace scoring | App, Gemini, DB credentials; runtime state |
+| `node scripts/verify-run-cancel.mjs` | Migration 024 acceptance against the **real** database: claim, atomic end + approval withdrawal, idempotency, terminal-run reporting; creates and deletes its own synthetic rows | Hosted Supabase credentials **and migration 024 applied** |
 | `node scripts/verify-external-api.mjs` | External auth, discovery, run attribution | Temp client + run records |
 | `node scripts/verify-lead-webhook.mjs` | Signed intake, duplicate handling | Synthetic leads + triage |
 | `node scripts/verify-persistent-infra.mjs` | Postgres limiter/cache round-trip | Infra state mutation |
