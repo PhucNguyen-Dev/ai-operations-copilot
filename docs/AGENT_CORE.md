@@ -6,6 +6,10 @@ How the Ask X agent works: runtime, tools, permissions, sessions and the briefin
 
 `lib/agent/runtime.ts` executes every run inside hard bounds — max steps, wall-clock time and token budget — with a kill switch and per-tool disable checks honored before each tool call. The clock is **injected**, so tests and the date-bounds guard share one time source. Every step is traced via `lib/runtrace.ts` (tool name, input/output summaries, duration) — this trace is what the chat UI renders as step summaries and what the rich answer cards are derived from. No live step polling: the run flow is request → bounded execution → persisted trace → rendered.
 
+**Prompt ownership (Bundle C).** Agent system prompts are registry-owned: the committed `prompts/<agent-id>.json` files are the single source (the in-code constants mirror them), and at run start the runtime resolves the live version from PromptLedger when configured — failing **closed** on registry failure (an agent never runs on a silently stale prompt) and serving the committed fallback when unconfigured. The resolved identity (`prompt_source`, `prompt_version`) is persisted on the run row and flows into the PromptLedger run traces, so "which prompt version produced this run" is answerable end-to-end.
+
+**Streaming (Bundle B).** `POST /api/agent/runs/stream` streams the same governed run as SSE runtime events (`run_started`, `turn_delta`, `tool_executed`, `awaiting_approval`, `run_completed`/`run_failed`) plus a closing `final` event carrying the identical JSON body of the non-streaming route. Governance is byte-identical: same auth, role gate, rate limit, session checks, permission engine and persistence; the events are advisory progress only, and the durable trace stays the single source of truth. Model turns stream through `streamGenerateContent` (text deltas only; function-call turns emit none) with a non-streamed retry on transient failure so discarded-response deltas are never re-emitted. The client's reliability ladder is stream → poll the durable run (never re-POST a possibly-running goal) → one fallback POST to the JSON route. The loop still bypasses the AI Gateway (JSON-mode only) — the contract to close that is spec'd in [GATEWAY_AGENT_TURN_SPEC](GATEWAY_AGENT_TURN_SPEC.md).
+
 ## Agents
 
 | Agent | Purpose |
@@ -51,3 +55,5 @@ Agent-proposed side effects (email drafts, recommended actions) never execute on
 - Durable memory is per-session only ("New chat" starts empty; there is no cross-session recall) — deliberate privacy/simplicity tradeoff.
 - Trace capture includes tool inputs/outputs — treat trace access as data access.
 - The briefing's top-5 caps at five leads by design; the dashboard carries the full operational view.
+- Streaming covers **turn-level** text and step events; token-level deltas of the final message are a follow-up (the perceived-latency win is already delivered).
+- Agent prompts resolve from PromptLedger/committed fallbacks, but promoting a new live version is still a manual registry step (no UI pipeline for agent prompts yet).

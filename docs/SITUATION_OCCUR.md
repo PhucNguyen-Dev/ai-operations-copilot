@@ -201,7 +201,15 @@ The feeling is also incomplete: Ask X accepts open-ended goals and compiles them
 
 **Symptoms (post-Briefing-v2 re-run):** one scenario (`session-follow-up`) failed in-suite but passed in isolation (31.8s, full governed chain) — root cause a transient `AI_UNREACHABLE` model error; `date-bounded-search` failed on first attempt because the kill-switch scenario's config restore **raced** the next scenario's first run (two runs died with `KILL_SWITCH`), then passed cleanly on retry.
 
-**Assessment:** model variance is inherent to real-model suites (retry-once is already the harness's answer); the kill-switch race is a genuine harness papercut — restore should gate/await before the next scenario starts. Both documented in TESTING.md so results are read honestly. **Status: MODEL VARIANCE ACCEPTED / KILL-SWITCH RACE FIX QUEUED.**
+**Assessment:** model variance is inherent to real-model suites (retry-once is already the harness's answer); the kill-switch race is a genuine harness papercut — restore should gate/await before the next scenario starts. Both documented in TESTING.md so results are read honestly.
+
+**FIXED (2026-09-25):** the harness now resets `kill_switch=false` in `beforeEach` — before every scenario and ahead of the pacing pause — making the restore wait-free and idempotent; a stale `true` can no longer leak across scenarios. **Status: MODEL VARIANCE ACCEPTED / KILL-SWITCH RACE FIXED.**
+
+---
+
+## #16 — Situation #1 stray rows: cleanup tooling delivered (2026-09-25)
+
+The wrong-target run's leftover task + dry_run draft for the wrong lead (open cleanup from #1) now have a dedicated, narrow-scope script: `node scripts/cleanup-situation1.mjs` reports what it WOULD delete (dry-run default) and deletes only with `--yes`, scoped to `~emma%` leads, `agent:*` creators and the incident window. Awaiting the user's one `--yes` run (or manual SQL). **Status: TOOL DELIVERED / APPLY PENDING.**
 
 ---
 

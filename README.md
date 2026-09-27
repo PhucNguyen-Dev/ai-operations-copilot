@@ -67,6 +67,7 @@ npm run ci           # latest GitHub Actions status for the current branch
 | [SITUATION_OCCUR](docs/SITUATION_OCCUR.md) | Honest log of user questions, decisions and incidents |
 | [ROADMAP](docs/ROADMAP.md) | Current state, verification status and next candidates |
 | [PATTERN_AUDIT](docs/PATTERN_AUDIT.md) | Whole-app UI/UX pattern audit and ranked recommendations |
+| [INTERVIEW_PREP](docs/INTERVIEW_PREP.md) | Project walkthrough for interview prep: compressed architecture, Q&A defenses, honest limits |
 | [LOCAL_VERIFICATION](docs/evidence/LOCAL_VERIFICATION.md) | Dated evidence ledger — single source for verification results |
 | [Case study](docs/case-study/README.md) · [DISCOVERY](docs/case-study/DISCOVERY.md) · [DEPLOYMENT](docs/case-study/DEPLOYMENT.md) · [RESULTS](docs/case-study/RESULTS.md) | Simulated school scenario: assumptions, plan, results framework |
 | [TELEGRAM-CHATBOT](docs/TELEGRAM-CHATBOT.md) · [WORKFLOW](docs/WORKFLOW.md) · [EXTERNAL_API](docs/EXTERNAL_API.md) | Bot, n8n workflows, machine API |
