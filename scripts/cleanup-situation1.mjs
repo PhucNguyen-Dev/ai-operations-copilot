@@ -71,14 +71,14 @@ let deletions = 0
 for (const lead of leads) {
   const base = `lead_id=eq.${lead.id}&${WINDOW}`
   // The dry_run email draft left by the wrong-target run.
-  const emails = await svcGet(`sent_emails?${base}&status=eq.dry_run&created_by=like.agent:*)&select=id,subject,status,created_by,created_at`)
+  const emails = await svcGet(`sent_emails?${base}&status=eq.dry_run&created_by=like.agent:*&select=id,subject,status,created_by,created_at`)
   for (const e of emails) {
     console.log(`  draft  ${e.id} "${e.subject}" by ${e.created_by} (${e.created_at})`)
     if (APPLY) await svcDelete(`sent_emails?id=eq.${e.id}`)
     deletions++
   }
   // The follow-up task the run created for the wrong lead.
-  const tasks = await svcGet(`tasks?${base}&created_by=like.agent:*)&select=id,title,priority,status,created_by,created_at`)
+  const tasks = await svcGet(`tasks?${base}&created_by=like.agent:*&select=id,title,priority,status,created_by,created_at`)
   for (const t of tasks) {
     console.log(`  task   ${t.id} "${t.title}" (${t.priority}/${t.status}) by ${t.created_by} (${t.created_at})`)
     if (APPLY) await svcDelete(`tasks?id=eq.${t.id}`)

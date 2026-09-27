@@ -44,7 +44,9 @@ for later discussion. **Status: DEFERRED (open idea).**
 
 **Open cleanup:** the wrong-target run left a real follow-up task and a `dry_run` email draft
 for Emma Nguyen (created ~2026-09-19). Harmless (dry-run), but should be deleted or acknowledged
-at some point.
+at some point. **CLOSED 2026-09-27:** the stray follow-up task was deleted via
+`scripts/cleanup-situation1.mjs --yes` (see #16); the dry-run email draft was already gone.
+Status: CLEANED UP.
 
 ---
 
@@ -217,6 +219,16 @@ The feeling is also incomplete: Ask X accepts open-ended goals and compiles them
 ## #16 — Situation #1 stray rows: cleanup tooling delivered (2026-09-25)
 
 The wrong-target run's leftover task + dry_run draft for the wrong lead (open cleanup from #1) now have a dedicated, narrow-scope script: `node scripts/cleanup-situation1.mjs` reports what it WOULD delete (dry-run default) and deletes only with `--yes`, scoped to `~emma%` leads, `agent:*` creators and the incident window. Awaiting the user's one `--yes` run (or manual SQL). **Status: TOOL DELIVERED / APPLY PENDING.**
+
+**APPLIED (2026-09-27) — and the first run found a bug in the tool.** The initial dry run reported
+"0 row(s) WOULD be deleted" across 12 matching leads, which was implausible enough to check: both
+filters were written `created_by=like.agent:*)` — a stray `)` made the pattern `agent:*)`, which
+matches nothing, so the script would have reported a clean bill of health forever while deleting
+nothing. Fixed to `agent:*`; the corrected dry run found exactly the expected artifact (one
+`high/pending` follow-up task on Emma Nguyen created 2026-09-19T10:20Z by `agent:admissions-followup`),
+which was then deleted with `--yes` and re-verified as 0 rows in scope. The lesson is the reason the
+dry-run default matters: a cleanup tool that cannot find anything looks identical to a clean
+database. **Status: APPLIED + VERIFIED (1 row deleted).**
 
 ---
 
