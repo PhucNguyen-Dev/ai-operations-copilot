@@ -174,6 +174,22 @@ test.afterAll(async () => {
 // Brief pause between scenarios — the free-tier Gemini quota is shared,
 // and back-to-back turns can trip transient 429s (retried once anyway).
 test.beforeEach(async () => {
+  // Kill-switch race fix (papercut, situations #15): a kill-switch
+  // scenario restores the config in the test body/afterAll; without this
+  // reset, the restore could race the NEXT scenario's first run and two
+  // runs died with KILL_SWITCH. Resetting here — before every scenario,
+  // ahead of the pacing pause — makes the restore wait-free and
+  // idempotent: a false kill_switch can never leak across scenarios.
+  try {
+    const res = await fetch(`${REST}/agent_runtime_config?on_conflict=id`, {
+      method: 'POST',
+      headers: { ...SVC, Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({ id: 1, kill_switch: false }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  } catch (e) {
+    console.warn('[eval beforeEach] kill-switch reset failed (continuing):', e instanceof Error ? e.message : e)
+  }
   await new Promise((r) => setTimeout(r, 3_000))
 })
 

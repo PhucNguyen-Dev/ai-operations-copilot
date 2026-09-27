@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { verifyEnvelope } from '@/lib/webhook-signing'
 import { rateLimiter } from '@/lib/rate-limit'
-import { startAgentRun } from '@/lib/agent/runtime'
+import { enqueueTriage, firstAdminId, runTriageJob, startTriageRun, type TriageDeps } from '@/lib/lead-intake'
 import { SupabaseAgentStateStore } from '@/lib/agent/store'
 import { geminiAgentModel } from '@/lib/agent/model'
+
+/** Agent-runtime deps for system-triggered triage (webhook is trusted infra, admin principal). */
+function triageDeps(admin: ReturnType<typeof createAdminClient>): TriageDeps {
+  return {
+    admin,
+    store: new SupabaseAgentStateStore(admin),
+    model: geminiAgentModel,
+    dryRunEmail: process.env.GMAIL_AGENT_DRY_RUN !== 'false',
+  }
+}
 
 // =============================================================
 // 9.11 — Real lead trigger. Source-agnostic webhook intake for
@@ -16,10 +25,10 @@ import { geminiAgentModel } from '@/lib/agent/model'
 //   → validation (same contract as the n8n pipeline intake)
 //   → idempotency (unique (source, external_key) — re-delivery is a
 //     200 duplicate ack, never a second lead or a second run)
-//   → deterministic counselor assignment (same hash rule as n8n)
-//   → governed agent triage (fire-and-forget: the lead is in, the
-//     admissions agent runs through the full governed loop — the
-//     kill switch and guardrails still apply)
+//   → durable intake (migration 023): the lead insert is the commit
+//     point; counselor assignment + governed triage are enqueued as an
+//     outbox job with bounded retries — a crash after the commit can
+//     no longer lose the downstream work (no more fire-and-forget)
 //
 // System-triggered runs use the admin principal: this webhook is
 // trusted infrastructure gated by the shared secret, the same trust
@@ -76,21 +85,6 @@ function normalizeLead(payload: Record<string, unknown>): Record<string, unknown
     }
   }
   return lead
-}
-
-async function firstAdminId(admin: SupabaseClient): Promise<string | null> {
-  const { data } = await admin.from('profiles').select('id').eq('role', 'admin').limit(1)
-  return ((data ?? [])[0] as { id: string } | undefined)?.id ?? null
-}
-
-/** Same deterministic rule as the n8n pipeline: hash the lead id over the sorted counselor list. */
-async function assignCounselor(admin: SupabaseClient, leadId: string): Promise<void> {
-  const { data: counselors } = await admin.from('profiles').select('id').eq('role', 'admissions').order('id')
-  if (!counselors?.length) return
-  let hash = 0
-  for (const c of leadId) hash = (hash * 31 + c.charCodeAt(0)) >>> 0
-  const counselorId = counselors[hash % counselors.length].id as string
-  await admin.from('leads').update({ assigned_counselor_id: counselorId }).eq('id', leadId)
 }
 
 export async function POST(request: NextRequest) {
@@ -177,26 +171,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not store the lead' }, { status: 500 })
   }
   const leadId = inserted.id as string
-  await assignCounselor(admin, leadId)
 
-  // --- governed triage, fire-and-forget: the webhook responds fast;
-  // the run traces itself (failures land in agent_runs, never lost). ---
-  const adminId = await firstAdminId(admin)
-  const goal = `[lead-webhook:${source}] New lead arrived (id ${leadId}, ${lead.name as string}). Review it with your tools and take the appropriate next action per the SOP.`
-  const deps = {
-    store: new SupabaseAgentStateStore(admin),
-    model: geminiAgentModel,
-    userClient: admin,
-    adminClient: admin,
-    dryRunEmail: process.env.GMAIL_AGENT_DRY_RUN !== 'false',
+  // --- durable intake: enqueue the downstream work as an outbox job
+  // (migration 023). The lead commit is the commit point; the job is
+  // retried with bounded backoff and dead-letters visibly on permanent
+  // failure — a crash here can no longer lose assignment or triage. ---
+  try {
+    await enqueueTriage(admin, leadId)
+  } catch (e) {
+    // Same-burst repair: the processing loop's sweep (below) will not
+    // catch this lead until its next run, so attempt the downstream
+    // work inline best-effort — identical outcome to the old
+    // fire-and-forget, plus the outbox row for the next sweep.
+    console.error('[lead-webhook] outbox enqueue failed (lead is committed; downstream degraded):', e)
+    const adminId = await firstAdminId(admin)
+    void startTriageRun(triageDeps(admin), {
+      leadId,
+      leadName: lead.name as string,
+      source,
+      userId: process.env.AGENT_SYSTEM_USER_ID ?? adminId ?? '00000000-0000-0000-0000-000000000000',
+    }).catch((e2) => console.error('[lead-webhook] inline degraded triage failed:', e2))
+    return NextResponse.json({ accepted: true, duplicate: false, leadId, agentTriage: 'degraded_inline' }, { status: 202 })
   }
-  const runPromise = startAgentRun(deps, {
-    agentId: 'admissions-followup',
-    userId: process.env.AGENT_SYSTEM_USER_ID ?? adminId ?? '00000000-0000-0000-0000-000000000000',
-    userRole: 'admin',
-    goal,
-  })
-  void runPromise.catch((e) => console.error('[lead-webhook] agent triage run crashed:', e))
 
-  return NextResponse.json({ accepted: true, duplicate: false, leadId, agentTriage: 'started' }, { status: 202 })
+  // Same-burst processing: attempt the job immediately (latency parity
+  // with the old inline path). Success → 202 with agentTriage: 'started';
+  // failure → the job stays pending with attempts=1 and the worker's
+  // backoff retries it — either way the work is durable.
+  const { processOutbox } = await import('@/lib/lead-intake')
+  let triageState: 'started' | 'queued' = 'queued'
+  try {
+    const claimed = await processOutbox(admin, (job) => runTriageJob(admin, job, triageDeps(admin)))
+    if (claimed > 0) triageState = 'started'
+  } catch (e) {
+    console.error('[lead-webhook] same-burst outbox processing failed (job stays pending for the worker):', e)
+  }
+
+  return NextResponse.json({ accepted: true, duplicate: false, leadId, agentTriage: triageState }, { status: 202 })
 }

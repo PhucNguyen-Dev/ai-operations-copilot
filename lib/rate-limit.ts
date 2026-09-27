@@ -73,10 +73,32 @@ class MemoryRateLimiter implements RateLimiter {
 
 /**
  * Fixed-window counter in Postgres via the atomic rate_limit_hit()
- * function (migration 014). Fail-open on RPC errors with a loud log:
- * a limiter hiccup must not take the whole app down (the DB being
- * fully down breaks everything anyway).
+ * function (migration 014). RPC failures follow an explicit fail-mode
+ * policy instead of a blanket fail-open:
+ *
+ *   * closed (default) — deny with a short Retry-After. Every current
+ *     call site is cost-bearing (AI calls, leads, external API), so a
+ *     limiter outage must not turn into an unmetered spend window.
+ *   * open — availability wins (the historical behavior). Opt in per
+ *     key prefix via RATE_LIMIT_FAIL_OPEN_KEYS (comma-separated) or
+ *     globally via RATE_LIMIT_FAIL_MODE=open.
+ *
+ * Either way the decision is LOUD: one server log per failure with the
+ * key, the mode and the error.
  */
+export type RateLimitFailMode = 'open' | 'closed'
+
+export function rateLimitFailMode(key?: string): RateLimitFailMode {
+  if (key) {
+    const alwaysOpen = (process.env.RATE_LIMIT_FAIL_OPEN_KEYS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (alwaysOpen.some((p) => key === p || key.startsWith(`${p}:`) || key.startsWith(`${p}-`))) return 'open'
+  }
+  return process.env.RATE_LIMIT_FAIL_MODE === 'open' ? 'open' : 'closed'
+}
+
 class PostgresRateLimiter implements RateLimiter {
   private admin: SupabaseClient | null = null
 
@@ -96,8 +118,16 @@ class PostgresRateLimiter implements RateLimiter {
       const r = data as { ok: boolean; remaining: number; retry_after_sec: number }
       return { ok: r.ok, retryAfterSec: r.retry_after_sec, remaining: r.remaining }
     } catch (e) {
-      console.error(`[rate-limit] postgres limiter unavailable; deliberately failing open to preserve availability (requests are not rate limited): ${String(e)}`)
-      return { ok: true, retryAfterSec: 0, remaining: limit }
+      const mode = rateLimitFailMode(key)
+      if (mode === 'open') {
+        console.error(`[rate-limit] postgres limiter unavailable; FAIL-OPEN (availability over metering, requests are not rate limited) key=${key}: ${String(e)}`)
+        return { ok: true, retryAfterSec: 0, remaining: limit }
+      }
+      // Fail-closed: a limiter outage must not become an unmetered spend
+      // window for cost-bearing keys. Deny briefly — the next window or
+      // a recovered limiter admits traffic again.
+      console.error(`[rate-limit] postgres limiter unavailable; FAIL-CLOSED (deny with short retry, no unmetered spend) key=${key}: ${String(e)}`)
+      return { ok: false, retryAfterSec: 5, remaining: 0 }
     }
   }
 }
@@ -110,7 +140,7 @@ function usingPostgres(): boolean {
 export const rateLimiter: RateLimiter = usingPostgres() ? new PostgresRateLimiter() : new MemoryRateLimiter()
 
 /** Introspection for the health endpoint. */
-export function rateLimiterStats(): { backend: 'postgres' | 'in-memory'; keys: number } {
-  if (usingPostgres()) return { backend: 'postgres', keys: buckets.size }
-  return { backend: 'in-memory', keys: buckets.size }
+export function rateLimiterStats(): { backend: 'postgres' | 'in-memory'; keys: number; failMode: RateLimitFailMode } {
+  if (usingPostgres()) return { backend: 'postgres', keys: buckets.size, failMode: rateLimitFailMode() }
+  return { backend: 'in-memory', keys: buckets.size, failMode: 'open' }
 }

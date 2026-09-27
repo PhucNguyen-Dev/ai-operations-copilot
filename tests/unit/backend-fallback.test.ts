@@ -17,15 +17,24 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('Postgres fail-open behavior', () => {
-  it.each(['returned', 'thrown'])('allows requests and logs a %s limiter error', async (mode) => {
+describe('Postgres limiter failure policy', () => {
+  it.each(['returned', 'thrown'])('fails CLOSED on a %s limiter error (no unmetered spend window)', async (mode) => {
+    if (mode === 'returned') mocks.rpc.mockResolvedValue({ data: null, error: { message: 'database unavailable' } })
+    else mocks.rpc.mockRejectedValue(new Error('database unavailable'))
+    const { rateLimiter } = await import('@/lib/rate-limit')
+    expect(await rateLimiter.check('client-1', 60, 60_000)).toEqual({ ok: false, retryAfterSec: 5, remaining: 0 })
+    expect(mocks.rpc).toHaveBeenCalledWith('rate_limit_hit', { p_key: 'client-1', p_limit: 60, p_window_ms: 60_000 })
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('FAIL-CLOSED'))
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('database unavailable'))
+  })
+
+  it.each(['returned', 'thrown'])('fails OPEN when explicitly configured (availability over metering)', async (mode) => {
+    vi.stubEnv('RATE_LIMIT_FAIL_MODE', 'open')
     if (mode === 'returned') mocks.rpc.mockResolvedValue({ data: null, error: { message: 'database unavailable' } })
     else mocks.rpc.mockRejectedValue(new Error('database unavailable'))
     const { rateLimiter } = await import('@/lib/rate-limit')
     expect(await rateLimiter.check('client-1', 60, 60_000)).toEqual({ ok: true, retryAfterSec: 0, remaining: 60 })
-    expect(mocks.rpc).toHaveBeenCalledWith('rate_limit_hit', { p_key: 'client-1', p_limit: 60, p_window_ms: 60_000 })
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('deliberately failing open'))
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('database unavailable'))
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('FAIL-OPEN'))
   })
 
   it('preserves successful backend limit decisions', async () => {
