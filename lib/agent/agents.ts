@@ -1,4 +1,5 @@
 import type { Role } from '@/lib/roles'
+import { getSystemPrompt } from '@/lib/promptledger'
 
 // =============================================================
 // Agent registry (9.5 / 9.12 precursor): an agent identity is a
@@ -6,6 +7,14 @@ import type { Role } from '@/lib/roles'
 // the registry — the permission engine intersects agent identity ×
 // tool × employee role before any execution. A new agent = a new
 // entry here, never a new code path in the runtime.
+//
+// Bundle C — prompt ownership (Bundle C1). The committed text in
+// prompts/<agent>.json is the SINGLE SOURCE; the in-code constants
+// mirror it as the never-throws fallback. At run start the registry
+// resolves the live prompt from PromptLedger when configured
+// (fail-closed on registry failure, same convention as AI tool
+// routes); unconfigured → the committed fallback with a loud warning.
+// Run traces record the resolved prompt version/source.
 // =============================================================
 
 export type AgentDefinition = {
@@ -18,6 +27,13 @@ export type AgentDefinition = {
   /** The ONLY tools this agent can ever be authorized to call. */
   allowedTools: string[]
   systemPrompt: string
+  /**
+   * When true (default), the effective prompt is resolved at run start
+   * from PromptLedger / the committed prompts/ fallback (Bundle C).
+   * Set false only for agents whose prompts are deliberately not
+   * registry-governed (custom/test agents).
+   */
+  ledgerPrompt?: boolean
 }
 
 const ADMISSIONS_SYSTEM = `You are the Admissions Follow-Up Agent of an English-center operations platform.
@@ -107,4 +123,31 @@ export function getAgent(
   agents: Record<string, AgentDefinition> = AGENTS
 ): AgentDefinition | null {
   return agents[agentId] ?? null
+}
+
+export type ResolvedAgentPrompt = {
+  agent: AgentDefinition
+  source: 'live' | 'committed' | 'runtime'
+  version: number | null
+}
+
+/**
+ * Resolve one agent's effective prompt.
+ *
+ *   * Registry-governed agents (default): getSystemPrompt implements
+ *     the full policy — unconfigured Ledger → the committed prompts/
+ *     fallback with a loud warning; configured → the LIVE version,
+ *     failing CLOSED on any registry problem (unreachable, no live
+ *     promotion, bad key). A governed agent never runs on a silently
+ *     stale prompt; the runtime surfaces PromptLedgerError as an
+ *     immediate, honest run failure.
+ *   * ledgerPrompt: false agents (custom/test agents without a
+ *     committed file) → the prompt carried in code, source 'runtime'.
+ */
+export async function resolveAgentPrompt(agent: AgentDefinition): Promise<ResolvedAgentPrompt> {
+  if (agent.ledgerPrompt === false) {
+    return { agent, source: 'runtime', version: null }
+  }
+  const { source, version, text } = await getSystemPrompt({ app: 'ops-copilot', name: agent.id })
+  return { agent: { ...agent, systemPrompt: text }, source, version }
 }

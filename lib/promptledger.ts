@@ -21,6 +21,12 @@ import committedCampaignAnalyzer from '@/prompts/campaign-analyzer.json'
 import committedContentGenerator from '@/prompts/content-generator.json'
 import committedLessonPlanner from '@/prompts/lesson-planner.json'
 import committedQuizGenerator from '@/prompts/quiz-generator.json'
+// Bundle C: governed agent prompts are registry-owned too — the exact
+// text that used to live inline in lib/agent/agents.ts now lives in
+// prompts/<agent-id>.json and doubles as the committed fallback.
+import committedAdmissionsFollowup from '@/prompts/admissions-followup.json'
+import committedExternalLeadSupport from '@/prompts/external-lead-support.json'
+import committedReportingAgent from '@/prompts/reporting-agent.json'
 
 const TIMEOUT_MS = 10_000
 const TTL_MS = 60_000
@@ -64,6 +70,12 @@ export function committedPrompt(name: string): string {
       return committedLessonPlanner.system
     case 'quiz-generator':
       return committedQuizGenerator.system
+    case 'admissions-followup':
+      return committedAdmissionsFollowup.system
+    case 'external-lead-support':
+      return committedExternalLeadSupport.system
+    case 'reporting-agent':
+      return committedReportingAgent.system
     default:
       throw new PromptLedgerError('PL_NO_LIVE', `no committed prompt for "${name}"`, false)
   }
