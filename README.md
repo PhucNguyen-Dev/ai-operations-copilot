@@ -35,7 +35,7 @@ Next.js 15, React 19, TypeScript, Tailwind v4, Supabase/Postgres (RLS everywhere
 Node 22+ and npm for the app. **The optional n8n pipeline needs Node 24+:** the pinned `n8n@2.37.7` declares `engines.node >=24.0.0`, so `npm run n8n` does not run on 22 (installing there still works but emits an `EBADENGINE` warning). Credentials live in `.env` (never committed) — see `.env.example` for every variable including Brevo dispatch.
 
 ```sh
-npm install
+pnpm install   # the repo uses pnpm (pnpm-lock.yaml) — npm i -g pnpm if missing
 npm run dev          # app at http://localhost:3000 (predev warns about port conflicts / stale builds)
 npm run n8n          # optional: classic pipeline + briefing cron
 npm run bot          # optional: Telegram parent chatbot

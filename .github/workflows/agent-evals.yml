@@ -35,22 +35,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
         run: npx playwright install chromium --with-deps
 
       - name: Seed demo users (idempotent)
-        run: npm run seed:users
+        run: pnpm run seed:users
 
       - name: Start app
         run: |
-          npm run dev &
+          pnpm run dev &
           for i in $(seq 1 60); do
             if curl -sf http://localhost:3000/api/health > /dev/null; then echo "app up"; exit 0; fi
             sleep 2
@@ -58,7 +60,7 @@ jobs:
           echo "app did not become healthy" && exit 1
 
       - name: Run agent behavior evals
-        run: npm run evals:agent
+        run: pnpm run evals:agent
 
       - name: Upload eval results
         if: always()
